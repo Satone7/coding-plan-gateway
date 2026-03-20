@@ -34,12 +34,12 @@ export async function registerOpenAIRoutes(
   const handlers = createOpenAIHandlers(repository, proxy);
 
   await app.register(
-    async (fastify) => {
+    (fastify) => {
       // POST /v1/chat/completions - Create chat completion
-      fastify.post('/chat/completions', handlers.createChatCompletion);
+      fastify.post('/chat/completions', (request, reply) => handlers.createChatCompletion(request, reply));
 
       // GET /v1/models - List available models
-      fastify.get('/models', handlers.listModels);
+      fastify.get('/models', (request, reply) => handlers.listModels(request, reply));
     },
     { prefix }
   );

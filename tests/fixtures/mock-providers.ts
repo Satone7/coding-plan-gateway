@@ -181,7 +181,7 @@ export const mockErrorResponses = {
 /**
  * Create mock OpenAI models list response.
  */
-export function createMockModelsResponse(models: string[] = ['model-1', 'model-2']) {
+export function createMockModelsResponse(models: string[] = ['model-1', 'model-2']): { object: 'list'; data: Array<{ id: string; object: 'model'; created: number; owned_by: string }> } {
   return {
     object: 'list' as const,
     data: models.map((model) => ({

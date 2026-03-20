@@ -34,14 +34,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   logger.info('Registering routes...');
 
   // Register health endpoints (basic implementation for now)
-  await app.register(async (fastify) => {
-    fastify.get('/health', async () => ({
+  await app.register((fastify) => {
+    fastify.get('/health', () => ({
       status: 'healthy',
       timestamp: new Date().toISOString(),
       version: process.env.npm_package_version ?? '1.0.0',
     }));
 
-    fastify.get('/ready', async () => ({
+    fastify.get('/ready', () => ({
       ready: true,
       plans: 0,
       models: 0,
@@ -69,7 +69,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 /**
  * Root route handler for basic health check.
  */
-export async function rootHandler(): Promise<{ status: string; version: string }> {
+export function rootHandler(): { status: string; version: string } {
   return {
     status: 'ok',
     version: process.env.npm_package_version ?? '1.0.0',

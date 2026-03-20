@@ -163,19 +163,33 @@ function toPlanResponse(
 }
 
 /**
+ * Admin handlers interface.
+ */
+interface AdminHandlers {
+  listPlans: (request: FastifyRequest, reply: FastifyReply) => Promise<PlansSuccessResponse>;
+  getPlan: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<PlanSuccessResponse>;
+  createPlan: (request: FastifyRequest<{ Body: z.infer<typeof createPlanBodySchema> }>, reply: FastifyReply) => Promise<PlanSuccessResponse>;
+  updatePlan: (request: FastifyRequest<{ Params: PlanParams; Body: z.infer<typeof updatePlanBodySchema> }>, reply: FastifyReply) => Promise<PlanSuccessResponse>;
+  deletePlan: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<void>;
+  getQuotaStatus: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSuccessResponse>;
+  resetQuota: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSuccessResponse>;
+}
+
+/**
  * Create admin handlers with repository dependency injection.
  */
+// eslint-disable-next-line max-lines-per-function
 export function createAdminHandlers(
   repository: IPlanRepository,
   quotaManager?: QuotaManager
-) {
+): AdminHandlers {
   return {
     /**
- * GET /api/plans - List all plans.
+     * GET /api/plans - List all plans.
      */
     async listPlans(
       request: FastifyRequest,
-      reply: FastifyReply
+      _reply: FastifyReply
     ): Promise<PlansSuccessResponse> {
       const plans = await repository.findAll();
 
@@ -203,7 +217,7 @@ export function createAdminHandlers(
      */
     async getPlan(
       request: FastifyRequest<{ Params: PlanParams }>,
-      reply: FastifyReply
+      _reply: FastifyReply
     ): Promise<PlanSuccessResponse> {
       const { planId } = request.params;
 
@@ -277,7 +291,7 @@ export function createAdminHandlers(
         },
       };
 
-      reply.status(201);
+      void reply.status(201);
       return response;
     },
 
@@ -289,7 +303,7 @@ export function createAdminHandlers(
         Params: PlanParams;
         Body: z.infer<typeof updatePlanBodySchema>;
       }>,
-      reply: FastifyReply
+      _reply: FastifyReply
     ): Promise<PlanSuccessResponse> {
       const { planId } = request.params;
 
@@ -373,7 +387,7 @@ export function createAdminHandlers(
         planId,
       });
 
-      reply.status(204).send();
+      void reply.status(204).send();
     },
 
     /**
@@ -381,7 +395,7 @@ export function createAdminHandlers(
      */
     async getQuotaStatus(
       request: FastifyRequest<{ Params: PlanParams }>,
-      reply: FastifyReply
+      _reply: FastifyReply
     ): Promise<QuotaSuccessResponse> {
       const { planId } = request.params;
 
@@ -437,7 +451,7 @@ export function createAdminHandlers(
      */
     async resetQuota(
       request: FastifyRequest<{ Params: PlanParams }>,
-      reply: FastifyReply
+      _reply: FastifyReply
     ): Promise<QuotaSuccessResponse> {
       const { planId } = request.params;
 
@@ -461,7 +475,7 @@ export function createAdminHandlers(
         throw createGatewayError('PLAN_NOT_FOUND', `Plan not found: ${planId}`);
       }
 
-      await quotaManager.resetQuota(planId);
+      quotaManager.resetQuota(planId);
 
       logger.info('Quota reset via API', {
         requestId: request.id,

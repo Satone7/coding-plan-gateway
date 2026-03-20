@@ -60,21 +60,22 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   const signals = ['SIGINT', 'SIGTERM'] as const;
 
   for (const signal of signals) {
-    process.on(signal, async () => {
+    process.on(signal, () => {
       logger.info(`Received ${signal}, starting graceful shutdown...`);
-      try {
-        await app.close();
-        logger.info('Server closed successfully');
-        process.exit(0);
-      } catch (error) {
-        logger.error('Error during shutdown', error as Error);
-        process.exit(1);
-      }
+      app.close()
+        .then(() => {
+          logger.info('Server closed successfully');
+          process.exit(0);
+        })
+        .catch((error) => {
+          logger.error('Error during shutdown', error as Error);
+          process.exit(1);
+        });
     });
   }
 
   // Log startup info
-  app.addHook('onReady', async () => {
+  app.addHook('onReady', () => {
     logger.info(`Server ready`, {
       port,
       host,

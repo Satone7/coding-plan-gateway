@@ -34,30 +34,30 @@ export async function registerAdminRoutes(
   const handlers = createAdminHandlers(repository, quotaManager);
 
   await app.register(
-    async (fastify) => {
+    (fastify) => {
       // Plan CRUD endpoints
       // GET /api/plans - List all plans
-      fastify.get('/plans', handlers.listPlans);
+      fastify.get('/plans', (request, reply) => handlers.listPlans(request, reply));
 
       // POST /api/plans - Create a new plan
-      fastify.post('/plans', handlers.createPlan);
+      fastify.post('/plans', (request, reply) => handlers.createPlan(request, reply));
 
       // GET /api/plans/:planId - Get a specific plan
-      fastify.get('/plans/:planId', handlers.getPlan);
+      fastify.get('/plans/:planId', (request, reply) => handlers.getPlan(request, reply));
 
       // PUT /api/plans/:planId - Update a plan
-      fastify.put('/plans/:planId', handlers.updatePlan);
+      fastify.put('/plans/:planId', (request, reply) => handlers.updatePlan(request, reply));
 
       // DELETE /api/plans/:planId - Delete a plan
-      fastify.delete('/plans/:planId', handlers.deletePlan);
+      fastify.delete('/plans/:planId', (request, reply) => handlers.deletePlan(request, reply));
 
       // Quota management endpoints (only if quotaManager is provided)
       if (quotaManager) {
         // GET /api/quota/:planId - Get quota status for a plan
-        fastify.get('/quota/:planId', handlers.getQuotaStatus);
+        fastify.get('/quota/:planId', (request, reply) => handlers.getQuotaStatus(request, reply));
 
         // POST /api/quota/:planId/reset - Reset quota for a plan
-        fastify.post('/quota/:planId/reset', handlers.resetQuota);
+        fastify.post('/quota/:planId/reset', (request, reply) => handlers.resetQuota(request, reply));
       }
     },
     { prefix }

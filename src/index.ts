@@ -6,7 +6,6 @@
 import { createApp, startServer } from './app';
 import { logger } from './utils/logger';
 import { loadConfig } from './config';
-import { validate } from './utils/validators';
 
 /**
  * Main entry point.
@@ -43,4 +42,4 @@ async function main(): Promise<void> {
 }
 
 // Run main
-main();
+void main();

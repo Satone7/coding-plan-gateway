@@ -43,10 +43,10 @@ declare module 'fastify' {
  * Request logging middleware.
  * Logs request start and end with timing information.
  */
-export async function requestLoggerMiddleware(
+export function requestLoggerMiddleware(
   request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
+  _reply: FastifyReply
+): void {
   const requestId = request.id;
 
   // Attach request-scoped logger
@@ -67,10 +67,10 @@ export async function requestLoggerMiddleware(
  * Response logging hook.
  * Logs response completion with timing, status, and usage metrics.
  */
-export async function responseLoggerMiddleware(
+export function responseLoggerMiddleware(
   request: FastifyRequest,
   reply: FastifyReply
-): Promise<void> {
+): void {
   const requestId = request.id;
   const duration = request.startTime ? Date.now() - request.startTime : 0;
 

@@ -164,7 +164,9 @@ function validateAndParseKey(key: string): Buffer {
  */
 export function isEncrypted(value: string): boolean {
   const parts = value.split(':');
-  if (parts.length !== 3) return false;
+  if (parts.length !== 3) {
+    return false;
+  }
 
   const iv = parts[0] ?? '';
   const authTag = parts[1] ?? '';

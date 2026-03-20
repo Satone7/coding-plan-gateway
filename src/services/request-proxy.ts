@@ -6,17 +6,14 @@
 import { request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
 import { URL } from 'url';
-import { randomUUID } from 'crypto';
-import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyReply } from 'fastify';
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
-  ChatCompletionChunk,
 } from '@/types/openai';
 import type {
   AnthropicMessageRequest,
   AnthropicMessageResponse,
-  AnthropicStreamEvent,
 } from '@/types/anthropic';
 import { logger } from '@/utils/logger';
 import { DEFAULT_USER_AGENT } from '@/config/defaults';
@@ -351,7 +348,7 @@ export class RequestProxy {
         (res) => {
           let buffer = '';
 
-          res.on('data', (chunk) => {
+          res.on('data', (chunk: Buffer) => {
             const text = chunk.toString();
             buffer += text;
 

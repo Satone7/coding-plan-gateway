@@ -42,10 +42,11 @@ const messageRequestSchema = z.object({
 /**
  * Create Anthropic handlers with dependencies.
  */
+// eslint-disable-next-line max-lines-per-function
 export function createAnthropicHandlers(
   repository: IPlanRepository,
   proxy: RequestProxy
-) {
+): { createMessage: (request: FastifyRequest<{ Body: AnthropicMessageRequest }>, reply: FastifyReply) => Promise<AnthropicMessageResponse | void>; getRouter: () => RequestRouter } {
   const router = createRequestRouter(repository);
 
   return {

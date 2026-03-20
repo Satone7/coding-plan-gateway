@@ -5,7 +5,7 @@
 
 import { FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import { ZodError } from 'zod';
-import { createGatewayError, GatewayError, GatewayErrorCode } from '@/types';
+import { GatewayError, GatewayErrorCode } from '@/types';
 import { logger } from '@/utils/logger';
 
 /**
@@ -67,11 +67,12 @@ function formatZodErrors(error: ZodError): Record<string, string[]> {
  * Global error handler.
  * Must be registered as a Fastify error handler.
  */
-export async function errorHandler(
+// eslint-disable-next-line max-lines-per-function
+export function errorHandler(
   error: FastifyError | Error,
   request: FastifyRequest,
   reply: FastifyReply
-): Promise<void> {
+): void {
   const requestId = request.id;
   const timestamp = new Date().toISOString();
 
@@ -94,7 +95,7 @@ export async function errorHandler(
       meta: { requestId, timestamp },
     };
 
-    reply.status(400).send(response);
+    void reply.status(400).send(response);
     return;
   }
 
@@ -113,7 +114,7 @@ export async function errorHandler(
       meta: { requestId, timestamp },
     };
 
-    reply.status(statusCode).send(response);
+    void reply.status(statusCode).send(response);
     return;
   }
 
@@ -131,7 +132,7 @@ export async function errorHandler(
       meta: { requestId, timestamp },
     };
 
-    reply.status(statusCode).send(response);
+    void reply.status(statusCode).send(response);
     return;
   }
 
@@ -145,7 +146,7 @@ export async function errorHandler(
     meta: { requestId, timestamp },
   };
 
-  reply.status(500).send(response);
+  void reply.status(500).send(response);
 }
 
 /**

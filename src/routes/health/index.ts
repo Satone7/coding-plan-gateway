@@ -149,7 +149,7 @@ export function createHealthCheck(
   options: HealthRoutesOptions
 ): () => Promise<HealthResponse> {
   const handlers = createHealthHandlers(options);
-  return async () => handlers.healthCheck({} as FastifyRequest, {} as FastifyReply);
+  return () => Promise.resolve(handlers.healthCheck({} as FastifyRequest, {} as FastifyReply));
 }
 
 /**
@@ -159,5 +159,5 @@ export function createReadinessCheck(
   options: HealthRoutesOptions
 ): () => Promise<ReadinessResponse> {
   const handlers = createHealthHandlers(options);
-  return async () => handlers.readinessCheck({} as FastifyRequest, {} as FastifyReply);
+  return () => Promise.resolve(handlers.readinessCheck({} as FastifyRequest, {} as FastifyReply));
 }

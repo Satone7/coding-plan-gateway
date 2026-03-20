@@ -34,9 +34,9 @@ export async function registerAnthropicRoutes(
   const handlers = createAnthropicHandlers(repository, proxy);
 
   await app.register(
-    async (fastify) => {
+    (fastify) => {
       // POST /v1/messages - Create message
-      fastify.post('/messages', handlers.createMessage);
+      fastify.post('/messages', (request, reply) => handlers.createMessage(request, reply));
     },
     { prefix }
   );

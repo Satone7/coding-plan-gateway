@@ -166,7 +166,7 @@ export class QuotaManager {
    * @param amount - Amount to consume
    * @returns true if consumption succeeded, false if would exceed limit
    */
-  async consumeQuota(planId: string, amount: number = 1): Promise<boolean> {
+  consumeQuota(planId: string, amount: number = 1): boolean {
     const state = this.quotaStates.get(planId);
     if (!state) {
       return false;
@@ -202,7 +202,7 @@ export class QuotaManager {
    * @param planId - The plan identifier
    * @param amount - Amount to refund
    */
-  async refundQuota(planId: string, amount: number = 1): Promise<void> {
+  refundQuota(planId: string, amount: number = 1): void {
     const state = this.quotaStates.get(planId);
     if (!state) {
       return;
@@ -223,7 +223,7 @@ export class QuotaManager {
    *
    * @param planId - The plan identifier
    */
-  async resetQuota(planId: string): Promise<void> {
+  resetQuota(planId: string): void {
     const state = this.quotaStates.get(planId);
     if (!state) {
       return;

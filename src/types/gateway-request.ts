@@ -3,8 +3,6 @@
  * Used for transforming and routing requests between API formats.
  */
 
-import type { ChatMessage } from './openai';
-
 /**
  * Message role types (unified across formats)
  */

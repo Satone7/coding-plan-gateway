@@ -190,7 +190,9 @@ export interface OpenAIError {
  * Transform OpenAI request to internal format helper.
  */
 export function isOpenAIRequest(request: unknown): request is ChatCompletionRequest {
-  if (typeof request !== 'object' || request === null) return false;
+  if (typeof request !== 'object' || request === null) {
+    return false;
+  }
   const req = request as Record<string, unknown>;
   return typeof req.model === 'string' && Array.isArray(req.messages);
 }

@@ -205,7 +205,9 @@ export interface AnthropicError {
  * Check if a request is an Anthropic format request.
  */
 export function isAnthropicRequest(request: unknown): request is AnthropicMessageRequest {
-  if (typeof request !== 'object' || request === null) return false;
+  if (typeof request !== 'object' || request === null) {
+    return false;
+  }
   const req = request as Record<string, unknown>;
   return (
     typeof req.model === 'string' &&

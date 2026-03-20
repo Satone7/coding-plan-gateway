@@ -3,7 +3,7 @@
  * Implements the Repository pattern for future database migration.
  */
 
-import { readFile, writeFile, access, rename, unlink } from 'fs/promises';
+import { readFile, writeFile, access, rename } from 'fs/promises';
 import { constants } from 'fs';
 import { resolve, extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -17,7 +17,6 @@ import { planConfigSchema, type PlanConfig } from '@/config/schema';
 import {
   encryptApiKey,
   decryptApiKey,
-  isApiKeyEncrypted,
 } from '@/config/encryption';
 import { logger } from '@/utils/logger';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from '@/config/defaults';

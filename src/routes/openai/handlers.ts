@@ -5,7 +5,6 @@
 
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { randomUUID } from 'crypto';
 import type { IPlanRepository } from '@/services/plan-repository';
 import { RequestRouter, createRequestRouter } from '@/services/request-router';
 import { RequestProxy } from '@/services/request-proxy';
@@ -48,10 +47,15 @@ const chatCompletionSchema = z.object({
 /**
  * Create OpenAI handlers with dependencies.
  */
+// eslint-disable-next-line max-lines-per-function
 export function createOpenAIHandlers(
   repository: IPlanRepository,
   proxy: RequestProxy
-) {
+): {
+  createChatCompletion: (request: FastifyRequest<{ Body: ChatCompletionRequest }>, reply: FastifyReply) => Promise<ChatCompletionResponse | void>;
+  listModels: (request: FastifyRequest, reply: FastifyReply) => Promise<ModelsResponse>;
+  getRouter: () => RequestRouter;
+} {
   const router = createRequestRouter(repository);
 
   return {
@@ -236,7 +240,7 @@ export function createOpenAIHandlers(
      */
     async listModels(
       request: FastifyRequest,
-      reply: FastifyReply
+      _reply: FastifyReply
     ): Promise<ModelsResponse> {
       const plans = await repository.findActive();
 

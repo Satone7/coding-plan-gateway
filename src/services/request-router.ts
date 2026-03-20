@@ -8,7 +8,7 @@ import type { IPlanRepository } from '@/services/plan-repository';
 import { PlanSelector, createPlanSelector } from '@/services/plan-selector';
 import { CircuitBreaker, createCircuitBreaker } from '@/services/circuit-breaker';
 import type { QuotaManager } from '@/services/quota-manager';
-import type { CodingPlan, QuotaState, GatewayError } from '@/types';
+import type { CodingPlan, QuotaState } from '@/types';
 import { createGatewayError } from '@/types';
 import { logger } from '@/utils/logger';
 
@@ -134,7 +134,7 @@ export class RequestRouter {
     }
 
     // Select the best plan based on quota
-    const quotaStates = this.quotaManager?.getAllQuotaStates() ?? new Map();
+    const quotaStates = this.quotaManager?.getAllQuotaStates() ?? new Map<string, QuotaState>();
     const selectedPlan = this.planSelector.selectBestPlan(plansWithQuota, quotaStates);
 
     if (!selectedPlan) {
@@ -202,7 +202,7 @@ export class RequestRouter {
 
     // Consume quota if quota manager is available
     if (this.quotaManager) {
-      const consumed = await this.quotaManager.consumeQuota(result.selectedPlan.id);
+      const consumed = this.quotaManager.consumeQuota(result.selectedPlan.id);
       if (!consumed) {
         throw createGatewayError(
           'QUOTA_EXHAUSTED',
@@ -247,9 +247,9 @@ export class RequestRouter {
    * @param planId - The plan identifier
    * @param amount - Amount to refund
    */
-  async refundQuota(planId: string, amount: number = 1): Promise<void> {
+  refundQuota(planId: string, amount: number = 1): void {
     if (this.quotaManager) {
-      await this.quotaManager.refundQuota(planId, amount);
+      this.quotaManager.refundQuota(planId, amount);
     }
   }
 
@@ -288,11 +288,11 @@ export class RequestRouter {
   /**
    * Update quota state for a plan.
    *
-   * @param planId - The plan identifier
-   * @param state - New quota state
+   * @param _planId - The plan identifier
+   * @param _state - New quota state
    * @deprecated Use QuotaManager directly
    */
-  updateQuotaState(planId: string, state: QuotaState): void {
+  updateQuotaState(_planId: string, _state: QuotaState): void {
     logger.warn('updateQuotaState is deprecated, use QuotaManager directly');
   }
 

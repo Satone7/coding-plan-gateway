@@ -6,7 +6,6 @@
 import { readFile, access } from 'fs/promises';
 import { constants } from 'fs';
 import { resolve, extname } from 'path';
-import { parse as parseYaml } from 'yaml';
 import { v4 as uuidv4 } from 'uuid';
 import { configSchema, planConfigSchema, type PlanConfig, type Config } from './schema';
 import { encryptApiKey } from './encryption';
@@ -53,6 +52,7 @@ function expandEnvVarsInObject<T>(obj: T): T {
     return expandEnvVars(obj) as T;
   }
   if (Array.isArray(obj)) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return obj.map((item) => expandEnvVarsInObject(item)) as T;
   }
   if (obj !== null && typeof obj === 'object') {
@@ -93,7 +93,7 @@ function parseConfigContent(content: string, filePath: string): unknown {
     try {
       // Try to parse as YAML using yaml package if available
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const yaml = require('yaml');
+      const yaml = require('yaml') as { parse: (content: string) => unknown };
       return yaml.parse(content);
     } catch {
       // If yaml package not available, try JSON
@@ -117,7 +117,7 @@ function parseConfigContent(content: string, filePath: string): unknown {
   } catch {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const yaml = require('yaml');
+      const yaml = require('yaml') as { parse: (content: string) => unknown };
       return yaml.parse(content);
     } catch {
       throw new Error(`Failed to parse configuration file: ${filePath}`);
@@ -213,7 +213,7 @@ export async function saveConfig(
   if (format === 'yaml') {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const yaml = require('yaml');
+      const yaml = require('yaml') as { stringify: (data: unknown) => string };
       content = yaml.stringify(config);
     } catch {
       // Fallback to JSON
