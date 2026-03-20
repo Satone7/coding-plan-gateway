@@ -150,19 +150,19 @@
 
 ### Tests for User Story 2
 
-- [ ] T055 [P] [US2] Create unit tests for PlanSelector in tests/unit/services/plan-selector.test.ts
-- [ ] T056 [P] [US2] Create unit tests for RequestRouter in tests/unit/services/request-router.test.ts
+- [x] T055 [P] [US2] Create unit tests for PlanSelector in tests/unit/services/plan-selector.test.ts
+- [x] T056 [P] [US2] Create unit tests for RequestRouter in tests/unit/services/request-router.test.ts
 
 ### Implementation for User Story 2
 
-- [ ] T057 [P] [US2] Implement PlanSelector service (select plan by model) in src/services/plan-selector.ts
-- [ ] T058 [US2] Implement model resolution logic (find plans supporting model) in src/services/plan-selector.ts
-- [ ] T059 [US2] Implement RequestRouter service in src/services/request-router.ts
-- [ ] T060 [US2] Integrate RequestRouter with OpenAI handler in src/routes/openai/handlers.ts
-- [ ] T061 [US2] Integrate RequestRouter with Anthropic handler in src/routes/anthropic/handlers.ts
-- [ ] T062 [US2] Implement error response for unsupported models (404 MODEL_NOT_FOUND)
-- [ ] T063 [US2] Implement CircuitBreaker for provider failure handling in src/services/circuit-breaker.ts
-- [ ] T064 [US2] Add automatic failover to alternative plans on provider error
+- [x] T057 [P] [US2] Implement PlanSelector service (select plan by model) in src/services/plan-selector.ts
+- [x] T058 [US2] Implement model resolution logic (find plans supporting model) in src/services/plan-selector.ts
+- [x] T059 [US2] Implement RequestRouter service in src/services/request-router.ts
+- [x] T060 [US2] Integrate RequestRouter with OpenAI handler in src/routes/openai/handlers.ts
+- [x] T061 [US2] Integrate RequestRouter with Anthropic handler in src/routes/anthropic/handlers.ts
+- [x] T062 [US2] Implement error response for unsupported models (404 MODEL_NOT_FOUND)
+- [x] T063 [US2] Implement CircuitBreaker for provider failure handling in src/services/circuit-breaker.ts
+- [x] T064 [US2] Add automatic failover to alternative plans on provider error
 
 **Checkpoint**: User Story 2 complete - requests automatically routed to plans supporting the model
 

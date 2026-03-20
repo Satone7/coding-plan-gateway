@@ -6,6 +6,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { IPlanRepository } from '@/services/plan-repository';
+import { RequestRouter, createRequestRouter } from '@/services/request-router';
 import { RequestProxy } from '@/services/request-proxy';
 import { logger } from '@/utils/logger';
 import { createGatewayError } from '@/types';
@@ -41,6 +42,8 @@ export function createAnthropicHandlers(
   repository: IPlanRepository,
   proxy: RequestProxy
 ) {
+  const router = createRequestRouter(repository);
+
   return {
     /**
      * POST /v1/messages - Create message.
@@ -68,25 +71,26 @@ export function createAnthropicHandlers(
         maxTokens: body.max_tokens,
       });
 
-      // Find plans that support this model
-      const plans = await repository.findByModel(model);
-      const activePlans = plans.filter((p) => p.status === 'active');
+      // Route request to best available plan
+      const routingResult = await router.route(model);
 
-      if (activePlans.length === 0) {
+      if (!routingResult.selectedPlan) {
         throw createGatewayError(
           'MODEL_NOT_FOUND',
-          `No coding plan supports model '${model}'`
+          `No coding plan supports model '${model}'`,
+          { model, requestId }
         );
       }
 
-      // For now, use the first available plan
-      // TODO: Implement proper plan selection with quota awareness (Phase 5)
-      const selectedPlan = activePlans[0];
+      const selectedPlan = routingResult.selectedPlan;
 
-      if (!selectedPlan) {
+      // Get decrypted API key
+      const apiKey = await repository.getDecryptedApiKey(selectedPlan.id);
+      if (!apiKey) {
         throw createGatewayError(
-          'SERVICE_UNAVAILABLE',
-          'No plan available for this request'
+          'INTERNAL_ERROR',
+          'Failed to get API key for plan',
+          { planId: selectedPlan.id }
         );
       }
 
@@ -94,16 +98,8 @@ export function createAnthropicHandlers(
         requestId,
         planId: selectedPlan.id,
         planName: selectedPlan.name,
+        alternatives: routingResult.alternativePlans.length,
       });
-
-      // Get decrypted API key
-      const apiKey = await repository.getDecryptedApiKey(selectedPlan.id);
-      if (!apiKey) {
-        throw createGatewayError(
-          'INTERNAL_ERROR',
-          'Failed to get API key for plan'
-        );
-      }
 
       // Handle streaming vs non-streaming
       if (body.stream) {
@@ -116,8 +112,8 @@ export function createAnthropicHandlers(
             requestId,
           },
           (chunk, done) => {
-            // Chunk callback - could track usage here
             if (done) {
+              router.markPlanSuccess(selectedPlan.id);
               logger.debug('Stream completed', { requestId });
             }
           },
@@ -126,21 +122,89 @@ export function createAnthropicHandlers(
         return;
       }
 
-      // Non-streaming request
-      const response = await proxy.forwardAnthropicRequest(body, {
-        baseUrl: selectedPlan.baseUrl,
-        apiKey,
-        timeout: selectedPlan.timeout,
-        requestId,
-      });
+      // Non-streaming request with failover
+      try {
+        const response = await proxy.forwardAnthropicRequest(body, {
+          baseUrl: selectedPlan.baseUrl,
+          apiKey,
+          timeout: selectedPlan.timeout,
+          requestId,
+        });
 
-      logger.info('Anthropic message response', {
-        requestId,
-        statusCode: response.statusCode,
-        durationMs: response.durationMs,
-      });
+        router.markPlanSuccess(selectedPlan.id);
 
-      return response.data;
+        logger.info('Anthropic message response', {
+          requestId,
+          statusCode: response.statusCode,
+          durationMs: response.durationMs,
+          planId: selectedPlan.id,
+        });
+
+        return response.data;
+      } catch (error) {
+        // Mark plan as failed
+        router.markPlanFailed(selectedPlan.id);
+
+        // Try failover to alternative plans
+        const alternativePlans = routingResult.alternativePlans;
+
+        for (const altPlan of alternativePlans) {
+          if (!router.getCircuitBreaker().canExecute(altPlan.id)) {
+            continue;
+          }
+
+          logger.info('Attempting failover to alternative plan', {
+            requestId,
+            failedPlanId: selectedPlan.id,
+            failoverPlanId: altPlan.id,
+          });
+
+          try {
+            const altApiKey = await repository.getDecryptedApiKey(altPlan.id);
+            if (!altApiKey) {
+              continue;
+            }
+
+            const response = await proxy.forwardAnthropicRequest(body, {
+              baseUrl: altPlan.baseUrl,
+              apiKey: altApiKey,
+              timeout: altPlan.timeout,
+              requestId,
+            });
+
+            router.markPlanSuccess(altPlan.id);
+
+            logger.info('Failover successful', {
+              requestId,
+              failoverPlanId: altPlan.id,
+              durationMs: response.durationMs,
+            });
+
+            return response.data;
+          } catch (failoverError) {
+            router.markPlanFailed(altPlan.id);
+            logger.warn('Failover plan failed', {
+              requestId,
+              failoverPlanId: altPlan.id,
+              error: failoverError instanceof Error ? failoverError.message : String(failoverError),
+            });
+          }
+        }
+
+        // All plans failed
+        throw createGatewayError(
+          'UPSTREAM_ERROR',
+          'All available plans failed to process the request',
+          { requestId, attemptedPlans: [selectedPlan.id, ...alternativePlans.map(p => p.id)] }
+        );
+      }
+    },
+
+    /**
+     * Get the router instance for external access.
+     */
+    getRouter(): RequestRouter {
+      return router;
     },
   };
 }
