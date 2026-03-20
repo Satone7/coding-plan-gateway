@@ -118,23 +118,23 @@
 
 ### Tests for User Story 4
 
-- [ ] T041 [P] [US4] Create integration tests for OpenAI endpoint in tests/integration/routes/openai.test.ts
-- [ ] T042 [P] [US4] Create integration tests for Anthropic endpoint in tests/integration/routes/anthropic.test.ts
-- [ ] T043 [P] [US4] Create unit tests for RequestProxy in tests/unit/services/request-proxy.test.ts
+- [x] T041 [P] [US4] Create integration tests for OpenAI endpoint in tests/integration/routes/openai.test.ts
+- [x] T042 [P] [US4] Create integration tests for Anthropic endpoint in tests/integration/routes/anthropic.test.ts
+- [x] T043 [P] [US4] Create unit tests for RequestProxy in tests/unit/services/request-proxy.test.ts
 
 ### Implementation for User Story 4
 
-- [ ] T044 [P] [US4] Implement RequestProxy service for upstream forwarding in src/services/request-proxy.ts
-- [ ] T045 [US4] Create OpenAI routes registration in src/routes/openai/index.ts
-- [ ] T046 [US4] Implement OpenAI chat completions handler in src/routes/openai/handlers.ts
-- [ ] T047 [US4] Implement POST /v1/chat/completions endpoint (non-streaming)
-- [ ] T048 [US4] Implement streaming support for OpenAI endpoint (SSE)
-- [ ] T049 [US4] Implement GET /v1/models endpoint (list available models)
-- [ ] T050 [US4] Create Anthropic routes registration in src/routes/anthropic/index.ts
-- [ ] T051 [US4] Implement Anthropic messages handler in src/routes/anthropic/handlers.ts
-- [ ] T052 [US4] Implement POST /v1/messages endpoint (non-streaming)
-- [ ] T053 [US4] Implement streaming support for Anthropic endpoint (SSE)
-- [ ] T054 [US4] Add request/response transformation between formats
+- [x] T044 [P] [US4] Implement RequestProxy service for upstream forwarding in src/services/request-proxy.ts
+- [x] T045 [US4] Create OpenAI routes registration in src/routes/openai/index.ts
+- [x] T046 [US4] Implement OpenAI chat completions handler in src/routes/openai/handlers.ts
+- [x] T047 [US4] Implement POST /v1/chat/completions endpoint (non-streaming)
+- [x] T048 [US4] Implement streaming support for OpenAI endpoint (SSE)
+- [x] T049 [US4] Implement GET /v1/models endpoint (list available models)
+- [x] T050 [US4] Create Anthropic routes registration in src/routes/anthropic/index.ts
+- [x] T051 [US4] Implement Anthropic messages handler in src/routes/anthropic/handlers.ts
+- [x] T052 [US4] Implement POST /v1/messages endpoint (non-streaming)
+- [x] T053 [US4] Implement streaming support for Anthropic endpoint (SSE)
+- [x] T054 [US4] Add request/response transformation between formats
 
 **Checkpoint**: User Story 4 complete - gateway accepts OpenAI and Anthropic format requests
 

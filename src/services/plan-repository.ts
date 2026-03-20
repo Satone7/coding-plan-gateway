@@ -50,6 +50,9 @@ export interface IPlanRepository {
 
   /** Check if a plan exists */
   exists(id: string): Promise<boolean>;
+
+  /** Get decrypted API key for a plan */
+  getDecryptedApiKey(id: string): Promise<string | null>;
 }
 
 /**
