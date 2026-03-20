@@ -87,22 +87,22 @@
 
 ### Tests for User Story 1
 
-- [ ] T028 [P] [US1] Create unit tests for PlanRepository in tests/unit/services/plan-repository.test.ts
-- [ ] T029 [P] [US1] Create integration tests for plan CRUD endpoints in tests/integration/routes/admin.test.ts
+- [x] T028 [P] [US1] Create unit tests for PlanRepository in tests/unit/services/plan-repository.test.ts
+- [x] T029 [P] [US1] Create integration tests for plan CRUD endpoints in tests/integration/routes/admin.test.ts
 
 ### Implementation for User Story 1
 
-- [ ] T030 [P] [US1] Create IPlanRepository interface in src/services/plan-repository.ts
-- [ ] T031 [US1] Implement FilePlanRepository with YAML persistence in src/services/plan-repository.ts
-- [ ] T032 [US1] Implement config validation on load in src/config/index.ts
-- [ ] T033 [US1] Create admin routes registration in src/routes/admin/index.ts
-- [ ] T034 [US1] Implement plan CRUD handlers in src/routes/admin/handlers.ts
-- [ ] T035 [US1] Implement POST /api/plans endpoint (create plan)
-- [ ] T036 [US1] Implement GET /api/plans endpoint (list plans)
-- [ ] T037 [US1] Implement GET /api/plans/:planId endpoint (get plan)
-- [ ] T038 [US1] Implement PUT /api/plans/:planId endpoint (update plan)
-- [ ] T039 [US1] Implement DELETE /api/plans/:planId endpoint (delete plan)
-- [ ] T040 [US1] Add encryption/decryption of API keys in plan handlers
+- [x] T030 [P] [US1] Create IPlanRepository interface in src/services/plan-repository.ts
+- [x] T031 [US1] Implement FilePlanRepository with YAML persistence in src/services/plan-repository.ts
+- [x] T032 [US1] Implement config validation on load in src/config/index.ts
+- [x] T033 [US1] Create admin routes registration in src/routes/admin/index.ts
+- [x] T034 [US1] Implement plan CRUD handlers in src/routes/admin/handlers.ts
+- [x] T035 [US1] Implement POST /api/plans endpoint (create plan)
+- [x] T036 [US1] Implement GET /api/plans endpoint (list plans)
+- [x] T037 [US1] Implement GET /api/plans/:planId endpoint (get plan)
+- [x] T038 [US1] Implement PUT /api/plans/:planId endpoint (update plan)
+- [x] T039 [US1] Implement DELETE /api/plans/:planId endpoint (delete plan)
+- [x] T040 [US1] Add encryption/decryption of API keys in plan handlers
 
 **Checkpoint**: User Story 1 complete - can create, read, update, delete coding plans via API
 
