@@ -41,39 +41,39 @@
 
 ### Core Types & Interfaces
 
-- [ ] T007 [P] Create CodingPlan interface in src/types/coding-plan.ts
-- [ ] T008 [P] Create QuotaState interface in src/types/quota.ts
-- [ ] T009 [P] Create GatewayRequest internal types in src/types/gateway-request.ts
-- [ ] T010 [P] Create OpenAI API types in src/types/openai.ts
-- [ ] T011 [P] Create Anthropic API types in src/types/anthropic.ts
-- [ ] T012 Create type exports index in src/types/index.ts
+- [x] T007 [P] Create CodingPlan interface in src/types/coding-plan.ts
+- [x] T008 [P] Create QuotaState interface in src/types/quota.ts
+- [x] T009 [P] Create GatewayRequest internal types in src/types/gateway-request.ts
+- [x] T010 [P] Create OpenAI API types in src/types/openai.ts
+- [x] T011 [P] Create Anthropic API types in src/types/anthropic.ts
+- [x] T012 Create type exports index in src/types/index.ts
 
 ### Core Utilities
 
-- [ ] T013 [P] Implement encryption utilities (AES-256-GCM) in src/utils/crypto.ts
-- [ ] T014 [P] Implement structured JSON logger in src/utils/logger.ts
-- [ ] T015 [P] Create validation helpers using Zod in src/utils/validators.ts
+- [x] T013 [P] Implement encryption utilities (AES-256-GCM) in src/utils/crypto.ts
+- [x] T014 [P] Implement structured JSON logger in src/utils/logger.ts
+- [x] T015 [P] Create validation helpers using Zod in src/utils/validators.ts
 
 ### Configuration Infrastructure
 
-- [ ] T016 [P] Create Zod configuration schema in src/config/schema.ts
-- [ ] T017 [P] Create default configuration values in src/config/defaults.ts
-- [ ] T018 Implement config loader with environment variable expansion in src/config/index.ts
-- [ ] T019 Implement encryption module for API keys in src/config/encryption.ts
+- [x] T016 [P] Create Zod configuration schema in src/config/schema.ts
+- [x] T017 [P] Create default configuration values in src/config/defaults.ts
+- [x] T018 Implement config loader with environment variable expansion in src/config/index.ts
+- [x] T019 Implement encryption module for API keys in src/config/encryption.ts
 
 ### Application Bootstrap
 
-- [ ] T020 Create Fastify app factory in src/app.ts
-- [ ] T021 Create application entry point in src/index.ts
-- [ ] T022 [P] Implement global error handler middleware in src/middleware/error-handler.ts
-- [ ] T023 [P] Implement request logging middleware in src/middleware/request-logger.ts
-- [ ] T024 Create route registration aggregator in src/routes/index.ts
+- [x] T020 Create Fastify app factory in src/app.ts
+- [x] T021 Create application entry point in src/index.ts
+- [x] T022 [P] Implement global error handler middleware in src/middleware/error-handler.ts
+- [x] T023 [P] Implement request logging middleware in src/middleware/request-logger.ts
+- [x] T024 Create route registration aggregator in src/routes/index.ts
 
 ### Test Infrastructure
 
-- [ ] T025 [P] Create test fixtures for mock plans in tests/fixtures/mock-plans.ts
-- [ ] T026 [P] Create test fixtures for mock providers in tests/fixtures/mock-providers.ts
-- [ ] T027 [P] Create unit test for encryption utilities in tests/unit/utils/crypto.test.ts
+- [x] T025 [P] Create test fixtures for mock plans in tests/fixtures/mock-plans.ts
+- [x] T026 [P] Create test fixtures for mock providers in tests/fixtures/mock-providers.ts
+- [x] T027 [P] Create unit test for encryption utilities in tests/unit/utils/crypto.test.ts
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 

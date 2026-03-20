@@ -1,0 +1,104 @@
+/**
+ * CodingPlan entity - represents an AI provider subscription configuration.
+ * @see data-model.md for entity definitions
+ */
+
+/**
+ * Quota reset period types
+ */
+export type QuotaPeriod = 'daily' | 'monthly' | 'total';
+
+/**
+ * Plan operational status
+ */
+export type PlanStatus = 'active' | 'paused' | 'error' | 'exhausted';
+
+/**
+ * Quota configuration for a coding plan
+ */
+export interface QuotaConfig {
+  /** Maximum allowed usage */
+  limit: number;
+  /** Quota reset period */
+  period: QuotaPeriod;
+}
+
+/**
+ * CodingPlan - Represents an AI provider subscription configuration.
+ *
+ * This interface defines the structure for managing multiple coding plan
+ * subscriptions, including their API endpoints, supported models, and
+ * quota configurations.
+ *
+ * @example
+ * ```typescript
+ * const plan: CodingPlan = {
+ *   id: '550e8400-e29b-41d4-a716-446655440000',
+ *   name: 'Kimi K2.5 Plan',
+ *   baseUrl: 'https://api.moonshot.cn/v1',
+ *   apiKeyEncrypted: 'enc:...',
+ *   models: ['kimi-k2.5', 'kimi-k2'],
+ *   quota: { limit: 1000, period: 'monthly' },
+ *   timeout: 30000,
+ *   status: 'active',
+ *   createdAt: new Date(),
+ *   updatedAt: new Date(),
+ * };
+ * ```
+ */
+export interface CodingPlan {
+  /** Unique identifier (UUID v4) */
+  id: string;
+
+  /** Human-readable name for the plan */
+  name: string;
+
+  /** Base URL for the provider API */
+  baseUrl: string;
+
+  /** Encrypted API key (AES-256-GCM) */
+  apiKeyEncrypted: string;
+
+  /** List of model identifiers this plan supports */
+  models: string[];
+
+  /** Quota configuration */
+  quota: QuotaConfig;
+
+  /** Request timeout in milliseconds */
+  timeout: number;
+
+  /** Current operational status */
+  status: PlanStatus;
+
+  /** Creation timestamp */
+  createdAt: Date;
+
+  /** Last update timestamp */
+  updatedAt: Date;
+}
+
+/**
+ * CodingPlan input for creation (without system-generated fields)
+ */
+export interface CreateCodingPlanInput {
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  models: string[];
+  quota: QuotaConfig;
+  timeout?: number;
+}
+
+/**
+ * CodingPlan input for updates (partial updates allowed)
+ */
+export interface UpdateCodingPlanInput {
+  name?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  models?: string[];
+  quota?: Partial<QuotaConfig>;
+  timeout?: number;
+  status?: Exclude<PlanStatus, 'error' | 'exhausted'>;
+}
