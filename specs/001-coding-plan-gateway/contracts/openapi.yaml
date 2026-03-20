@@ -1,0 +1,780 @@
+openapi: 3.0.3
+info:
+  title: Coding Plan Gateway API
+  description: |
+    A gateway service that provides unified API access to multiple AI coding plan subscriptions.
+
+    ## Features
+    - OpenAI-compatible chat completions endpoint
+    - Anthropic-compatible messages endpoint
+    - Automatic request routing based on model availability
+    - Quota-based load balancing across plans
+    - Configuration management API
+
+  version: 1.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: OpenAI Compatible
+    description: OpenAI-compatible endpoints for seamless integration
+  - name: Anthropic Compatible
+    description: Anthropic-compatible endpoints for Claude Code integration
+  - name: Plan Management
+    description: CRUD operations for coding plans
+  - name: Quota Management
+    description: Quota tracking and reset operations
+  - name: Health
+    description: Health and readiness endpoints
+
+paths:
+  # ==================== OpenAI Compatible ====================
+  /v1/chat/completions:
+    post:
+      tags:
+        - OpenAI Compatible
+      summary: Create chat completion
+      description: |
+        OpenAI-compatible chat completions endpoint. Forwards requests to configured coding plans
+        based on model availability and remaining quota.
+
+        Supports both streaming and non-streaming responses.
+      operationId: createChatCompletion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+      responses:
+        '200':
+          description: Successful completion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE stream of completion chunks
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/ModelNotFound'
+        '429':
+          $ref: '#/components/responses/QuotaExhausted'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/models:
+    get:
+      tags:
+        - OpenAI Compatible
+      summary: List available models
+      description: Returns all models available across configured coding plans
+      operationId: listModels
+      responses:
+        '200':
+          description: List of models
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelsResponse'
+
+  # ==================== Anthropic Compatible ====================
+  /v1/messages:
+    post:
+      tags:
+        - Anthropic Compatible
+      summary: Create message
+      description: |
+        Anthropic-compatible messages endpoint. Forwards requests to configured coding plans
+        based on model availability and remaining quota.
+      operationId: createMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnthropicMessageRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicMessageResponse'
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE stream of message chunks
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/ModelNotFound'
+        '429':
+          $ref: '#/components/responses/QuotaExhausted'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  # ==================== Plan Management ====================
+  /api/plans:
+    get:
+      tags:
+        - Plan Management
+      summary: List all coding plans
+      description: Returns all configured coding plans (API keys masked)
+      operationId: listPlans
+      responses:
+        '200':
+          description: List of plans
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanListResponse'
+
+    post:
+      tags:
+        - Plan Management
+      summary: Create a new coding plan
+      description: Add a new coding plan configuration
+      operationId: createPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePlanRequest'
+      responses:
+        '201':
+          description: Plan created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Plan with this name already exists
+
+  /api/plans/{planId}:
+    parameters:
+      - $ref: '#/components/parameters/planId'
+
+    get:
+      tags:
+        - Plan Management
+      summary: Get a coding plan
+      description: Returns details of a specific coding plan
+      operationId: getPlan
+      responses:
+        '200':
+          description: Plan details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanResponse'
+        '404':
+          $ref: '#/components/responses/PlanNotFound'
+
+    put:
+      tags:
+        - Plan Management
+      summary: Update a coding plan
+      description: Update an existing coding plan configuration
+      operationId: updatePlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlanRequest'
+      responses:
+        '200':
+          description: Plan updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/PlanNotFound'
+
+    delete:
+      tags:
+        - Plan Management
+      summary: Delete a coding plan
+      description: Remove a coding plan from configuration
+      operationId: deletePlan
+      responses:
+        '204':
+          description: Plan deleted
+        '404':
+          $ref: '#/components/responses/PlanNotFound'
+
+  # ==================== Quota Management ====================
+  /api/quota/{planId}:
+    parameters:
+      - $ref: '#/components/parameters/planId'
+
+    get:
+      tags:
+        - Quota Management
+      summary: Get quota status
+      description: Returns current quota usage for a coding plan
+      operationId: getQuota
+      responses:
+        '200':
+          description: Quota status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotaResponse'
+        '404':
+          $ref: '#/components/responses/PlanNotFound'
+
+  /api/quota/{planId}/reset:
+    parameters:
+      - $ref: '#/components/parameters/planId'
+
+    post:
+      tags:
+        - Quota Management
+      summary: Reset quota
+      description: Manually reset quota usage for a coding plan
+      operationId: resetQuota
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                used:
+                  type: integer
+                  description: New usage value (default 0)
+                  default: 0
+      responses:
+        '200':
+          description: Quota reset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotaResponse'
+        '404':
+          $ref: '#/components/responses/PlanNotFound'
+
+  # ==================== Health ====================
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns service health status
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /ready:
+    get:
+      tags:
+        - Health
+      summary: Readiness check
+      description: Returns whether service is ready to accept requests
+      operationId: readinessCheck
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+        '503':
+          description: Service not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+
+components:
+  parameters:
+    planId:
+      name: planId
+      in: path
+      required: true
+      description: Unique identifier of the coding plan
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    # ==================== OpenAI Schemas ====================
+    ChatCompletionRequest:
+      type: object
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+          description: Model identifier
+          example: claude-sonnet-4-6
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+          minItems: 1
+        stream:
+          type: boolean
+          default: false
+          description: Enable streaming response
+        max_tokens:
+          type: integer
+          minimum: 1
+          description: Maximum tokens to generate
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+          description: Sampling temperature
+        top_p:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Nucleus sampling parameter
+
+    ChatMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant]
+        content:
+          type: string
+        name:
+          type: string
+
+    ChatCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [chat.completion]
+        created:
+          type: integer
+          format: int64
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              message:
+                $ref: '#/components/schemas/ChatMessage'
+              finish_reason:
+                type: string
+                enum: [stop, length, content_filter]
+        usage:
+          $ref: '#/components/schemas/Usage'
+
+    ModelsResponse:
+      type: object
+      properties:
+        object:
+          type: string
+          enum: [list]
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              object:
+                type: string
+                enum: [model]
+              created:
+                type: integer
+              owned_by:
+                type: string
+
+    # ==================== Anthropic Schemas ====================
+    AnthropicMessageRequest:
+      type: object
+      required:
+        - model
+        - messages
+        - max_tokens
+      properties:
+        model:
+          type: string
+          description: Model identifier
+          example: claude-sonnet-4-6
+        messages:
+          type: array
+          items:
+            type: object
+            properties:
+              role:
+                type: string
+                enum: [user, assistant]
+              content:
+                oneOf:
+                  - type: string
+                  - type: array
+                    items:
+                      type: object
+        max_tokens:
+          type: integer
+          minimum: 1
+        stream:
+          type: boolean
+          default: false
+        system:
+          type: string
+        temperature:
+          type: number
+
+    AnthropicMessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [message]
+        role:
+          type: string
+          enum: [assistant]
+        content:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                enum: [text]
+              text:
+                type: string
+        model:
+          type: string
+        stop_reason:
+          type: string
+        usage:
+          $ref: '#/components/schemas/Usage'
+
+    # ==================== Plan Schemas ====================
+    CreatePlanRequest:
+      type: object
+      required:
+        - name
+        - baseUrl
+        - apiKey
+        - models
+        - quota
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Kimi K2.5 Plan
+        baseUrl:
+          type: string
+          format: uri
+          example: https://api.moonshot.cn/v1
+        apiKey:
+          type: string
+          minLength: 1
+          description: API key (will be encrypted)
+        models:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          example: [kimi-k2.5, kimi-k2]
+        quota:
+          type: object
+          required:
+            - limit
+            - period
+          properties:
+            limit:
+              type: integer
+              minimum: 1
+              example: 1000
+            period:
+              type: string
+              enum: [daily, monthly, total]
+              example: monthly
+        timeout:
+          type: integer
+          minimum: 1000
+          maximum: 300000
+          default: 30000
+          description: Request timeout in milliseconds
+
+    UpdatePlanRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        baseUrl:
+          type: string
+          format: uri
+        apiKey:
+          type: string
+          description: New API key (optional, will be encrypted)
+        models:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        quota:
+          type: object
+          properties:
+            limit:
+              type: integer
+              minimum: 1
+            period:
+              type: string
+              enum: [daily, monthly, total]
+        timeout:
+          type: integer
+          minimum: 1000
+          maximum: 300000
+        status:
+          type: string
+          enum: [active, paused]
+
+    PlanResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        baseUrl:
+          type: string
+        models:
+          type: array
+          items:
+            type: string
+        quota:
+          type: object
+          properties:
+            limit:
+              type: integer
+            period:
+              type: string
+            used:
+              type: integer
+        timeout:
+          type: integer
+        status:
+          type: string
+          enum: [active, paused, error, exhausted]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PlanListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanResponse'
+        meta:
+          type: object
+          properties:
+            requestId:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+
+    # ==================== Quota Schemas ====================
+    QuotaResponse:
+      type: object
+      properties:
+        planId:
+          type: string
+          format: uuid
+        used:
+          type: integer
+        limit:
+          type: integer
+        remaining:
+          type: integer
+        period:
+          type: string
+          enum: [daily, monthly, total]
+        resetAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastUpdated:
+          type: string
+          format: date-time
+
+    # ==================== Health Schemas ====================
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+
+    ReadinessResponse:
+      type: object
+      properties:
+        ready:
+          type: boolean
+        plans:
+          type: integer
+          description: Number of active plans
+        models:
+          type: integer
+          description: Number of available models
+        checks:
+          type: object
+          properties:
+            config:
+              type: boolean
+            quotaStore:
+              type: boolean
+
+    # ==================== Common Schemas ====================
+    Usage:
+      type: object
+      properties:
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            code:
+              type: string
+        meta:
+          type: object
+          properties:
+            requestId:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              message: Invalid request body
+              type: validation_error
+              code: INVALID_REQUEST
+
+    ModelNotFound:
+      description: Model not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              message: No coding plan supports model 'unknown-model'
+              type: not_found
+              code: MODEL_NOT_FOUND
+
+    PlanNotFound:
+      description: Plan not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              message: Coding plan not found
+              type: not_found
+              code: PLAN_NOT_FOUND
+
+    QuotaExhausted:
+      description: Quota exhausted
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              message: All coding plans for this model have exhausted quotas
+              type: quota_error
+              code: QUOTA_EXHAUSTED
+
+    UpstreamError:
+      description: Upstream provider error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              message: Upstream provider returned error
+              type: upstream_error
+              code: UPSTREAM_ERROR
+
+    ServiceUnavailable:
+      description: Service unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              message: No coding plans configured or all plans are unavailable
+              type: service_error
+              code: SERVICE_UNAVAILABLE

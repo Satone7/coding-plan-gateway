@@ -89,3 +89,10 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
 - AAA pattern (Arrange-Act-Assert)
 - Tests must be independent and isolated
 - Critical paths require 100% coverage
+
+## Active Technologies
+- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Vitest, Zod (validation), MSW (mocking) (001-coding-plan-gateway)
+- YAML/JSON files (current), PostgreSQL with Drizzle ORM (future migration path prepared) (001-coding-plan-gateway)
+
+## Recent Changes
+- 001-coding-plan-gateway: Added TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Vitest, Zod (validation), MSW (mocking)
