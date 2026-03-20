@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: coding-plan-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    volumes:
+      # Persist configuration
+      - ./config:/app/config:ro
+      # Persist quota state
+      - gateway-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - gateway-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Development service with hot reload
+  gateway-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: coding-plan-gateway-dev
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      - LOG_LEVEL=debug
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    volumes:
+      - ./src:/app/src:ro
+      - ./config:/app/config:ro
+      - gateway-data:/app/data
+    restart: unless-stopped
+    networks:
+      - gateway-network
+    profiles:
+      - dev
+
+volumes:
+  gateway-data:
+    driver: local
+
+networks:
+  gateway-network:
+    driver: bridge

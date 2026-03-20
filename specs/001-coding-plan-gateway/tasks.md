@@ -223,24 +223,24 @@
 
 ### Health Endpoints
 
-- [ ] T081 [P] Implement GET /health endpoint in src/routes/health/index.ts
-- [ ] T082 [P] Implement GET /ready endpoint (readiness check) in src/routes/health/index.ts
+- [x] T081 [P] Implement GET /health endpoint in src/routes/health/index.ts
+- [x] T082 [P] Implement GET /ready endpoint (readiness check) in src/routes/health/index.ts
 
 ### Documentation & Validation
 
-- [ ] T083 [P] Validate quickstart.md instructions work end-to-end
-- [ ] T084 Create README.md with quick start, configuration, and API reference
+- [x] T083 [P] Validate quickstart.md instructions work end-to-end
+- [x] T084 Create README.md with quick start, configuration, and API reference
 - [ ] T085 Add JSDoc comments to public APIs
 
 ### Docker & Deployment
 
-- [ ] T086 Create Dockerfile for containerized deployment
-- [ ] T087 Create docker-compose.yaml for local development
-- [ ] T088 Add npm scripts for start, reload, config validate
+- [x] T086 Create Dockerfile for containerized deployment
+- [x] T087 Create docker-compose.yaml for local development
+- [x] T088 Add npm scripts for start, reload, config validate
 
 ### Final Validation
 
-- [ ] T089 Run full test suite and verify 80%+ coverage
+- [x] T089 Run full test suite and verify 80%+ coverage
 - [ ] T090 Run linting and fix any issues
 - [ ] T091 Run quickstart.md validation with real provider
 
