@@ -1,0 +1,415 @@
+/**
+ * QuotaManager - Tracks and persists quota usage across coding plans.
+ * Implements quota-based load balancing with periodic persistence.
+ */
+
+import { readFile, writeFile, access } from 'fs/promises';
+import { constants } from 'fs';
+import { resolve, dirname } from 'path';
+import { mkdir } from 'fs/promises';
+import type { CodingPlan, QuotaState, QuotaPeriod } from '@/types';
+import { createInitialQuotaState, calculateResetAt } from '@/types';
+import { logger } from '@/utils/logger';
+import { DEFAULT_QUOTA_SYNC_CONFIG } from '@/config/defaults';
+
+/**
+ * QuotaManager configuration.
+ */
+export interface QuotaManagerConfig {
+  /** Path to quota state file */
+  quotaStatePath?: string;
+  /** Interval for periodic persistence in milliseconds */
+  syncIntervalMs?: number;
+}
+
+/**
+ * Persisted quota state file format.
+ */
+interface QuotaStateFile {
+  version: string;
+  lastSync: string;
+  states: Record<string, QuotaStateSerialized>;
+}
+
+/**
+ * Serialized quota state (dates as strings).
+ */
+interface QuotaStateSerialized {
+  planId: string;
+  used: number;
+  limit: number;
+  period: QuotaPeriod;
+  lastUpdated: string;
+  resetAt: string | null;
+}
+
+/**
+ * QuotaManager - Manages quota tracking and persistence.
+ *
+ * @example
+ * ```typescript
+ * const manager = createQuotaManager({ quotaStatePath: './quota-state.json' });
+ * await manager.initialize(plans);
+ *
+ * if (manager.hasRemainingQuota(planId)) {
+ *   await manager.consumeQuota(planId, 1);
+ * }
+ * ```
+ */
+export class QuotaManager {
+  private readonly quotaStatePath: string;
+  private readonly syncIntervalMs: number;
+  private readonly quotaStates: Map<string, QuotaState> = new Map();
+  private syncInterval: NodeJS.Timeout | null = null;
+  private initialized: boolean = false;
+
+  /**
+   * Create a new QuotaManager.
+   *
+   * @param config - Configuration options
+   */
+  constructor(config: QuotaManagerConfig = {}) {
+    this.quotaStatePath = resolve(config.quotaStatePath ?? './quota-state.json');
+    this.syncIntervalMs = config.syncIntervalMs ?? DEFAULT_QUOTA_SYNC_CONFIG.syncIntervalMs;
+  }
+
+  /**
+   * Initialize quota states from plans and load persisted state.
+   *
+   * @param plans - All available coding plans
+   */
+  async initialize(plans: CodingPlan[]): Promise<void> {
+    // Load persisted state
+    const persistedStates = await this.loadPersistedState();
+
+    // Initialize states for all plans
+    for (const plan of plans) {
+      if (persistedStates.has(plan.id)) {
+        // Use persisted state but update limit from plan config
+        const persisted = persistedStates.get(plan.id)!;
+        this.quotaStates.set(plan.id, {
+          ...persisted,
+          limit: plan.quota.limit, // Always use latest limit from config
+        });
+      } else {
+        // Create new initial state
+        const state = createInitialQuotaState(
+          plan.id,
+          plan.quota.limit,
+          plan.quota.period
+        );
+        this.quotaStates.set(plan.id, state);
+      }
+    }
+
+    // Check for quota resets (daily/monthly)
+    this.checkQuotaResets();
+
+    this.initialized = true;
+    logger.info('QuotaManager initialized', {
+      planCount: plans.length,
+      statePath: this.quotaStatePath,
+    });
+  }
+
+  /**
+   * Get quota state for a plan.
+   *
+   * @param planId - The plan identifier
+   * @returns Quota state or undefined
+   */
+  getQuotaState(planId: string): QuotaState | undefined {
+    return this.quotaStates.get(planId);
+  }
+
+  /**
+   * Get all quota states.
+   *
+   * @returns Map of plan ID to quota state
+   */
+  getAllQuotaStates(): Map<string, QuotaState> {
+    return new Map(this.quotaStates);
+  }
+
+  /**
+   * Check if a plan has remaining quota.
+   *
+   * @param planId - The plan identifier
+   * @returns true if quota remains
+   */
+  hasRemainingQuota(planId: string): boolean {
+    const state = this.quotaStates.get(planId);
+    if (!state) {
+      return false;
+    }
+    return state.used < state.limit;
+  }
+
+  /**
+   * Get remaining quota for a plan.
+   *
+   * @param planId - The plan identifier
+   * @returns Remaining quota (0 if no state)
+   */
+  getRemainingQuota(planId: string): number {
+    const state = this.quotaStates.get(planId);
+    if (!state) {
+      return 0;
+    }
+    return Math.max(0, state.limit - state.used);
+  }
+
+  /**
+   * Consume quota for a plan.
+   *
+   * @param planId - The plan identifier
+   * @param amount - Amount to consume
+   * @returns true if consumption succeeded, false if would exceed limit
+   */
+  async consumeQuota(planId: string, amount: number = 1): Promise<boolean> {
+    const state = this.quotaStates.get(planId);
+    if (!state) {
+      return false;
+    }
+
+    if (state.used + amount > state.limit) {
+      logger.warn('Quota consumption would exceed limit', {
+        planId,
+        current: state.used,
+        amount,
+        limit: state.limit,
+      });
+      return false;
+    }
+
+    state.used += amount;
+    state.lastUpdated = new Date();
+
+    logger.debug('Quota consumed', {
+      planId,
+      amount,
+      used: state.used,
+      limit: state.limit,
+      remaining: state.limit - state.used,
+    });
+
+    return true;
+  }
+
+  /**
+   * Refund quota for a plan (e.g., on request failure).
+   *
+   * @param planId - The plan identifier
+   * @param amount - Amount to refund
+   */
+  async refundQuota(planId: string, amount: number = 1): Promise<void> {
+    const state = this.quotaStates.get(planId);
+    if (!state) {
+      return;
+    }
+
+    state.used = Math.max(0, state.used - amount);
+    state.lastUpdated = new Date();
+
+    logger.debug('Quota refunded', {
+      planId,
+      amount,
+      used: state.used,
+    });
+  }
+
+  /**
+   * Reset quota for a plan.
+   *
+   * @param planId - The plan identifier
+   */
+  async resetQuota(planId: string): Promise<void> {
+    const state = this.quotaStates.get(planId);
+    if (!state) {
+      return;
+    }
+
+    state.used = 0;
+    state.lastUpdated = new Date();
+    state.resetAt = calculateResetAt(state.period);
+
+    logger.info('Quota reset', { planId });
+  }
+
+  /**
+   * Update quota limit for a plan (when config changes).
+   *
+   * @param planId - The plan identifier
+   * @param newLimit - New quota limit
+   */
+  updatePlanQuota(planId: string, newLimit: number): void {
+    const state = this.quotaStates.get(planId);
+    if (state) {
+      state.limit = newLimit;
+      state.lastUpdated = new Date();
+    }
+  }
+
+  /**
+   * Remove quota state for a deleted plan.
+   *
+   * @param planId - The plan identifier
+   */
+  removePlan(planId: string): void {
+    this.quotaStates.delete(planId);
+    logger.info('Quota state removed for plan', { planId });
+  }
+
+  /**
+   * Start periodic quota persistence.
+   */
+  startPeriodicSync(): void {
+    if (this.syncInterval) {
+      return;
+    }
+
+    this.syncInterval = setInterval(() => {
+      this.persist().catch((error) => {
+        logger.error('Periodic quota sync failed', error as Error);
+      });
+    }, this.syncIntervalMs);
+
+    logger.info('Periodic quota sync started', {
+      intervalMs: this.syncIntervalMs,
+    });
+  }
+
+  /**
+   * Stop periodic quota persistence.
+   */
+  stopPeriodicSync(): void {
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = null;
+      logger.info('Periodic quota sync stopped');
+    }
+  }
+
+  /**
+   * Persist quota state to file.
+   */
+  async persist(): Promise<void> {
+    const states: Record<string, QuotaStateSerialized> = {};
+
+    for (const [planId, state] of this.quotaStates) {
+      states[planId] = {
+        planId: state.planId,
+        used: state.used,
+        limit: state.limit,
+        period: state.period,
+        lastUpdated: state.lastUpdated.toISOString(),
+        resetAt: state.resetAt ? state.resetAt.toISOString() : null,
+      };
+    }
+
+    const data: QuotaStateFile = {
+      version: '1.0',
+      lastSync: new Date().toISOString(),
+      states,
+    };
+
+    // Ensure directory exists
+    const dir = dirname(this.quotaStatePath);
+    await mkdir(dir, { recursive: true });
+
+    // Write to temp file first, then rename for atomicity
+    const tempPath = `${this.quotaStatePath}.tmp`;
+    await writeFile(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+
+    // Rename for atomic write
+    const { rename } = await import('fs/promises');
+    await rename(tempPath, this.quotaStatePath);
+
+    logger.debug('Quota state persisted', {
+      path: this.quotaStatePath,
+      planCount: Object.keys(states).length,
+    });
+  }
+
+  /**
+   * Graceful shutdown - persist and stop sync.
+   */
+  async shutdown(): Promise<void> {
+    this.stopPeriodicSync();
+    await this.persist();
+    logger.info('QuotaManager shutdown complete');
+  }
+
+  /**
+   * Load persisted state from file.
+   */
+  private async loadPersistedState(): Promise<Map<string, QuotaState>> {
+    const states = new Map<string, QuotaState>();
+
+    try {
+      await access(this.quotaStatePath, constants.R_OK);
+    } catch {
+      // File doesn't exist, return empty map
+      return states;
+    }
+
+    try {
+      const content = await readFile(this.quotaStatePath, 'utf-8');
+      const data = JSON.parse(content) as QuotaStateFile;
+
+      for (const [planId, serialized] of Object.entries(data.states)) {
+        states.set(planId, {
+          planId: serialized.planId,
+          used: serialized.used,
+          limit: serialized.limit,
+          period: serialized.period,
+          lastUpdated: new Date(serialized.lastUpdated),
+          resetAt: serialized.resetAt ? new Date(serialized.resetAt) : null,
+        });
+      }
+
+      logger.debug('Loaded persisted quota states', {
+        planCount: states.size,
+        lastSync: data.lastSync,
+      });
+    } catch (error) {
+      logger.warn('Failed to load persisted quota state, starting fresh', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return states;
+  }
+
+  /**
+   * Check and reset quotas that have passed their reset time.
+   */
+  private checkQuotaResets(): void {
+    const now = new Date();
+
+    for (const [planId, state] of this.quotaStates) {
+      if (state.resetAt && now >= state.resetAt) {
+        // Reset quota
+        state.used = 0;
+        state.lastUpdated = now;
+        state.resetAt = calculateResetAt(state.period);
+
+        logger.info('Quota auto-reset', {
+          planId,
+          period: state.period,
+          newResetAt: state.resetAt,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Create a new QuotaManager instance.
+ *
+ * @param config - Configuration options
+ * @returns A new QuotaManager instance
+ */
+export function createQuotaManager(config?: QuotaManagerConfig): QuotaManager {
+  return new QuotaManager(config);
+}

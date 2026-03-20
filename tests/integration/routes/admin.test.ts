@@ -9,6 +9,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { createApp } from '@/app';
 import { FilePlanRepository } from '@/services/plan-repository';
+import { QuotaManager, createQuotaManager } from '@/services/quota-manager';
 import { createMockPlanInput } from '../../fixtures/mock-plans';
 
 // Test encryption key
@@ -20,25 +21,32 @@ describe('Admin Routes', () => {
   let tempDir: string;
   let configPath: string;
   let repository: FilePlanRepository;
+  let quotaManager: QuotaManager;
+  let quotaPath: string;
 
   beforeEach(async () => {
     // Create temp directory
     tempDir = join(tmpdir(), `admin-routes-test-${Date.now()}`);
     await mkdir(tempDir, { recursive: true });
     configPath = join(tempDir, 'plans.yaml');
+    quotaPath = join(tempDir, 'quota-state.json');
 
     // Create repository
     repository = new FilePlanRepository(configPath, TEST_ENCRYPTION_KEY);
+
+    // Create quota manager
+    quotaManager = createQuotaManager({ quotaStatePath: quotaPath });
 
     // Create app with admin routes
     app = await createApp();
 
     // Register admin routes manually (they're not registered by default)
     const { registerAdminRoutes } = await import('@/routes/admin');
-    await registerAdminRoutes(app, { repository });
+    await registerAdminRoutes(app, { repository, quotaManager });
   });
 
   afterEach(async () => {
+    quotaManager.stopPeriodicSync();
     await app.close();
     await rm(tempDir, { recursive: true, force: true });
   });
@@ -395,6 +403,109 @@ describe('Admin Routes', () => {
       // Should NOT include sensitive fields
       expect(body.data).not.toHaveProperty('apiKey');
       expect(body.data).not.toHaveProperty('apiKeyEncrypted');
+    });
+  });
+
+  describe('GET /api/quota/:planId', () => {
+    it('should return quota status for a plan', async () => {
+      const plan = await repository.save(createMockPlanInput());
+      await quotaManager.initialize([plan]);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/quota/${plan.id}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        data: {
+          planId: plan.id,
+          used: 0,
+          limit: plan.quota.limit,
+          remaining: plan.quota.limit,
+          period: plan.quota.period,
+        },
+        meta: {
+          requestId: expect.any(String),
+          timestamp: expect.any(String),
+        },
+      });
+    });
+
+    it('should return 404 for non-existent plan', async () => {
+      await quotaManager.initialize([]);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/quota/00000000-0000-0000-0000-000000000000',
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+
+    it('should return 400 for invalid plan ID', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/quota/not-a-uuid',
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('should reflect consumed quota', async () => {
+      const plan = await repository.save(createMockPlanInput());
+      await quotaManager.initialize([plan]);
+
+      // Consume some quota
+      await quotaManager.consumeQuota(plan.id, 10);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/quota/${plan.id}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().data.used).toBe(10);
+      expect(response.json().data.remaining).toBe(plan.quota.limit - 10);
+    });
+  });
+
+  describe('POST /api/quota/:planId/reset', () => {
+    it('should reset quota for a plan', async () => {
+      const plan = await repository.save(createMockPlanInput());
+      await quotaManager.initialize([plan]);
+
+      // Consume some quota
+      await quotaManager.consumeQuota(plan.id, 50);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/quota/${plan.id}/reset`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().data.used).toBe(0);
+      expect(response.json().data.remaining).toBe(plan.quota.limit);
+    });
+
+    it('should return 404 for non-existent plan', async () => {
+      await quotaManager.initialize([]);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/quota/00000000-0000-0000-0000-000000000000/reset',
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+
+    it('should return 400 for invalid plan ID', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/quota/not-a-uuid/reset',
+      });
+
+      expect(response.statusCode).toBe(400);
     });
   });
 });

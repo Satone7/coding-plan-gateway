@@ -1,10 +1,11 @@
 /**
- * Admin route handlers for plan CRUD operations.
+ * Admin route handlers for plan CRUD and quota operations.
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { IPlanRepository } from '@/services/plan-repository';
+import type { QuotaManager } from '@/services/quota-manager';
 import { logger } from '@/utils/logger';
 import { createGatewayError } from '@/types';
 
@@ -72,6 +73,19 @@ interface PlanResponse {
 }
 
 /**
+ * Quota status response.
+ */
+interface QuotaStatusResponse {
+  planId: string;
+  used: number;
+  limit: number;
+  remaining: number;
+  period: string;
+  resetAt: string | null;
+  lastUpdated: string;
+}
+
+/**
  * Meta response structure.
  */
 interface MetaResponse {
@@ -92,6 +106,14 @@ interface PlanSuccessResponse {
  */
 interface PlansSuccessResponse {
   data: PlanResponse[];
+  meta: MetaResponse;
+}
+
+/**
+ * Quota status success response.
+ */
+interface QuotaSuccessResponse {
+  data: QuotaStatusResponse;
   meta: MetaResponse;
 }
 
@@ -125,7 +147,10 @@ function toPlanResponse(plan: {
 /**
  * Create admin handlers with repository dependency injection.
  */
-export function createAdminHandlers(repository: IPlanRepository) {
+export function createAdminHandlers(
+  repository: IPlanRepository,
+  quotaManager?: QuotaManager
+) {
   return {
     /**
      * GET /api/plans - List all plans.
@@ -261,6 +286,11 @@ export function createAdminHandlers(repository: IPlanRepository) {
       // Update the plan
       const plan = await repository.update(planId, input);
 
+      // Update quota manager if quota changed
+      if (input.quota?.limit && quotaManager) {
+        quotaManager.updatePlanQuota(planId, input.quota.limit);
+      }
+
       logger.info('Plan updated via API', {
         requestId: request.id,
         planId: plan.id,
@@ -301,6 +331,11 @@ export function createAdminHandlers(repository: IPlanRepository) {
         throw createGatewayError('PLAN_NOT_FOUND', `Plan not found: ${planId}`);
       }
 
+      // Remove from quota manager
+      if (quotaManager) {
+        quotaManager.removePlan(planId);
+      }
+
       logger.info('Plan deleted via API', {
         requestId: request.id,
         planId,
@@ -308,10 +343,130 @@ export function createAdminHandlers(repository: IPlanRepository) {
 
       reply.status(204).send();
     },
+
+    /**
+     * GET /api/quota/:planId - Get quota status for a plan.
+     */
+    async getQuotaStatus(
+      request: FastifyRequest<{ Params: PlanParams }>,
+      reply: FastifyReply
+    ): Promise<QuotaSuccessResponse> {
+      const { planId } = request.params;
+
+      // Validate planId
+      const validationResult = uuidSchema.safeParse(planId);
+      if (!validationResult.success) {
+        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
+          field: 'planId',
+        });
+      }
+
+      if (!quotaManager) {
+        throw createGatewayError(
+          'INTERNAL_ERROR',
+          'Quota management is not enabled'
+        );
+      }
+
+      const plan = await repository.findById(planId);
+      if (!plan) {
+        throw createGatewayError('PLAN_NOT_FOUND', `Plan not found: ${planId}`);
+      }
+
+      const state = quotaManager.getQuotaState(planId);
+      if (!state) {
+        throw createGatewayError(
+          'INTERNAL_ERROR',
+          'Quota state not found for plan'
+        );
+      }
+
+      const response: QuotaSuccessResponse = {
+        data: {
+          planId: state.planId,
+          used: state.used,
+          limit: state.limit,
+          remaining: state.limit - state.used,
+          period: state.period,
+          resetAt: state.resetAt ? state.resetAt.toISOString() : null,
+          lastUpdated: state.lastUpdated.toISOString(),
+        },
+        meta: {
+          requestId: request.id,
+          timestamp: new Date().toISOString(),
+        },
+      };
+
+      return response;
+    },
+
+    /**
+     * POST /api/quota/:planId/reset - Reset quota for a plan.
+     */
+    async resetQuota(
+      request: FastifyRequest<{ Params: PlanParams }>,
+      reply: FastifyReply
+    ): Promise<QuotaSuccessResponse> {
+      const { planId } = request.params;
+
+      // Validate planId
+      const validationResult = uuidSchema.safeParse(planId);
+      if (!validationResult.success) {
+        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
+          field: 'planId',
+        });
+      }
+
+      if (!quotaManager) {
+        throw createGatewayError(
+          'INTERNAL_ERROR',
+          'Quota management is not enabled'
+        );
+      }
+
+      const plan = await repository.findById(planId);
+      if (!plan) {
+        throw createGatewayError('PLAN_NOT_FOUND', `Plan not found: ${planId}`);
+      }
+
+      await quotaManager.resetQuota(planId);
+
+      logger.info('Quota reset via API', {
+        requestId: request.id,
+        planId,
+      });
+
+      const state = quotaManager.getQuotaState(planId)!;
+
+      const response: QuotaSuccessResponse = {
+        data: {
+          planId: state.planId,
+          used: state.used,
+          limit: state.limit,
+          remaining: state.limit - state.used,
+          period: state.period,
+          resetAt: state.resetAt ? state.resetAt.toISOString() : null,
+          lastUpdated: state.lastUpdated.toISOString(),
+        },
+        meta: {
+          requestId: request.id,
+          timestamp: new Date().toISOString(),
+        },
+      };
+
+      return response;
+    },
   };
 }
 
 /**
  * Type exports for request/response.
  */
-export type { PlanParams, PlanResponse, PlanSuccessResponse, PlansSuccessResponse };
+export type {
+  PlanParams,
+  PlanResponse,
+  PlanSuccessResponse,
+  PlansSuccessResponse,
+  QuotaStatusResponse,
+  QuotaSuccessResponse,
+};

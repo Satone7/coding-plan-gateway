@@ -1,11 +1,12 @@
 /**
  * Admin routes registration.
- * Provides CRUD endpoints for coding plan configuration.
+ * Provides CRUD endpoints for coding plan configuration and quota management.
  */
 
 import { FastifyInstance } from 'fastify';
 import { createAdminHandlers } from './handlers';
 import { IPlanRepository } from '@/services/plan-repository';
+import type { QuotaManager } from '@/services/quota-manager';
 
 /**
  * Options for admin routes.
@@ -13,6 +14,8 @@ import { IPlanRepository } from '@/services/plan-repository';
 export interface AdminRoutesOptions {
   /** Plan repository instance */
   repository: IPlanRepository;
+  /** Quota manager instance (optional) */
+  quotaManager?: QuotaManager;
   /** API prefix (default: '/api') */
   prefix?: string;
 }
@@ -21,17 +24,18 @@ export interface AdminRoutesOptions {
  * Register admin routes with Fastify.
  *
  * @param app - Fastify instance
- * @param options - Route options including repository
+ * @param options - Route options including repository and optional quota manager
  */
 export async function registerAdminRoutes(
   app: FastifyInstance,
   options: AdminRoutesOptions
 ): Promise<void> {
-  const { repository, prefix = '/api' } = options;
-  const handlers = createAdminHandlers(repository);
+  const { repository, quotaManager, prefix = '/api' } = options;
+  const handlers = createAdminHandlers(repository, quotaManager);
 
   await app.register(
     async (fastify) => {
+      // Plan CRUD endpoints
       // GET /api/plans - List all plans
       fastify.get('/plans', handlers.listPlans);
 
@@ -46,6 +50,15 @@ export async function registerAdminRoutes(
 
       // DELETE /api/plans/:planId - Delete a plan
       fastify.delete('/plans/:planId', handlers.deletePlan);
+
+      // Quota management endpoints (only if quotaManager is provided)
+      if (quotaManager) {
+        // GET /api/quota/:planId - Get quota status for a plan
+        fastify.get('/quota/:planId', handlers.getQuotaStatus);
+
+        // POST /api/quota/:planId/reset - Reset quota for a plan
+        fastify.post('/quota/:planId/reset', handlers.resetQuota);
+      }
     },
     { prefix }
   );

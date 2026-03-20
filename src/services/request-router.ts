@@ -1,12 +1,13 @@
 /**
  * RequestRouter - Routes requests to appropriate coding plans.
- * Integrates PlanSelector, CircuitBreaker, and failover logic.
+ * Integrates PlanSelector, CircuitBreaker, QuotaManager, and failover logic.
  */
 
 import { randomUUID } from 'crypto';
 import type { IPlanRepository } from '@/services/plan-repository';
 import { PlanSelector, createPlanSelector } from '@/services/plan-selector';
 import { CircuitBreaker, createCircuitBreaker } from '@/services/circuit-breaker';
+import type { QuotaManager } from '@/services/quota-manager';
 import type { CodingPlan, QuotaState, GatewayError } from '@/types';
 import { createGatewayError } from '@/types';
 import { logger } from '@/utils/logger';
@@ -38,7 +39,7 @@ export interface PlanWithCredentials {
  *
  * @example
  * ```typescript
- * const router = createRequestRouter(repository);
+ * const router = createRequestRouter(repository, quotaManager);
  *
  * const result = await router.route('claude-sonnet-4-6');
  * if (result.selectedPlan) {
@@ -51,18 +52,19 @@ export class RequestRouter {
   private readonly repository: IPlanRepository;
   private readonly planSelector: PlanSelector;
   private readonly circuitBreaker: CircuitBreaker;
-  private readonly quotaStates: Map<string, QuotaState>;
+  private readonly quotaManager: QuotaManager | null;
 
   /**
    * Create a new RequestRouter.
    *
    * @param repository - Plan repository for fetching plans
+   * @param quotaManager - Optional quota manager for quota-aware routing
    */
-  constructor(repository: IPlanRepository) {
+  constructor(repository: IPlanRepository, quotaManager?: QuotaManager) {
     this.repository = repository;
     this.planSelector = createPlanSelector();
     this.circuitBreaker = createCircuitBreaker();
-    this.quotaStates = new Map();
+    this.quotaManager = quotaManager ?? null;
   }
 
   /**
@@ -112,11 +114,13 @@ export class RequestRouter {
       };
     }
 
-    // Select the best plan based on quota
-    const selectedPlan = this.planSelector.selectBestPlan(availablePlans, this.quotaStates);
+    // Filter out exhausted plans if quota manager is available
+    const plansWithQuota = this.quotaManager
+      ? availablePlans.filter((plan) => this.quotaManager!.hasRemainingQuota(plan.id))
+      : availablePlans;
 
-    if (!selectedPlan) {
-      logger.warn('No suitable plan found after quota filtering', {
+    if (plansWithQuota.length === 0) {
+      logger.warn('All plans exhausted for model', {
         requestId,
         model,
         availablePlans: availablePlans.length,
@@ -129,8 +133,26 @@ export class RequestRouter {
       };
     }
 
+    // Select the best plan based on quota
+    const quotaStates = this.quotaManager?.getAllQuotaStates() ?? new Map();
+    const selectedPlan = this.planSelector.selectBestPlan(plansWithQuota, quotaStates);
+
+    if (!selectedPlan) {
+      logger.warn('No suitable plan found after quota filtering', {
+        requestId,
+        model,
+        availablePlans: plansWithQuota.length,
+      });
+
+      return {
+        selectedPlan: undefined,
+        alternativePlans: [],
+        requestId,
+      };
+    }
+
     // Get alternative plans for failover (exclude selected)
-    const alternativePlans = availablePlans.filter(
+    const alternativePlans = plansWithQuota.filter(
       (plan) => plan.id !== selectedPlan.id
     );
 
@@ -178,6 +200,18 @@ export class RequestRouter {
       );
     }
 
+    // Consume quota if quota manager is available
+    if (this.quotaManager) {
+      const consumed = await this.quotaManager.consumeQuota(result.selectedPlan.id);
+      if (!consumed) {
+        throw createGatewayError(
+          'QUOTA_EXHAUSTED',
+          `Quota exhausted for plan '${result.selectedPlan.name}'`,
+          { planId: result.selectedPlan.id, requestId: result.requestId }
+        );
+      }
+    }
+
     return {
       plan: result.selectedPlan,
       apiKey,
@@ -208,6 +242,18 @@ export class RequestRouter {
   }
 
   /**
+   * Refund quota for a failed request.
+   *
+   * @param planId - The plan identifier
+   * @param amount - Amount to refund
+   */
+  async refundQuota(planId: string, amount: number = 1): Promise<void> {
+    if (this.quotaManager) {
+      await this.quotaManager.refundQuota(planId, amount);
+    }
+  }
+
+  /**
    * Get all available plans for a model.
    *
    * @param model - The model identifier
@@ -217,7 +263,14 @@ export class RequestRouter {
     const allPlans = await this.repository.findByModel(model);
     const activePlans = this.planSelector.filterActivePlans(allPlans);
 
-    return activePlans.filter((plan) => this.circuitBreaker.canExecute(plan.id));
+    const available = activePlans.filter((plan) => this.circuitBreaker.canExecute(plan.id));
+
+    // Filter by quota if quota manager is available
+    if (this.quotaManager) {
+      return available.filter((plan) => this.quotaManager!.hasRemainingQuota(plan.id));
+    }
+
+    return available;
   }
 
   /**
@@ -237,9 +290,10 @@ export class RequestRouter {
    *
    * @param planId - The plan identifier
    * @param state - New quota state
+   * @deprecated Use QuotaManager directly
    */
   updateQuotaState(planId: string, state: QuotaState): void {
-    this.quotaStates.set(planId, state);
+    logger.warn('updateQuotaState is deprecated, use QuotaManager directly');
   }
 
   /**
@@ -249,7 +303,10 @@ export class RequestRouter {
    * @returns Quota state or undefined
    */
   getQuotaState(planId: string): QuotaState | undefined {
-    return this.quotaStates.get(planId);
+    if (this.quotaManager) {
+      return this.quotaManager.getQuotaState(planId);
+    }
+    return undefined;
   }
 
   /**
@@ -271,11 +328,19 @@ export class RequestRouter {
   }
 
   /**
-   * Reset all circuits and quota states.
+   * Get the quota manager instance.
+   *
+   * @returns The quota manager or null
+   */
+  getQuotaManager(): QuotaManager | null {
+    return this.quotaManager;
+  }
+
+  /**
+   * Reset all circuits.
    */
   reset(): void {
     this.circuitBreaker.resetAll();
-    this.quotaStates.clear();
     logger.info('RequestRouter reset');
   }
 }
@@ -284,8 +349,12 @@ export class RequestRouter {
  * Create a new RequestRouter instance.
  *
  * @param repository - Plan repository
+ * @param quotaManager - Optional quota manager
  * @returns A new RequestRouter instance
  */
-export function createRequestRouter(repository: IPlanRepository): RequestRouter {
-  return new RequestRouter(repository);
+export function createRequestRouter(
+  repository: IPlanRepository,
+  quotaManager?: QuotaManager
+): RequestRouter {
+  return new RequestRouter(repository, quotaManager);
 }

@@ -178,21 +178,21 @@
 
 ### Tests for User Story 3
 
-- [ ] T065 [P] [US3] Create unit tests for QuotaManager in tests/unit/services/quota-manager.test.ts
-- [ ] T066 [P] [US3] Create integration tests for quota endpoints in tests/integration/routes/admin.test.ts
+- [x] T065 [P] [US3] Create unit tests for QuotaManager in tests/unit/services/quota-manager.test.ts
+- [x] T066 [P] [US3] Create integration tests for quota endpoints in tests/integration/routes/admin.test.ts
 
 ### Implementation for User Story 3
 
-- [ ] T067 [US3] Implement QuotaManager service in src/services/quota-manager.ts
-- [ ] T068 [US3] Implement quota tracking on request completion in QuotaManager
-- [ ] T069 [US3] Implement quota persistence to JSON file in QuotaManager
-- [ ] T070 [US3] Implement quota-based plan selection (highest remaining first) in src/services/plan-selector.ts
-- [ ] T071 [US3] Add QuotaManager integration to RequestRouter
-- [ ] T072 [US3] Implement GET /api/quota/:planId endpoint (get quota status)
-- [ ] T073 [US3] Implement POST /api/quota/:planId/reset endpoint (reset quota)
-- [ ] T074 [US3] Handle quota exhaustion error (429 QUOTA_EXHAUSTED)
-- [ ] T075 [US3] Implement periodic quota persistence (every 60 seconds)
-- [ ] T076 [US3] Implement graceful shutdown with quota save
+- [x] T067 [US3] Implement QuotaManager service in src/services/quota-manager.ts
+- [x] T068 [US3] Implement quota tracking on request completion in QuotaManager
+- [x] T069 [US3] Implement quota persistence to JSON file in QuotaManager
+- [x] T070 [US3] Implement quota-based plan selection (highest remaining first) in src/services/plan-selector.ts
+- [x] T071 [US3] Add QuotaManager integration to RequestRouter
+- [x] T072 [US3] Implement GET /api/quota/:planId endpoint (get quota status)
+- [x] T073 [US3] Implement POST /api/quota/:planId/reset endpoint (reset quota)
+- [x] T074 [US3] Handle quota exhaustion error (429 QUOTA_EXHAUSTED)
+- [x] T075 [US3] Implement periodic quota persistence (every 60 seconds)
+- [x] T076 [US3] Implement graceful shutdown with quota save
 
 **Checkpoint**: User Story 3 complete - quota tracked, plans prioritized by remaining quota
 
