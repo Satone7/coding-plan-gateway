@@ -24,12 +24,12 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project structure with directories per design.md in src/, tests/
-- [ ] T002 Initialize Node.js project with TypeScript, Fastify, Vitest, Zod dependencies in package.json
-- [ ] T003 [P] Configure TypeScript with strict mode in tsconfig.json
-- [ ] T004 [P] Configure Vitest for testing in vitest.config.ts
-- [ ] T005 [P] Configure path aliases in tsconfig.json (e.g., @/ → src/)
-- [ ] T006 [P] Create .env.example with required environment variables
+- [x] T001 Create project structure with directories per design.md in src/, tests/
+- [x] T002 Initialize Node.js project with TypeScript, Fastify, Vitest, Zod dependencies in package.json
+- [x] T003 [P] Configure TypeScript with strict mode in tsconfig.json
+- [x] T004 [P] Configure Vitest for testing in vitest.config.ts
+- [x] T005 [P] Configure path aliases in tsconfig.json (e.g., @/ → src/)
+- [x] T006 [P] Create .env.example with required environment variables
 
 ---
 
