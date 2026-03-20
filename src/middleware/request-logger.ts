@@ -1,10 +1,32 @@
 /**
  * Request logging middleware.
- * Logs all incoming requests and their responses.
+ * Logs all incoming requests and their responses with detailed metrics.
  */
 
 import { FastifyRequest, FastifyReply, HookHandlerDoneFunction } from 'fastify';
 import { logger, createRequestLogger } from '@/utils/logger';
+
+/**
+ * Token usage information extracted from responses.
+ */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+/**
+ * Provider metrics for request tracking.
+ */
+export interface ProviderMetrics {
+  planId: string;
+  planName: string;
+  model: string;
+  durationMs: number;
+  statusCode: number;
+  tokenUsage?: TokenUsage;
+  providerResponseTimeMs?: number;
+}
 
 /**
  * Request context attached to request object.
@@ -13,6 +35,7 @@ declare module 'fastify' {
   interface FastifyRequest {
     startTime?: number;
     requestLogger?: ReturnType<typeof createRequestLogger>;
+    providerMetrics?: ProviderMetrics;
   }
 }
 
@@ -42,7 +65,7 @@ export async function requestLoggerMiddleware(
 
 /**
  * Response logging hook.
- * Logs response completion with timing and status.
+ * Logs response completion with timing, status, and usage metrics.
  */
 export async function responseLoggerMiddleware(
   request: FastifyRequest,
@@ -51,14 +74,41 @@ export async function responseLoggerMiddleware(
   const requestId = request.id;
   const duration = request.startTime ? Date.now() - request.startTime : 0;
 
-  logger.info('Request completed', {
+  const logData: Record<string, unknown> = {
     requestId,
     method: request.method,
     url: request.url,
     statusCode: reply.statusCode,
     durationMs: duration,
     contentLength: reply.getHeader('content-length'),
-  });
+  };
+
+  // Include provider metrics if available
+  if (request.providerMetrics) {
+    logData.provider = {
+      planId: request.providerMetrics.planId,
+      planName: request.providerMetrics.planName,
+      model: request.providerMetrics.model,
+      durationMs: request.providerMetrics.durationMs,
+      statusCode: request.providerMetrics.statusCode,
+    };
+
+    // Include token usage if available
+    if (request.providerMetrics.tokenUsage) {
+      logData.tokens = {
+        input: request.providerMetrics.tokenUsage.inputTokens,
+        output: request.providerMetrics.tokenUsage.outputTokens,
+        total: request.providerMetrics.tokenUsage.totalTokens,
+      };
+    }
+
+    // Include provider response time if available
+    if (request.providerMetrics.providerResponseTimeMs) {
+      logData.providerResponseTimeMs = request.providerMetrics.providerResponseTimeMs;
+    }
+  }
+
+  logger.info('Request completed', logData);
 }
 
 /**
@@ -74,15 +124,77 @@ export function errorLoggerMiddleware(
   const requestId = request.id;
   const duration = request.startTime ? Date.now() - request.startTime : 0;
 
-  logger.error('Request failed', error, {
+  const logData: Record<string, unknown> = {
     requestId,
     method: request.method,
     url: request.url,
     statusCode: reply.statusCode,
     durationMs: duration,
-  });
+  };
+
+  // Include provider metrics if available
+  if (request.providerMetrics) {
+    logData.provider = {
+      planId: request.providerMetrics.planId,
+      planName: request.providerMetrics.planName,
+      model: request.providerMetrics.model,
+    };
+  }
+
+  logger.error('Request failed', error, logData);
 
   done();
+}
+
+/**
+ * Attach provider metrics to the request for logging.
+ * Call this from handlers after a request is processed.
+ *
+ * @param request - The Fastify request object
+ * @param metrics - Provider metrics to attach
+ */
+export function attachProviderMetrics(
+  request: FastifyRequest,
+  metrics: ProviderMetrics
+): void {
+  request.providerMetrics = metrics;
+}
+
+/**
+ * Extract token usage from OpenAI response.
+ */
+export function extractOpenAITokenUsage(
+  response: { usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } }
+): TokenUsage | undefined {
+  if (!response.usage) {
+    return undefined;
+  }
+
+  return {
+    inputTokens: response.usage.prompt_tokens ?? 0,
+    outputTokens: response.usage.completion_tokens ?? 0,
+    totalTokens: response.usage.total_tokens ?? 0,
+  };
+}
+
+/**
+ * Extract token usage from Anthropic response.
+ */
+export function extractAnthropicTokenUsage(
+  response: { usage?: { input_tokens?: number; output_tokens?: number } }
+): TokenUsage | undefined {
+  if (!response.usage) {
+    return undefined;
+  }
+
+  const inputTokens = response.usage.input_tokens ?? 0;
+  const outputTokens = response.usage.output_tokens ?? 0;
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens: inputTokens + outputTokens,
+  };
 }
 
 /**

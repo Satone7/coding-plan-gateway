@@ -70,6 +70,11 @@ interface PlanResponse {
   status: string;
   createdAt: string;
   updatedAt: string;
+  usage?: {
+    used: number;
+    remaining: number;
+    lastUpdated: string;
+  };
 }
 
 /**
@@ -120,17 +125,23 @@ interface QuotaSuccessResponse {
 /**
  * Transform a CodingPlan to a response object (without sensitive data).
  */
-function toPlanResponse(plan: {
-  id: string;
-  name: string;
-  baseUrl: string;
-  models: string[];
-  quota: { limit: number; period: string };
-  timeout: number;
-  status: string;
-  createdAt: Date;
-  updatedAt: Date;
-}): PlanResponse {
+function toPlanResponse(
+  plan: {
+    id: string;
+    name: string;
+    baseUrl: string;
+    models: string[];
+    quota: { limit: number; period: string };
+    timeout: number;
+    status: string;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  quotaState?: {
+    used: number;
+    lastUpdated: Date;
+  }
+): PlanResponse {
   return {
     id: plan.id,
     name: plan.name,
@@ -141,6 +152,13 @@ function toPlanResponse(plan: {
     status: plan.status,
     createdAt: plan.createdAt.toISOString(),
     updatedAt: plan.updatedAt.toISOString(),
+    usage: quotaState
+      ? {
+          used: quotaState.used,
+          remaining: plan.quota.limit - quotaState.used,
+          lastUpdated: quotaState.lastUpdated.toISOString(),
+        }
+      : undefined,
   };
 }
 
@@ -153,7 +171,7 @@ export function createAdminHandlers(
 ) {
   return {
     /**
-     * GET /api/plans - List all plans.
+ * GET /api/plans - List all plans.
      */
     async listPlans(
       request: FastifyRequest,
@@ -162,7 +180,15 @@ export function createAdminHandlers(
       const plans = await repository.findAll();
 
       const response: PlansSuccessResponse = {
-        data: plans.map(toPlanResponse),
+        data: plans.map((plan) => {
+          const quotaState = quotaManager?.getQuotaState(plan.id);
+          return toPlanResponse(
+            plan,
+            quotaState
+              ? { used: quotaState.used, lastUpdated: quotaState.lastUpdated }
+              : undefined
+          );
+        }),
         meta: {
           requestId: request.id,
           timestamp: new Date().toISOString(),
@@ -195,8 +221,14 @@ export function createAdminHandlers(
         throw createGatewayError('PLAN_NOT_FOUND', `Plan not found: ${planId}`);
       }
 
+      const quotaState = quotaManager?.getQuotaState(planId);
       const response: PlanSuccessResponse = {
-        data: toPlanResponse(plan),
+        data: toPlanResponse(
+          plan,
+          quotaState
+            ? { used: quotaState.used, lastUpdated: quotaState.lastUpdated }
+            : undefined
+        ),
         meta: {
           requestId: request.id,
           timestamp: new Date().toISOString(),

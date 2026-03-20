@@ -208,10 +208,10 @@
 
 ### Implementation for User Story 5
 
-- [ ] T077 [P] [US5] Enhance request logging with token usage in src/middleware/request-logger.ts
-- [ ] T078 [US5] Add per-request timing metrics to logs
-- [ ] T079 [US5] Add provider response time tracking in RequestProxy
-- [ ] T080 [US5] Enhance GET /api/plans to include quota usage statistics
+- [x] T077 [P] [US5] Enhance request logging with token usage in src/middleware/request-logger.ts
+- [x] T078 [US5] Add per-request timing metrics to logs
+- [x] T079 [US5] Add provider response time tracking in RequestProxy
+- [x] T080 [US5] Enhance GET /api/plans to include quota usage statistics
 
 **Checkpoint**: User Story 5 complete - usage statistics available for monitoring
 

@@ -11,6 +11,10 @@ import { RequestRouter, createRequestRouter } from '@/services/request-router';
 import { RequestProxy } from '@/services/request-proxy';
 import { logger } from '@/utils/logger';
 import { createGatewayError } from '@/types';
+import {
+  attachProviderMetrics,
+  extractOpenAITokenUsage,
+} from '@/middleware/request-logger';
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
@@ -138,6 +142,17 @@ export function createOpenAIHandlers(
 
         router.markPlanSuccess(selectedPlan.id);
 
+        // Attach provider metrics for logging
+        attachProviderMetrics(request, {
+          planId: selectedPlan.id,
+          planName: selectedPlan.name,
+          model: model,
+          durationMs: response.durationMs,
+          statusCode: response.statusCode,
+          tokenUsage: extractOpenAITokenUsage(response.data),
+          providerResponseTimeMs: response.durationMs,
+        });
+
         logger.info('Chat completion response', {
           requestId,
           statusCode: response.statusCode,
@@ -178,6 +193,17 @@ export function createOpenAIHandlers(
             });
 
             router.markPlanSuccess(altPlan.id);
+
+            // Attach provider metrics for logging
+            attachProviderMetrics(request, {
+              planId: altPlan.id,
+              planName: altPlan.name,
+              model: model,
+              durationMs: response.durationMs,
+              statusCode: response.statusCode,
+              tokenUsage: extractOpenAITokenUsage(response.data),
+              providerResponseTimeMs: response.durationMs,
+            });
 
             logger.info('Failover successful', {
               requestId,

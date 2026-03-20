@@ -10,6 +10,10 @@ import { RequestRouter, createRequestRouter } from '@/services/request-router';
 import { RequestProxy } from '@/services/request-proxy';
 import { logger } from '@/utils/logger';
 import { createGatewayError } from '@/types';
+import {
+  attachProviderMetrics,
+  extractAnthropicTokenUsage,
+} from '@/middleware/request-logger';
 import type {
   AnthropicMessageRequest,
   AnthropicMessageResponse,
@@ -133,6 +137,17 @@ export function createAnthropicHandlers(
 
         router.markPlanSuccess(selectedPlan.id);
 
+        // Attach provider metrics for logging
+        attachProviderMetrics(request, {
+          planId: selectedPlan.id,
+          planName: selectedPlan.name,
+          model: model,
+          durationMs: response.durationMs,
+          statusCode: response.statusCode,
+          tokenUsage: extractAnthropicTokenUsage(response.data),
+          providerResponseTimeMs: response.durationMs,
+        });
+
         logger.info('Anthropic message response', {
           requestId,
           statusCode: response.statusCode,
@@ -173,6 +188,17 @@ export function createAnthropicHandlers(
             });
 
             router.markPlanSuccess(altPlan.id);
+
+            // Attach provider metrics for logging
+            attachProviderMetrics(request, {
+              planId: altPlan.id,
+              planName: altPlan.name,
+              model: model,
+              durationMs: response.durationMs,
+              statusCode: response.statusCode,
+              tokenUsage: extractAnthropicTokenUsage(response.data),
+              providerResponseTimeMs: response.durationMs,
+            });
 
             logger.info('Failover successful', {
               requestId,
