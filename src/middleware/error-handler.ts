@@ -1,9 +1,11 @@
 /**
  * Global error handler middleware.
  * Catches all errors and returns consistent error responses.
+ *
+ * @module middleware/error-handler
  */
 
-import { FastifyError, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyError, FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 import { GatewayError, GatewayErrorCode } from '@/types';
 import { logger } from '@/utils/logger';
@@ -174,10 +176,21 @@ function getStatusCodeForErrorCode(code: GatewayErrorCode): number {
 
 /**
  * Register the error handler with a Fastify instance.
+ *
+ * Sets up the global error handler that catches all errors during request
+ * processing and returns consistent error responses. This should be called
+ * during application initialization.
+ *
+ * @param app - The Fastify instance to register the error handler with
+ *
+ * @example
+ * ```typescript
+ * const app = Fastify();
+ * registerErrorHandler(app);
+ * ```
  */
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler(errorHandler);
 }
 
-// Import FastifyInstance for type annotation
-import { FastifyInstance } from 'fastify';
+// Import FastifyInstance for type annotation - moved to top of file

@@ -1,6 +1,8 @@
 /**
  * Anthropic-compatible route handlers.
  * Implements /v1/messages endpoint.
+ *
+ * @module routes/anthropic/handlers
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify';
@@ -21,6 +23,7 @@ import type {
 
 /**
  * Anthropic message request schema.
+ * Validates the request body for Anthropic message requests.
  */
 const messageRequestSchema = z.object({
   model: z.string().min(1),
@@ -40,13 +43,45 @@ const messageRequestSchema = z.object({
 });
 
 /**
- * Create Anthropic handlers with dependencies.
+ * Anthropic handlers interface.
+ * Defines the structure of returned handler methods.
  */
-// eslint-disable-next-line max-lines-per-function
+interface AnthropicHandlers {
+  /** POST /v1/messages handler */
+  createMessage: (
+    request: FastifyRequest<{ Body: AnthropicMessageRequest }>,
+    reply: FastifyReply
+  ) => Promise<AnthropicMessageResponse | void>;
+  /** Get the internal router instance */
+  getRouter: () => RequestRouter;
+}
+
+/**
+ * Create Anthropic-compatible route handlers with dependency injection.
+ *
+ * Creates handlers for Anthropic-compatible API endpoints including the messages
+ * endpoint. The handlers integrate with the request router for plan selection
+ * and use the request proxy for upstream communication.
+ *
+ * @param repository - The plan repository for accessing coding plan configurations
+ * @param proxy - The request proxy for forwarding requests to upstream providers
+ * @returns An object containing handler methods for Anthropic endpoints
+ *
+ * @example
+ * ```typescript
+ * const repository = createPlanRepository('./config.yaml', encryptionKey);
+ * const proxy = createRequestProxy();
+ * const handlers = createAnthropicHandlers(repository, proxy);
+ *
+ * // Use handlers with Fastify
+ * fastify.post('/messages', handlers.createMessage);
+ * ```
+ */
+// eslint-disable-next-line max-lines-per-function,@typescript-eslint/explicit-function-return-type
 export function createAnthropicHandlers(
   repository: IPlanRepository,
   proxy: RequestProxy
-): { createMessage: (request: FastifyRequest<{ Body: AnthropicMessageRequest }>, reply: FastifyReply) => Promise<AnthropicMessageResponse | void>; getRouter: () => RequestRouter } {
+): AnthropicHandlers {
   const router = createRequestRouter(repository);
 
   return {

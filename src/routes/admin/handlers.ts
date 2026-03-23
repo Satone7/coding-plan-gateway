@@ -1,5 +1,7 @@
 /**
  * Admin route handlers for plan CRUD and quota operations.
+ *
+ * @module routes/admin/handlers
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify';
@@ -164,24 +166,58 @@ function toPlanResponse(
 
 /**
  * Admin handlers interface.
+ * Defines the structure of returned handler methods.
  */
 interface AdminHandlers {
+  /** GET /api/plans - List all plans */
   listPlans: (request: FastifyRequest, reply: FastifyReply) => Promise<PlansSuccessResponse>;
+  /** GET /api/plans/:planId - Get a specific plan */
   getPlan: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<PlanSuccessResponse>;
+  /** POST /api/plans - Create a new plan */
   createPlan: (request: FastifyRequest<{ Body: z.infer<typeof createPlanBodySchema> }>, reply: FastifyReply) => Promise<PlanSuccessResponse>;
+  /** PUT /api/plans/:planId - Update a plan */
   updatePlan: (request: FastifyRequest<{ Params: PlanParams; Body: z.infer<typeof updatePlanBodySchema> }>, reply: FastifyReply) => Promise<PlanSuccessResponse>;
+  /** DELETE /api/plans/:planId - Delete a plan */
   deletePlan: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<void>;
+  /** GET /api/quota/:planId - Get quota status for a plan */
   getQuotaStatus: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSuccessResponse>;
+  /** POST /api/quota/:planId/reset - Reset quota for a plan */
   resetQuota: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSuccessResponse>;
 }
 
 /**
- * Create admin handlers with repository dependency injection.
+ * Create admin route handlers with dependency injection.
+ *
+ * Creates handlers for admin API endpoints including plan CRUD operations
+ * and quota management. The handlers integrate with the plan repository
+ * for configuration management and optionally with the quota manager for
+ * usage tracking.
+ *
+ * @param repository - The plan repository for accessing and modifying coding plan configurations
+ * @param quotaManager - Optional quota manager for usage tracking and quota operations
+ * @returns An object containing handler methods for admin endpoints
+ *
+ * @example
+ * ```typescript
+ * const repository = createPlanRepository('./config.yaml', encryptionKey);
+ * const quotaManager = createQuotaManager({ quotaStatePath: './quota-state.json' });
+ * const handlers = createAdminHandlers(repository, quotaManager);
+ *
+ * // Use handlers with Fastify
+ * fastify.get('/plans', handlers.listPlans);
+ * fastify.post('/plans', handlers.createPlan);
+ * fastify.get('/plans/:planId', handlers.getPlan);
+ * fastify.put('/plans/:planId', handlers.updatePlan);
+ * fastify.delete('/plans/:planId', handlers.deletePlan);
+ * fastify.get('/quota/:planId', handlers.getQuotaStatus);
+ * fastify.post('/quota/:planId/reset', handlers.resetQuota);
+ * ```
  */
 // eslint-disable-next-line max-lines-per-function
 export function createAdminHandlers(
   repository: IPlanRepository,
   quotaManager?: QuotaManager
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 ): AdminHandlers {
   return {
     /**

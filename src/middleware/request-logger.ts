@@ -1,9 +1,11 @@
 /**
  * Request logging middleware.
  * Logs all incoming requests and their responses with detailed metrics.
+ *
+ * @module middleware/request-logger
  */
 
-import { FastifyRequest, FastifyReply, HookHandlerDoneFunction } from 'fastify';
+import { FastifyRequest, FastifyReply, HookHandlerDoneFunction, FastifyInstance } from 'fastify';
 import { logger, createRequestLogger } from '@/utils/logger';
 
 /**
@@ -199,14 +201,29 @@ export function extractAnthropicTokenUsage(
 
 /**
  * Register request logging hooks with a Fastify instance.
+ *
+ * Sets up hooks that log all incoming requests and their responses with
+ * timing information, status codes, and provider metrics. This should be
+ * called during application initialization.
+ *
+ * @param app - The Fastify instance to register the logging hooks with
+ *
+ * @example
+ * ```typescript
+ * const app = Fastify();
+ * registerRequestLogger(app);
+ * ```
  */
 export function registerRequestLogger(app: FastifyInstance): void {
-  // Log request start
-  app.addHook('onRequest', requestLoggerMiddleware);
+  // Log request start - using middleware style with done callback
+  app.addHook('onRequest', (request: FastifyRequest, _reply: FastifyReply, done: HookHandlerDoneFunction) => {
+    requestLoggerMiddleware(request, _reply);
+    done();
+  });
 
   // Log response completion
-  app.addHook('onResponse', responseLoggerMiddleware);
+  app.addHook('onResponse', (request: FastifyRequest, reply: FastifyReply, done: HookHandlerDoneFunction) => {
+    responseLoggerMiddleware(request, reply);
+    done();
+  });
 }
-
-// Import FastifyInstance for type annotation
-import { FastifyInstance } from 'fastify';

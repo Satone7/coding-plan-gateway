@@ -230,7 +230,7 @@
 
 - [x] T083 [P] Validate quickstart.md instructions work end-to-end
 - [x] T084 Create README.md with quick start, configuration, and API reference
-- [ ] T085 Add JSDoc comments to public APIs
+- [x] T085 Add JSDoc comments to public APIs
 
 ### Docker & Deployment
 

@@ -1,6 +1,8 @@
 /**
  * OpenAI-compatible route handlers.
  * Implements /v1/chat/completions and /v1/models endpoints.
+ *
+ * @module routes/openai/handlers
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify';
@@ -22,6 +24,7 @@ import type {
 
 /**
  * OpenAI chat completion request schema.
+ * Validates the request body for chat completion requests.
  */
 const chatCompletionSchema = z.object({
   model: z.string().min(1),
@@ -45,17 +48,51 @@ const chatCompletionSchema = z.object({
 });
 
 /**
- * Create OpenAI handlers with dependencies.
+ * OpenAI handlers interface.
+ * Defines the structure of returned handler methods.
  */
-// eslint-disable-next-line max-lines-per-function
+interface OpenAIHandlers {
+  /** POST /v1/chat/completions handler */
+  createChatCompletion: (
+    request: FastifyRequest<{ Body: ChatCompletionRequest }>,
+    reply: FastifyReply
+  ) => Promise<ChatCompletionResponse | void>;
+  /** GET /v1/models handler */
+  listModels: (
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) => Promise<ModelsResponse>;
+  /** Get the internal router instance */
+  getRouter: () => RequestRouter;
+}
+
+/**
+ * Create OpenAI-compatible route handlers with dependency injection.
+ *
+ * Creates handlers for OpenAI-compatible API endpoints including chat completions
+ * and model listing. The handlers integrate with the request router for plan selection
+ * and use the request proxy for upstream communication.
+ *
+ * @param repository - The plan repository for accessing coding plan configurations
+ * @param proxy - The request proxy for forwarding requests to upstream providers
+ * @returns An object containing handler methods for OpenAI endpoints
+ *
+ * @example
+ * ```typescript
+ * const repository = createPlanRepository('./config.yaml', encryptionKey);
+ * const proxy = createRequestProxy();
+ * const handlers = createOpenAIHandlers(repository, proxy);
+ *
+ * // Use handlers with Fastify
+ * fastify.post('/chat/completions', handlers.createChatCompletion);
+ * fastify.get('/models', handlers.listModels);
+ * ```
+ */
+// eslint-disable-next-line max-lines-per-function,@typescript-eslint/explicit-function-return-type
 export function createOpenAIHandlers(
   repository: IPlanRepository,
   proxy: RequestProxy
-): {
-  createChatCompletion: (request: FastifyRequest<{ Body: ChatCompletionRequest }>, reply: FastifyReply) => Promise<ChatCompletionResponse | void>;
-  listModels: (request: FastifyRequest, reply: FastifyReply) => Promise<ModelsResponse>;
-  getRouter: () => RequestRouter;
-} {
+): OpenAIHandlers {
   const router = createRequestRouter(repository);
 
   return {
