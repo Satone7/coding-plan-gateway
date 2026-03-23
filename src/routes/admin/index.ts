@@ -34,7 +34,7 @@ export async function registerAdminRoutes(
   const handlers = createAdminHandlers(repository, quotaManager);
 
   await app.register(
-    (fastify) => {
+    (fastify, _options, done) => {
       // Plan CRUD endpoints
       // GET /api/plans - List all plans
       fastify.get('/plans', (request, reply) => handlers.listPlans(request, reply));
@@ -59,6 +59,8 @@ export async function registerAdminRoutes(
         // POST /api/quota/:planId/reset - Reset quota for a plan
         fastify.post('/quota/:planId/reset', (request, reply) => handlers.resetQuota(request, reply));
       }
+
+      done();
     },
     { prefix }
   );

@@ -34,23 +34,21 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   logger.info('Registering routes...');
 
   // Register health endpoints (basic implementation for now)
-  await app.register((fastify) => {
-    fastify.get('/health', () => ({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      version: process.env.npm_package_version ?? '1.0.0',
-    }));
+  app.get('/health', () => ({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    version: process.env.npm_package_version ?? '1.0.0',
+  }));
 
-    fastify.get('/ready', () => ({
-      ready: true,
-      plans: 0,
-      models: 0,
-      checks: {
-        config: true,
-        quotaStore: true,
-      },
-    }));
-  });
+  app.get('/ready', () => ({
+    ready: true,
+    plans: 0,
+    models: 0,
+    checks: {
+      config: true,
+      quotaStore: true,
+    },
+  }));
 
   // Register all route plugins
   for (const { name, plugin } of routePlugins) {
