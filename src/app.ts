@@ -9,6 +9,7 @@ import { registerRequestLogger } from '@/middleware/request-logger';
 import { registerRoutes } from '@/routes';
 import { logger } from '@/utils/logger';
 import { DEFAULT_SERVER_CONFIG } from '@/config/defaults';
+import type { QuotaManager } from '@/services/quota-manager';
 
 /**
  * Application configuration options.
@@ -20,6 +21,8 @@ export interface AppOptions extends Partial<FastifyServerOptions> {
   host?: string;
   /** Log level */
   logLevel?: string;
+  /** Quota manager for graceful shutdown */
+  quotaManager?: QuotaManager;
 }
 
 /**
@@ -55,6 +58,14 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
 
   // Register routes
   await registerRoutes(app);
+
+  // Register onClose hook for quota manager shutdown
+  if (options.quotaManager) {
+    app.addHook('onClose', async () => {
+      logger.info('Shutting down quota manager...');
+      await options.quotaManager!.shutdown();
+    });
+  }
 
   // Add graceful shutdown hooks
   const signals = ['SIGINT', 'SIGTERM'] as const;

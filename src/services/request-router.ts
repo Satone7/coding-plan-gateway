@@ -35,18 +35,18 @@ export interface PlanWithCredentials {
 }
 
 /**
+ * Create an empty routing result.
+ */
+function emptyResult(requestId: string): RoutingResult {
+  return {
+    selectedPlan: undefined,
+    alternativePlans: [],
+    requestId,
+  };
+}
+
+/**
  * RequestRouter - Handles request routing with failover support.
- *
- * @example
- * ```typescript
- * const router = createRequestRouter(repository, quotaManager);
- *
- * const result = await router.route('claude-sonnet-4-6');
- * if (result.selectedPlan) {
- *   const { plan, apiKey } = await router.getPlanForRequest('claude-sonnet-4-6');
- *   // Forward request to plan.baseUrl with apiKey
- * }
- * ```
  */
 export class RequestRouter {
   private readonly repository: IPlanRepository;
@@ -56,9 +56,6 @@ export class RequestRouter {
 
   /**
    * Create a new RequestRouter.
-   *
-   * @param repository - Plan repository for fetching plans
-   * @param quotaManager - Optional quota manager for quota-aware routing
    */
   constructor(repository: IPlanRepository, quotaManager?: QuotaManager) {
     this.repository = repository;
@@ -68,10 +65,61 @@ export class RequestRouter {
   }
 
   /**
+   * Filter plans to only those with closed circuits.
+   */
+  private filterByCircuit(plans: CodingPlan[]): CodingPlan[] {
+    return plans.filter((plan) => this.circuitBreaker.canExecute(plan.id));
+  }
+
+  /**
+   * Filter plans to only those with remaining quota.
+   */
+  private filterByQuota(plans: CodingPlan[]): CodingPlan[] {
+    if (!this.quotaManager) {
+      return plans;
+    }
+    return plans.filter((plan) => this.quotaManager!.hasRemainingQuota(plan.id));
+  }
+
+  /**
+   * Log and return empty result for no active plans.
+   */
+  private handleNoActivePlans(model: string, requestId: string, totalPlans: number): RoutingResult {
+    logger.warn('No active plans found for model', {
+      requestId,
+      model,
+      totalPlans,
+    });
+    return emptyResult(requestId);
+  }
+
+  /**
+   * Log and return empty result for all circuits open.
+   */
+  private handleAllCircuitsOpen(model: string, requestId: string, activeCount: number): RoutingResult {
+    logger.warn('All circuits open for model', {
+      requestId,
+      model,
+      totalPlans: activeCount,
+      openCircuits: this.circuitBreaker.getOpenCircuitCount(),
+    });
+    return emptyResult(requestId);
+  }
+
+  /**
+   * Log and return empty result for all plans exhausted.
+   */
+  private handleAllExhausted(model: string, requestId: string, availableCount: number): RoutingResult {
+    logger.warn('All plans exhausted for model', {
+      requestId,
+      model,
+      availablePlans: availableCount,
+    });
+    return emptyResult(requestId);
+  }
+
+  /**
    * Route a request to the best available plan.
-   *
-   * @param model - The model to route for
-   * @returns Routing result with selected and alternative plans
    */
   async route(model: string): Promise<RoutingResult> {
     const requestId = randomUUID();
@@ -81,56 +129,21 @@ export class RequestRouter {
     const activePlans = this.planSelector.filterActivePlans(allPlans);
 
     if (activePlans.length === 0) {
-      logger.warn('No active plans found for model', {
-        requestId,
-        model,
-        totalPlans: allPlans.length,
-      });
-
-      return {
-        selectedPlan: undefined,
-        alternativePlans: [],
-        requestId,
-      };
+      return this.handleNoActivePlans(model, requestId, allPlans.length);
     }
 
     // Filter out plans with open circuits
-    const availablePlans = activePlans.filter(
-      (plan) => this.circuitBreaker.canExecute(plan.id)
-    );
+    const availablePlans = this.filterByCircuit(activePlans);
 
     if (availablePlans.length === 0) {
-      logger.warn('All circuits open for model', {
-        requestId,
-        model,
-        totalPlans: activePlans.length,
-        openCircuits: this.circuitBreaker.getOpenCircuitCount(),
-      });
-
-      return {
-        selectedPlan: undefined,
-        alternativePlans: [],
-        requestId,
-      };
+      return this.handleAllCircuitsOpen(model, requestId, activePlans.length);
     }
 
     // Filter out exhausted plans if quota manager is available
-    const plansWithQuota = this.quotaManager
-      ? availablePlans.filter((plan) => this.quotaManager!.hasRemainingQuota(plan.id))
-      : availablePlans;
+    const plansWithQuota = this.filterByQuota(availablePlans);
 
     if (plansWithQuota.length === 0) {
-      logger.warn('All plans exhausted for model', {
-        requestId,
-        model,
-        availablePlans: availablePlans.length,
-      });
-
-      return {
-        selectedPlan: undefined,
-        alternativePlans: [],
-        requestId,
-      };
+      return this.handleAllExhausted(model, requestId, availablePlans.length);
     }
 
     // Select the best plan based on quota
@@ -143,12 +156,7 @@ export class RequestRouter {
         model,
         availablePlans: plansWithQuota.length,
       });
-
-      return {
-        selectedPlan: undefined,
-        alternativePlans: [],
-        requestId,
-      };
+      return emptyResult(requestId);
     }
 
     // Get alternative plans for failover (exclude selected)
@@ -174,10 +182,6 @@ export class RequestRouter {
   /**
    * Get a plan with credentials for executing a request.
    * Throws an error if no plan is available.
-   *
-   * @param model - The model to get a plan for
-   * @returns Plan with decrypted API key
-   * @throws GatewayError if no plan is available
    */
   async getPlanForRequest(model: string): Promise<PlanWithCredentials> {
     const result = await this.route(model);
@@ -220,8 +224,6 @@ export class RequestRouter {
 
   /**
    * Mark a plan as successful (close circuit).
-   *
-   * @param planId - The plan identifier
    */
   markPlanSuccess(planId: string): void {
     this.circuitBreaker.recordSuccess(planId);
@@ -230,8 +232,6 @@ export class RequestRouter {
 
   /**
    * Mark a plan as failed (potentially open circuit).
-   *
-   * @param planId - The plan identifier
    */
   markPlanFailed(planId: string): void {
     this.circuitBreaker.recordFailure(planId);
@@ -243,9 +243,6 @@ export class RequestRouter {
 
   /**
    * Refund quota for a failed request.
-   *
-   * @param planId - The plan identifier
-   * @param amount - Amount to refund
    */
   refundQuota(planId: string, amount: number = 1): void {
     if (this.quotaManager) {
@@ -255,30 +252,18 @@ export class RequestRouter {
 
   /**
    * Get all available plans for a model.
-   *
-   * @param model - The model identifier
-   * @returns Available plans (active, with closed circuits)
    */
   async getAvailablePlans(model: string): Promise<CodingPlan[]> {
     const allPlans = await this.repository.findByModel(model);
     const activePlans = this.planSelector.filterActivePlans(allPlans);
-
-    const available = activePlans.filter((plan) => this.circuitBreaker.canExecute(plan.id));
+    const available = this.filterByCircuit(activePlans);
 
     // Filter by quota if quota manager is available
-    if (this.quotaManager) {
-      return available.filter((plan) => this.quotaManager!.hasRemainingQuota(plan.id));
-    }
-
-    return available;
+    return this.filterByQuota(available);
   }
 
   /**
    * Get alternative plans for failover.
-   *
-   * @param model - The model identifier
-   * @param excludePlanId - Plan ID to exclude
-   * @returns Alternative plans
    */
   async getAlternativePlans(model: string, excludePlanId: string): Promise<CodingPlan[]> {
     const availablePlans = await this.getAvailablePlans(model);
@@ -287,9 +272,6 @@ export class RequestRouter {
 
   /**
    * Update quota state for a plan.
-   *
-   * @param _planId - The plan identifier
-   * @param _state - New quota state
    * @deprecated Use QuotaManager directly
    */
   updateQuotaState(_planId: string, _state: QuotaState): void {
@@ -298,21 +280,13 @@ export class RequestRouter {
 
   /**
    * Get quota state for a plan.
-   *
-   * @param planId - The plan identifier
-   * @returns Quota state or undefined
    */
   getQuotaState(planId: string): QuotaState | undefined {
-    if (this.quotaManager) {
-      return this.quotaManager.getQuotaState(planId);
-    }
-    return undefined;
+    return this.quotaManager?.getQuotaState(planId);
   }
 
   /**
    * Get the circuit breaker instance.
-   *
-   * @returns The circuit breaker
    */
   getCircuitBreaker(): CircuitBreaker {
     return this.circuitBreaker;
@@ -320,8 +294,6 @@ export class RequestRouter {
 
   /**
    * Get the plan selector instance.
-   *
-   * @returns The plan selector
    */
   getPlanSelector(): PlanSelector {
     return this.planSelector;
@@ -329,8 +301,6 @@ export class RequestRouter {
 
   /**
    * Get the quota manager instance.
-   *
-   * @returns The quota manager or null
    */
   getQuotaManager(): QuotaManager | null {
     return this.quotaManager;
@@ -347,10 +317,6 @@ export class RequestRouter {
 
 /**
  * Create a new RequestRouter instance.
- *
- * @param repository - Plan repository
- * @param quotaManager - Optional quota manager
- * @returns A new RequestRouter instance
  */
 export function createRequestRouter(
   repository: IPlanRepository,

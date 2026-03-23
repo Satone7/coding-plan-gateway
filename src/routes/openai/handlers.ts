@@ -16,27 +16,19 @@ import {
   attachProviderMetrics,
   extractOpenAITokenUsage,
 } from '@/middleware/request-logger';
-import type {
-  ChatCompletionRequest,
-  ChatCompletionResponse,
-  ModelsResponse,
-} from '@/types/openai';
+import type { ChatCompletionRequest, ChatCompletionResponse, ModelsResponse } from '@/types/openai';
+import type { CodingPlan } from '@/types';
 
 /**
  * OpenAI chat completion request schema.
- * Validates the request body for chat completion requests.
  */
 const chatCompletionSchema = z.object({
   model: z.string().min(1),
-  messages: z
-    .array(
-      z.object({
-        role: z.enum(['system', 'user', 'assistant']),
-        content: z.string(),
-        name: z.string().optional(),
-      })
-    )
-    .min(1),
+  messages: z.array(z.object({
+    role: z.enum(['system', 'user', 'assistant']),
+    content: z.string(),
+    name: z.string().optional(),
+  })).min(1),
   stream: z.boolean().optional().default(false),
   max_tokens: z.number().int().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
@@ -47,123 +39,158 @@ const chatCompletionSchema = z.object({
   user: z.string().optional(),
 });
 
+type ValidatedChatCompletion = z.infer<typeof chatCompletionSchema>;
+
 /**
  * OpenAI handlers interface.
- * Defines the structure of returned handler methods.
  */
 interface OpenAIHandlers {
-  /** POST /v1/chat/completions handler */
   createChatCompletion: (
     request: FastifyRequest<{ Body: ChatCompletionRequest }>,
     reply: FastifyReply
   ) => Promise<ChatCompletionResponse | void>;
-  /** GET /v1/models handler */
-  listModels: (
-    request: FastifyRequest,
-    reply: FastifyReply
-  ) => Promise<ModelsResponse>;
-  /** Get the internal router instance */
+  listModels: (request: FastifyRequest, reply: FastifyReply) => Promise<ModelsResponse>;
   getRouter: () => RequestRouter;
 }
 
 /**
- * Create OpenAI-compatible route handlers with dependency injection.
- *
- * Creates handlers for OpenAI-compatible API endpoints including chat completions
- * and model listing. The handlers integrate with the request router for plan selection
- * and use the request proxy for upstream communication.
- *
- * @param repository - The plan repository for accessing coding plan configurations
- * @param proxy - The request proxy for forwarding requests to upstream providers
- * @returns An object containing handler methods for OpenAI endpoints
- *
- * @example
- * ```typescript
- * const repository = createPlanRepository('./config.yaml', encryptionKey);
- * const proxy = createRequestProxy();
- * const handlers = createOpenAIHandlers(repository, proxy);
- *
- * // Use handlers with Fastify
- * fastify.post('/chat/completions', handlers.createChatCompletion);
- * fastify.get('/models', handlers.listModels);
- * ```
+ * Service dependencies for handlers.
  */
-// eslint-disable-next-line max-lines-per-function,@typescript-eslint/explicit-function-return-type
+interface HandlerServices {
+  repository: IPlanRepository;
+  proxy: RequestProxy;
+  router: RequestRouter;
+}
+
+/**
+ * Validate request and return parsed data.
+ */
+function validateAndParse(request: FastifyRequest<{ Body: ChatCompletionRequest }>): ValidatedChatCompletion {
+  const validation = chatCompletionSchema.safeParse(request.body);
+  if (!validation.success) {
+    throw validation.error;
+  }
+  return validation.data;
+}
+
+/**
+ * Get decrypted API key for a plan.
+ */
+async function fetchApiKey(repository: IPlanRepository, planId: string): Promise<string> {
+  const apiKey = await repository.getDecryptedApiKey(planId);
+  if (!apiKey) {
+    throw createGatewayError('INTERNAL_ERROR', 'Failed to get API key for plan', { planId });
+  }
+  return apiKey;
+}
+
+/**
+ * Attach provider metrics and log response.
+ */
+function recordMetrics(
+  request: FastifyRequest,
+  plan: CodingPlan,
+  model: string,
+  response: { durationMs: number; statusCode: number; data: unknown }
+): void {
+  attachProviderMetrics(request, {
+    planId: plan.id,
+    planName: plan.name,
+    model,
+    durationMs: response.durationMs,
+    statusCode: response.statusCode,
+    tokenUsage: extractOpenAITokenUsage(response.data),
+    providerResponseTimeMs: response.durationMs,
+  });
+  logger.info('Chat completion response', {
+    requestId: request.id,
+    statusCode: response.statusCode,
+    durationMs: response.durationMs,
+    planId: plan.id,
+  });
+}
+
+/**
+ * Attempt failover to an alternative plan.
+ */
+async function attemptFailover(
+  services: HandlerServices,
+  body: ValidatedChatCompletion,
+  requestId: string,
+  plan: CodingPlan
+): Promise<{ durationMs: number; statusCode: number; data: unknown } | null> {
+  const apiKey = await fetchApiKey(services.repository, plan.id);
+  if (!apiKey) {
+    return null;
+  }
+
+  try {
+    const response = await services.proxy.forwardOpenAIRequest(body, {
+      baseUrl: plan.baseUrl,
+      apiKey,
+      timeout: plan.timeout,
+      requestId,
+    });
+    services.router.markPlanSuccess(plan.id);
+    logger.info('Failover successful', { requestId, failoverPlanId: plan.id, durationMs: response.durationMs });
+    return response;
+  } catch (err) {
+    services.router.markPlanFailed(plan.id);
+    logger.warn('Failover plan failed', {
+      requestId,
+      failoverPlanId: plan.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+/**
+ * Create OpenAI-compatible route handlers.
+ */
+// eslint-disable-next-line max-lines-per-function
 export function createOpenAIHandlers(
   repository: IPlanRepository,
   proxy: RequestProxy
 ): OpenAIHandlers {
   const router = createRequestRouter(repository);
+  const services: HandlerServices = { repository, proxy, router };
 
   return {
-    /**
-     * POST /v1/chat/completions - Create chat completion.
-     */
+    // eslint-disable-next-line max-lines-per-function
     async createChatCompletion(
       request: FastifyRequest<{ Body: ChatCompletionRequest }>,
       reply: FastifyReply
     ): Promise<ChatCompletionResponse | void> {
       const requestId = request.id;
-
-      // Validate request
-      const validation = chatCompletionSchema.safeParse(request.body);
-      if (!validation.success) {
-        throw validation.error;
-      }
-
-      const body = validation.data;
+      const body = validateAndParse(request);
       const model = body.model;
 
       logger.info('Chat completion request', {
-        requestId,
-        model,
-        stream: body.stream,
-        messageCount: body.messages.length,
+        requestId, model, stream: body.stream, messageCount: body.messages.length,
       });
 
-      // Route request to best available plan
       const routingResult = await router.route(model);
-
       if (!routingResult.selectedPlan) {
-        throw createGatewayError(
-          'MODEL_NOT_FOUND',
-          `No coding plan supports model '${model}'`,
-          { model, requestId }
-        );
+        throw createGatewayError('MODEL_NOT_FOUND', `No coding plan supports model '${model}'`, { model, requestId });
       }
 
-      const selectedPlan = routingResult.selectedPlan;
-
-      // Get decrypted API key
-      const apiKey = await repository.getDecryptedApiKey(selectedPlan.id);
-      if (!apiKey) {
-        throw createGatewayError(
-          'INTERNAL_ERROR',
-          'Failed to get API key for plan',
-          { planId: selectedPlan.id }
-        );
-      }
+      const plan = routingResult.selectedPlan;
+      const apiKey = await fetchApiKey(repository, plan.id);
 
       logger.debug('Selected plan for request', {
-        requestId,
-        planId: selectedPlan.id,
-        planName: selectedPlan.name,
+        requestId, planId: plan.id, planName: plan.name,
         alternatives: routingResult.alternativePlans.length,
       });
 
-      // Handle streaming vs non-streaming
+      // Handle streaming
       if (body.stream) {
         await proxy.forwardOpenAIStream(
           body,
-          {
-            baseUrl: selectedPlan.baseUrl,
-            apiKey,
-            timeout: selectedPlan.timeout,
-            requestId,
-          },
-          (chunk, done) => {
+          { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
+          (_chunk, done) => {
             if (done) {
-              router.markPlanSuccess(selectedPlan.id);
+              router.markPlanSuccess(plan.id);
               logger.debug('Stream completed', { requestId });
             }
           },
@@ -175,114 +202,39 @@ export function createOpenAIHandlers(
       // Non-streaming request with failover
       try {
         const response = await proxy.forwardOpenAIRequest(body, {
-          baseUrl: selectedPlan.baseUrl,
-          apiKey,
-          timeout: selectedPlan.timeout,
-          requestId,
+          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
         });
-
-        router.markPlanSuccess(selectedPlan.id);
-
-        // Attach provider metrics for logging
-        attachProviderMetrics(request, {
-          planId: selectedPlan.id,
-          planName: selectedPlan.name,
-          model: model,
-          durationMs: response.durationMs,
-          statusCode: response.statusCode,
-          tokenUsage: extractOpenAITokenUsage(response.data),
-          providerResponseTimeMs: response.durationMs,
-        });
-
-        logger.info('Chat completion response', {
-          requestId,
-          statusCode: response.statusCode,
-          durationMs: response.durationMs,
-          planId: selectedPlan.id,
-        });
-
+        router.markPlanSuccess(plan.id);
+        recordMetrics(request, plan, model, response);
         return response.data;
       } catch (error) {
-        // Mark plan as failed
-        router.markPlanFailed(selectedPlan.id);
+        router.markPlanFailed(plan.id);
 
-        // Try failover to alternative plans
-        const alternativePlans = routingResult.alternativePlans;
-
-        for (const altPlan of alternativePlans) {
+        for (const altPlan of routingResult.alternativePlans) {
           if (!router.getCircuitBreaker().canExecute(altPlan.id)) {
             continue;
           }
 
-          logger.info('Attempting failover to alternative plan', {
-            requestId,
-            failedPlanId: selectedPlan.id,
-            failoverPlanId: altPlan.id,
-          });
-
-          try {
-            const altApiKey = await repository.getDecryptedApiKey(altPlan.id);
-            if (!altApiKey) {
-              continue;
-            }
-
-            const response = await proxy.forwardOpenAIRequest(body, {
-              baseUrl: altPlan.baseUrl,
-              apiKey: altApiKey,
-              timeout: altPlan.timeout,
-              requestId,
-            });
-
-            router.markPlanSuccess(altPlan.id);
-
-            // Attach provider metrics for logging
-            attachProviderMetrics(request, {
-              planId: altPlan.id,
-              planName: altPlan.name,
-              model: model,
-              durationMs: response.durationMs,
-              statusCode: response.statusCode,
-              tokenUsage: extractOpenAITokenUsage(response.data),
-              providerResponseTimeMs: response.durationMs,
-            });
-
-            logger.info('Failover successful', {
-              requestId,
-              failoverPlanId: altPlan.id,
-              durationMs: response.durationMs,
-            });
-
-            return response.data;
-          } catch (failoverError) {
-            router.markPlanFailed(altPlan.id);
-            logger.warn('Failover plan failed', {
-              requestId,
-              failoverPlanId: altPlan.id,
-              error: failoverError instanceof Error ? failoverError.message : String(failoverError),
-            });
+          logger.info('Attempting failover', { requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id });
+          const result = await attemptFailover(services, body, requestId, altPlan);
+          if (result) {
+            recordMetrics(request, altPlan, model, result);
+            return result.data;
           }
         }
 
-        // All plans failed
         throw createGatewayError(
           'UPSTREAM_ERROR',
           'All available plans failed to process the request',
-          { requestId, attemptedPlans: [selectedPlan.id, ...alternativePlans.map(p => p.id)] }
+          { requestId, attemptedPlans: [plan.id, ...routingResult.alternativePlans.map(p => p.id)] }
         );
       }
     },
 
-    /**
-     * GET /v1/models - List available models.
-     */
-    async listModels(
-      request: FastifyRequest,
-      _reply: FastifyReply
-    ): Promise<ModelsResponse> {
+    async listModels(request: FastifyRequest, _reply: FastifyReply): Promise<ModelsResponse> {
       const plans = await repository.findActive();
-
-      // Collect unique models from all active plans
       const modelSet = new Set<string>();
+
       for (const plan of plans) {
         for (const model of plan.models) {
           modelSet.add(model);
@@ -302,15 +254,9 @@ export function createOpenAIHandlers(
         planCount: plans.length,
       });
 
-      return {
-        object: 'list',
-        data: models,
-      };
+      return { object: 'list', data: models };
     },
 
-    /**
-     * Get the router instance for external access.
-     */
     getRouter(): RequestRouter {
       return router;
     },

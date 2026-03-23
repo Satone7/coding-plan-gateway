@@ -5,9 +5,8 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { RequestRouter, createRequestRouter } from '@/services/request-router';
-import { createMockPlans, createMockQuotaStates } from '../../fixtures/mock-plans';
+import { createMockPlans } from '../../fixtures/mock-plans';
 import type { IPlanRepository } from '@/services/plan-repository';
-import type { QuotaState } from '@/types';
 
 // Helper to create a mock repository with default behavior
 function createMockRepository(): IPlanRepository {
@@ -34,13 +33,8 @@ function createMockRepository(): IPlanRepository {
 describe('RequestRouter', () => {
   let router: RequestRouter;
   let mockRepository: IPlanRepository;
-  let mockQuotaStates: Map<string, QuotaState>;
 
   beforeEach(() => {
-    mockQuotaStates = new Map(
-      createMockQuotaStates().map((state) => [state.planId, state])
-    );
-
     mockRepository = createMockRepository();
     router = createRequestRouter(mockRepository);
   });

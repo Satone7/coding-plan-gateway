@@ -60,6 +60,9 @@ export async function registerAdminRoutes(
         fastify.post('/quota/:planId/reset', handlers.resetQuota);
       }
 
+      // POST /api/reload - Reload configuration
+      fastify.post('/reload', handlers.reloadConfig);
+
       done();
     },
     { prefix }

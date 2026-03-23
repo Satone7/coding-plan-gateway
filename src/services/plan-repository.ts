@@ -52,6 +52,9 @@ export interface IPlanRepository {
 
   /** Get decrypted API key for a plan */
   getDecryptedApiKey(id: string): Promise<string | null>;
+
+  /** Reload plans from storage */
+  reload(): Promise<void>;
 }
 
 /**

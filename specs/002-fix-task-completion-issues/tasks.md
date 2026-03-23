@@ -19,7 +19,7 @@
 
 **Purpose**: Prepare scripts directory for new CLI tools
 
-- [ ] T001 Create scripts/ directory for CLI utilities
+- [X] T001 Create scripts/ directory for CLI utilities
 
 ---
 
@@ -31,11 +31,11 @@
 
 ### Implementation for User Story 1
 
-- [ ] T002 [US1] Modify AppOptions interface to accept quotaManager in src/app.ts
-- [ ] T003 [US1] Register onClose hook for quotaManager.shutdown() in src/app.ts
-- [ ] T004 [US1] Create quotaManager instance in src/index.ts
-- [ ] T005 [US1] Initialize quotaManager with config.plans in src/index.ts
-- [ ] T006 [US1] Start periodic sync and pass quotaManager to createApp in src/index.ts
+- [X] T002 [US1] Modify AppOptions interface to accept quotaManager in src/app.ts
+- [X] T003 [US1] Register onClose hook for quotaManager.shutdown() in src/app.ts
+- [X] T004 [US1] Create quotaManager instance in src/index.ts
+- [X] T005 [US1] Initialize quotaManager with config.plans in src/index.ts
+- [X] T006 [US1] Start periodic sync and pass quotaManager to createApp in src/index.ts
 
 ### Tests for User Story 1
 
@@ -53,10 +53,10 @@
 
 ### Implementation for User Story 2
 
-- [ ] T008 [P] [US2] Create validate-config.ts CLI script in scripts/validate-config.ts
-- [ ] T009 [US2] Add config:validate script entry to package.json
-- [ ] T010 [US2] Add reload endpoint POST /api/reload in src/routes/admin/index.ts
-- [ ] T011 [US2] Add reload script entry to package.json
+- [X] T008 [P] [US2] Create validate-config.ts CLI script in scripts/validate-config.ts
+- [X] T009 [US2] Add config:validate script entry to package.json
+- [X] T010 [US2] Add reload endpoint POST /api/reload in src/routes/admin/index.ts
+- [X] T011 [US2] Add reload script entry to package.json
 
 ### Tests for User Story 2
 
@@ -75,8 +75,8 @@
 
 ### Tests for User Story 3
 
-- [ ] T014 [P] [US3] Create health route tests in tests/unit/routes/health.test.ts
-- [ ] T015 [P] [US3] Create validators utility tests in tests/unit/utils/validators.test.ts
+- [X] T014 [P] [US3] Create health route tests in tests/unit/routes/health.test.ts
+- [X] T015 [P] [US3] Create validators utility tests in tests/unit/utils/validators.test.ts
 - [ ] T016 [P] [US3] Add streaming error tests in tests/unit/services/request-proxy.test.ts
 - [ ] T017 [P] [US3] Add error branch tests in tests/unit/services/request-router.test.ts
 
@@ -92,18 +92,18 @@
 
 ### Implementation for User Story 4
 
-- [ ] T018 [P] [US4] Refactor createMessage function under 50 lines in src/routes/anthropic/handlers.ts
-- [ ] T019 [P] [US4] Refactor createChatCompletion function under 50 lines in src/routes/openai/handlers.ts
-- [ ] T020 [P] [US4] Refactor makeRequest method with options object in src/services/request-proxy.ts
-- [ ] T021 [P] [US4] Refactor makeStreamingRequest method with options object in src/services/request-proxy.ts
-- [ ] T022 [P] [US4] Refactor route method under 50 lines in src/services/request-router.ts
-- [ ] T023 [P] [US4] Fix max-depth warnings with early returns in src/routes/anthropic/handlers.ts
-- [ ] T024 [P] [US4] Fix max-depth warnings with early returns in src/routes/openai/handlers.ts
-- [ ] T025 [P] [US4] Remove unused imports in tests/unit/services/circuit-breaker.test.ts
-- [ ] T026 [P] [US4] Remove unused imports in tests/unit/services/plan-repository.test.ts
-- [ ] T027 [P] [US4] Remove unused imports in tests/unit/services/quota-manager.test.ts
-- [ ] T028 [P] [US4] Remove unused imports in tests/unit/services/request-proxy.test.ts
-- [ ] T029 [P] [US4] Remove unused variables in tests/unit/services/request-router.test.ts
+- [X] T018 [P] [US4] Refactor createMessage function under 50 lines in src/routes/anthropic/handlers.ts
+- [X] T019 [P] [US4] Refactor createChatCompletion function under 50 lines in src/routes/openai/handlers.ts
+- [X] T020 [P] [US4] Refactor makeRequest method with options object in src/services/request-proxy.ts
+- [X] T021 [P] [US4] Refactor makeStreamingRequest method with options object in src/services/request-proxy.ts
+- [X] T022 [P] [US4] Refactor route method under 50 lines in src/services/request-router.ts
+- [X] T023 [P] [US4] Fix max-depth warnings with early returns in src/routes/anthropic/handlers.ts
+- [X] T024 [P] [US4] Fix max-depth warnings with early returns in src/routes/openai/handlers.ts
+- [X] T025 [P] [US4] Remove unused imports in tests/unit/services/circuit-breaker.test.ts
+- [X] T026 [P] [US4] Remove unused imports in tests/unit/services/plan-repository.test.ts
+- [X] T027 [P] [US4] Remove unused imports in tests/unit/services/quota-manager.test.ts
+- [X] T028 [P] [US4] Remove unused imports in tests/unit/services/request-proxy.test.ts
+- [X] T029 [P] [US4] Remove unused variables in tests/unit/services/request-router.test.ts
 
 **Checkpoint**: `npm run lint` reports 0 warnings, 0 errors
 

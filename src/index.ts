@@ -6,6 +6,7 @@
 import { createApp, startServer } from './app';
 import { logger } from './utils/logger';
 import { loadConfig } from './config';
+import { createQuotaManager } from './services/quota-manager';
 
 /**
  * Main entry point.
@@ -24,12 +25,23 @@ async function main(): Promise<void> {
 
     // Load configuration
     const configPath = process.env.CONFIG_PATH ?? './config.yaml';
-    await loadConfig(configPath, encryptionKey);
+    const config = await loadConfig(configPath, encryptionKey);
 
-    // Create application
+    // Create and initialize quota manager
+    const quotaManager = createQuotaManager({
+      quotaStatePath: process.env.QUOTA_STATE_PATH,
+      syncIntervalMs: process.env.QUOTA_SYNC_INTERVAL
+        ? parseInt(process.env.QUOTA_SYNC_INTERVAL, 10)
+        : undefined,
+    });
+    await quotaManager.initialize(config.plans);
+    quotaManager.startPeriodicSync();
+
+    // Create application with quota manager
     const app = await createApp({
       port: parseInt(process.env.PORT ?? '8080', 10),
       logLevel: process.env.LOG_LEVEL ?? 'info',
+      quotaManager,
     });
 
     // Start server

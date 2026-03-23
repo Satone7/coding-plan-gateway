@@ -15,7 +15,9 @@
     "lint:fix": "eslint src tests --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "config:validate": "ts-node scripts/validate-config.ts",
+    "reload": "curl -s -X POST http://localhost:8080/api/reload"
   },
   "keywords": [
     "ai",

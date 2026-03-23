@@ -183,6 +183,17 @@ interface AdminHandlers {
   getQuotaStatus: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSuccessResponse>;
   /** POST /api/quota/:planId/reset - Reset quota for a plan */
   resetQuota: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSuccessResponse>;
+  /** POST /api/reload - Reload configuration */
+  reloadConfig: (request: FastifyRequest, reply: FastifyReply) => Promise<ReloadResponse>;
+}
+
+/**
+ * Reload response.
+ */
+interface ReloadResponse {
+  success: boolean;
+  planCount?: number;
+  error?: string;
 }
 
 /**
@@ -537,6 +548,46 @@ export function createAdminHandlers(
       };
 
       return response;
+    },
+
+    /**
+     * POST /api/reload - Reload configuration.
+     */
+    async reloadConfig(
+      request: FastifyRequest,
+      reply: FastifyReply
+    ): Promise<ReloadResponse> {
+      try {
+        // Reload plans from repository
+        await repository.reload();
+        const plans = await repository.findAll();
+
+        // Reinitialize quota manager with new plans
+        if (quotaManager) {
+          await quotaManager.initialize(plans);
+        }
+
+        logger.info('Configuration reloaded via API', {
+          requestId: request.id,
+          planCount: plans.length,
+        });
+
+        return {
+          success: true,
+          planCount: plans.length,
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error('Failed to reload configuration', error as Error, {
+          requestId: request.id,
+        });
+
+        void reply.status(500);
+        return {
+          success: false,
+          error: errorMessage,
+        };
+      }
     },
   };
 }

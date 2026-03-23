@@ -3,11 +3,11 @@
  * Tests quota tracking, persistence, and management.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { QuotaManager, createQuotaManager } from '@/services/quota-manager';
-import type { CodingPlan, QuotaState } from '@/types';
+import type { QuotaState } from '@/types';
 import { createMockPlans, createMockQuotaStates } from '../../fixtures/mock-plans';
-import { writeFile, readFile, unlink, mkdir, rmdir } from 'fs/promises';
+import { writeFile, readFile, mkdir, rmdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';

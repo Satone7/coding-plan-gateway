@@ -2,7 +2,7 @@
  * Unit tests for CircuitBreaker service.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { CircuitBreaker, createCircuitBreaker } from '@/services/circuit-breaker';
 
 describe('CircuitBreaker', () => {

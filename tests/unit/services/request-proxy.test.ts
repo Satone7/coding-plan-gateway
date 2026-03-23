@@ -2,7 +2,7 @@
  * Unit tests for RequestProxy service.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { RequestProxy } from '@/services/request-proxy';
 
 describe('RequestProxy', () => {

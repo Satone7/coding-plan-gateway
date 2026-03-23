@@ -2,7 +2,7 @@
  * Unit tests for PlanRepository.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFile, mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -11,7 +11,6 @@ import {
   createPlanRepository,
 } from '@/services/plan-repository';
 import { createMockPlanInput, MOCK_PLAN_IDS } from '../../fixtures/mock-plans';
-import { encryptApiKey } from '@/config/encryption';
 
 // Mock encryption key for testing
 const TEST_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
