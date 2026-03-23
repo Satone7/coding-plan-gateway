@@ -1,0 +1,196 @@
+# Tasks: Fix Task Completion Issues
+
+**Input**: Design documents from `specs/002-fix-task-completion-issues/`
+**Prerequisites**: design.md, spec.md, research.md, data-model.md, contracts/npm-scripts.md
+
+**Tests**: Test tasks are included as this feature specifically addresses test coverage requirements (FR-005).
+
+**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: Can run in parallel (different files, no dependencies)
+- **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3, US4)
+- Include exact file paths in descriptions
+
+---
+
+## Phase 1: Setup
+
+**Purpose**: Prepare scripts directory for new CLI tools
+
+- [ ] T001 Create scripts/ directory for CLI utilities
+
+---
+
+## Phase 2: User Story 1 - Quota Data Persisted on Application Exit (Priority: P1) 🎯 MVP
+
+**Goal**: Persist quota state to file when application receives shutdown signals (SIGINT/SIGTERM)
+
+**Independent Test**: Start gateway, make API requests to consume quota, stop with Ctrl+C, restart, verify quota state preserved
+
+### Implementation for User Story 1
+
+- [ ] T002 [US1] Modify AppOptions interface to accept quotaManager in src/app.ts
+- [ ] T003 [US1] Register onClose hook for quotaManager.shutdown() in src/app.ts
+- [ ] T004 [US1] Create quotaManager instance in src/index.ts
+- [ ] T005 [US1] Initialize quotaManager with config.plans in src/index.ts
+- [ ] T006 [US1] Start periodic sync and pass quotaManager to createApp in src/index.ts
+
+### Tests for User Story 1
+
+- [ ] T007 [P] [US1] Add shutdown hook test in tests/unit/app.test.ts
+
+**Checkpoint**: Graceful shutdown should persist quota state to quota-state.json on SIGINT/SIGTERM
+
+---
+
+## Phase 3: User Story 2 - NPM Scripts for Configuration Management (Priority: P2)
+
+**Goal**: Add `npm run reload` and `npm run config:validate` scripts for configuration management
+
+**Independent Test**: Run `npm run config:validate` with valid/invalid configs, run `npm run reload` against running server
+
+### Implementation for User Story 2
+
+- [ ] T008 [P] [US2] Create validate-config.ts CLI script in scripts/validate-config.ts
+- [ ] T009 [US2] Add config:validate script entry to package.json
+- [ ] T010 [US2] Add reload endpoint POST /api/reload in src/routes/admin/index.ts
+- [ ] T011 [US2] Add reload script entry to package.json
+
+### Tests for User Story 2
+
+- [ ] T012 [P] [US2] Add config:validate success test in tests/unit/scripts/validate-config.test.ts
+- [ ] T013 [P] [US2] Add config:validate failure test in tests/unit/scripts/validate-config.test.ts
+
+**Checkpoint**: `npm run config:validate` exits 0 for valid config, 1 for invalid; `npm run reload` triggers hot-reload
+
+---
+
+## Phase 4: User Story 3 - Reliable Test Suite with Adequate Coverage (Priority: P2)
+
+**Goal**: Achieve 80%+ test coverage for lines, functions, and statements
+
+**Independent Test**: Run `npm run test:coverage` and verify all metrics >= 80%
+
+### Tests for User Story 3
+
+- [ ] T014 [P] [US3] Create health route tests in tests/unit/routes/health.test.ts
+- [ ] T015 [P] [US3] Create validators utility tests in tests/unit/utils/validators.test.ts
+- [ ] T016 [P] [US3] Add streaming error tests in tests/unit/services/request-proxy.test.ts
+- [ ] T017 [P] [US3] Add error branch tests in tests/unit/services/request-router.test.ts
+
+**Checkpoint**: `npm run test:coverage` shows >= 80% for lines, functions, statements
+
+---
+
+## Phase 5: User Story 4 - Clean Linting Output (Priority: P3)
+
+**Goal**: Zero lint warnings across the codebase
+
+**Independent Test**: Run `npm run lint` and verify zero warnings reported
+
+### Implementation for User Story 4
+
+- [ ] T018 [P] [US4] Refactor createMessage function under 50 lines in src/routes/anthropic/handlers.ts
+- [ ] T019 [P] [US4] Refactor createChatCompletion function under 50 lines in src/routes/openai/handlers.ts
+- [ ] T020 [P] [US4] Refactor makeRequest method with options object in src/services/request-proxy.ts
+- [ ] T021 [P] [US4] Refactor makeStreamingRequest method with options object in src/services/request-proxy.ts
+- [ ] T022 [P] [US4] Refactor route method under 50 lines in src/services/request-router.ts
+- [ ] T023 [P] [US4] Fix max-depth warnings with early returns in src/routes/anthropic/handlers.ts
+- [ ] T024 [P] [US4] Fix max-depth warnings with early returns in src/routes/openai/handlers.ts
+- [ ] T025 [P] [US4] Remove unused imports in tests/unit/services/circuit-breaker.test.ts
+- [ ] T026 [P] [US4] Remove unused imports in tests/unit/services/plan-repository.test.ts
+- [ ] T027 [P] [US4] Remove unused imports in tests/unit/services/quota-manager.test.ts
+- [ ] T028 [P] [US4] Remove unused imports in tests/unit/services/request-proxy.test.ts
+- [ ] T029 [P] [US4] Remove unused variables in tests/unit/services/request-router.test.ts
+
+**Checkpoint**: `npm run lint` reports 0 warnings, 0 errors
+
+---
+
+## Phase 6: Polish & Verification
+
+**Purpose**: Final verification and documentation updates
+
+- [ ] T030 Run full test suite and verify all tests pass
+- [ ] T031 Run lint and verify zero warnings
+- [ ] T032 Run coverage and verify >= 80% threshold met
+- [ ] T033 Verify graceful shutdown with manual test
+
+---
+
+## Dependencies & Execution Order
+
+### Phase Dependencies
+
+- **Setup (Phase 1)**: No dependencies - can start immediately
+- **User Story 1 (Phase 2)**: No dependencies on Setup - can start immediately
+- **User Story 2 (Phase 3)**: No dependencies - can run parallel to US1
+- **User Story 3 (Phase 4)**: No dependencies - can run parallel to US1/US2
+- **User Story 4 (Phase 5)**: No dependencies - can run parallel to US1/US2/US3
+- **Polish (Phase 6)**: Depends on all user stories being complete
+
+### User Story Dependencies
+
+- **User Story 1 (P1)**: No dependencies on other stories
+- **User Story 2 (P2)**: No dependencies on other stories
+- **User Story 3 (P2)**: No dependencies on other stories
+- **User Story 4 (P3)**: No dependencies on other stories
+
+### Parallel Opportunities
+
+All user stories can be implemented in parallel as they modify different files:
+- US1: src/app.ts, src/index.ts
+- US2: scripts/validate-config.ts, package.json, src/routes/admin/index.ts
+- US3: tests/unit/routes/health.test.ts, tests/unit/utils/validators.test.ts, etc.
+- US4: Various source and test files (refactoring)
+
+---
+
+## Parallel Example: Multiple User Stories
+
+```bash
+# These can all run in parallel by different developers:
+Task: "T002-T007 [US1] Graceful shutdown implementation"
+Task: "T008-T013 [US2] NPM scripts implementation"
+Task: "T014-T017 [US3] Test coverage improvements"
+Task: "T018-T029 [US4] Lint warning fixes"
+```
+
+---
+
+## Implementation Strategy
+
+### MVP First (User Story 1 Only)
+
+1. Complete Phase 1: Setup (T001)
+2. Complete Phase 2: User Story 1 (T002-T007)
+3. **STOP and VALIDATE**: Test graceful shutdown manually
+4. Quota state persistence is now reliable
+
+### Incremental Delivery
+
+1. Complete US1 → Data integrity on shutdown ✓
+2. Add US2 → Developer convenience scripts ✓
+3. Add US3 → Code quality with 80%+ coverage ✓
+4. Add US4 → Clean lint output ✓
+5. Run Polish phase → All success criteria verified ✓
+
+### Risk Mitigation
+
+Per research.md risk assessment:
+- Run full test suite after each refactoring task (US4)
+- Focus tests on uncovered lines identified in coverage report (US3)
+- Test shutdown with SIGINT, SIGTERM, and normal close (US1)
+
+---
+
+## Notes
+
+- [P] tasks = different files, no dependencies between tasks
+- [Story] label maps task to specific user story for traceability
+- All 4 user stories are independent and can be done in parallel
+- Commit after each task or logical group
+- Run tests frequently during US4 refactoring to catch regressions
+- Coverage improvements (US3) can be done incrementally during other work
