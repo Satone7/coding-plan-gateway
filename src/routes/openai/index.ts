@@ -36,10 +36,10 @@ export async function registerOpenAIRoutes(
   await app.register(
     (fastify, _options, done) => {
       // POST /v1/chat/completions - Create chat completion
-      fastify.post('/chat/completions', (request, reply) => handlers.createChatCompletion(request, reply));
+      fastify.post('/chat/completions', handlers.createChatCompletion);
 
       // GET /v1/models - List available models
-      fastify.get('/models', (request, reply) => handlers.listModels(request, reply));
+      fastify.get('/models', handlers.listModels);
 
       done();
     },

@@ -4,12 +4,14 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { FastifyInstance } from 'fastify';
+import Fastify from 'fastify';
 import { mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { createApp } from '@/app';
 import { FilePlanRepository } from '@/services/plan-repository';
 import { QuotaManager, createQuotaManager } from '@/services/quota-manager';
+import { registerAdminRoutes } from '@/routes/admin';
+import { registerErrorHandler } from '@/middleware/error-handler';
 import { createMockPlanInput } from '../../fixtures/mock-plans';
 
 // Test encryption key
@@ -37,12 +39,19 @@ describe('Admin Routes', () => {
     // Create quota manager
     quotaManager = createQuotaManager({ quotaStatePath: quotaPath });
 
-    // Create app with admin routes
-    app = await createApp();
+    // Create raw Fastify instance (not using createApp to avoid route conflicts)
+    app = Fastify({
+      logger: false,
+    });
 
-    // Register admin routes manually (they're not registered by default)
-    const { registerAdminRoutes } = await import('@/routes/admin');
+    // Register error handler to properly handle validation errors
+    registerErrorHandler(app);
+
+    // Register admin routes
     await registerAdminRoutes(app, { repository, quotaManager });
+
+    // Wait for app to be ready
+    await app.ready();
   });
 
   afterEach(async () => {

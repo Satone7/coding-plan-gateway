@@ -5,25 +5,12 @@
 
 import { FastifyInstance } from 'fastify';
 import { logger } from '@/utils/logger';
-
-/**
- * Route plugin function type.
- */
-type RoutePlugin = (app: FastifyInstance) => Promise<void> | void;
-
-/**
- * Registered route plugins.
- * Add new route modules here as they are implemented.
- */
-const routePlugins: Array<{ name: string; plugin: RoutePlugin }> = [];
-
-/**
- * Register a route plugin.
- * Route plugins should be added here during implementation.
- */
-export function registerRoutePlugin(name: string, plugin: RoutePlugin): void {
-  routePlugins.push({ name, plugin });
-}
+import { registerOpenAIRoutes } from './openai';
+import { registerAnthropicRoutes } from './anthropic';
+import { registerAdminRoutes } from './admin';
+import { createPlanRepository } from '@/services/plan-repository';
+import { createQuotaManager } from '@/services/quota-manager';
+import { createRequestProxy } from '@/services/request-proxy';
 
 /**
  * Register all routes with the Fastify instance.
@@ -33,7 +20,7 @@ export function registerRoutePlugin(name: string, plugin: RoutePlugin): void {
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   logger.info('Registering routes...');
 
-  // Register health endpoints (basic implementation for now)
+  // Register health endpoints
   app.get('/health', () => ({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -50,26 +37,33 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     },
   }));
 
-  // Register all route plugins
-  for (const { name, plugin } of routePlugins) {
-    try {
-      await plugin(app);
-      logger.debug(`Registered route plugin: ${name}`);
-    } catch (error) {
-      logger.error(`Failed to register route plugin: ${name}`, error as Error);
-      throw error;
-    }
-  }
+  // Create dependencies
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  const configPath = process.env.CONFIG_PATH ?? './config.yaml';
+  const repository = createPlanRepository(configPath, encryptionKey);
+  const proxy = createRequestProxy();
 
-  logger.info(`Registered ${routePlugins.length} route plugin(s)`);
-}
+  // Create quota manager if encryption key is available
+  const quotaManager = encryptionKey ? createQuotaManager() : undefined;
 
-/**
- * Root route handler for basic health check.
- */
-export function rootHandler(): { status: string; version: string } {
-  return {
-    status: 'ok',
-    version: process.env.npm_package_version ?? '1.0.0',
-  };
+  // Register API routes
+  await registerOpenAIRoutes(app, {
+    repository,
+    proxy,
+    prefix: '/v1',
+  });
+
+  await registerAnthropicRoutes(app, {
+    repository,
+    proxy,
+    prefix: '/v1',
+  });
+
+  await registerAdminRoutes(app, {
+    repository,
+    quotaManager,
+    prefix: '/api',
+  });
+
+  logger.info('All routes registered');
 }

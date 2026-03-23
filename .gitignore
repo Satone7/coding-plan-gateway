@@ -33,5 +33,6 @@ coverage/
 
 # Config files with secrets
 config.yaml
+config/
 quota-state.json
 secrets.enc

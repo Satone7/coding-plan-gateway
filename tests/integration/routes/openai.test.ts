@@ -4,12 +4,14 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { FastifyInstance } from 'fastify';
-import { mkdir, rm, writeFile } from 'fs/promises';
+import Fastify from 'fastify';
+import { mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { createApp } from '@/app';
 import { FilePlanRepository } from '@/services/plan-repository';
 import { RequestProxy } from '@/services/request-proxy';
+import { registerOpenAIRoutes } from '@/routes/openai';
+import { registerErrorHandler } from '@/middleware/error-handler';
 import { createMockPlanInput } from '../../fixtures/mock-plans';
 
 // Test encryption key
@@ -33,12 +35,19 @@ describe('OpenAI Routes', () => {
     repository = new FilePlanRepository(configPath, TEST_ENCRYPTION_KEY);
     proxy = new RequestProxy();
 
-    // Create app
-    app = await createApp();
+    // Create raw Fastify instance (not using createApp to avoid route conflicts)
+    app = Fastify({
+      logger: false,
+    });
+
+    // Register error handler to properly handle validation errors
+    registerErrorHandler(app);
 
     // Register OpenAI routes
-    const { registerOpenAIRoutes } = await import('@/routes/openai');
     await registerOpenAIRoutes(app, { repository, proxy });
+
+    // Wait for app to be ready
+    await app.ready();
   });
 
   afterEach(async () => {
@@ -89,7 +98,7 @@ describe('OpenAI Routes', () => {
     });
 
     it('should not include models from paused plans', async () => {
-      const plan1 = await repository.save(
+      const _plan1 = await repository.save(
         createMockPlanInput({
           name: 'Active Plan',
           models: ['active-model'],

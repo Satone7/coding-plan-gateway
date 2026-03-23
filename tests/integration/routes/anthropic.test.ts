@@ -4,12 +4,14 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { FastifyInstance } from 'fastify';
+import Fastify from 'fastify';
 import { mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { createApp } from '@/app';
 import { FilePlanRepository } from '@/services/plan-repository';
 import { RequestProxy } from '@/services/request-proxy';
+import { registerAnthropicRoutes } from '@/routes/anthropic';
+import { registerErrorHandler } from '@/middleware/error-handler';
 import { createMockPlanInput } from '../../fixtures/mock-plans';
 
 // Test encryption key
@@ -33,12 +35,19 @@ describe('Anthropic Routes', () => {
     repository = new FilePlanRepository(configPath, TEST_ENCRYPTION_KEY);
     proxy = new RequestProxy();
 
-    // Create app
-    app = await createApp();
+    // Create raw Fastify instance (not using createApp to avoid route conflicts)
+    app = Fastify({
+      logger: false,
+    });
+
+    // Register error handler to properly handle validation errors
+    registerErrorHandler(app);
 
     // Register Anthropic routes
-    const { registerAnthropicRoutes } = await import('@/routes/anthropic');
     await registerAnthropicRoutes(app, { repository, proxy });
+
+    // Wait for app to be ready
+    await app.ready();
   });
 
   afterEach(async () => {
