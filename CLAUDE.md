@@ -93,6 +93,8 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
 ## Active Technologies
 - TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Vitest, Zod (validation), MSW (mocking) (001-coding-plan-gateway)
 - YAML/JSON files (current), PostgreSQL with Drizzle ORM (future migration path prepared) (001-coding-plan-gateway)
+- TypeScript 5.x, Node.js 20+ LTS + Fastify 4.x, Vitest, Zod, ESLint (002-fix-task-completion-issues)
+- YAML/JSON file-based configuration (002-fix-task-completion-issues)
 
 ## Recent Changes
 - 001-coding-plan-gateway: Added TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Vitest, Zod (validation), MSW (mocking)
