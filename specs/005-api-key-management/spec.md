@@ -91,7 +91,8 @@ As a gateway administrator, I want to query usage reports via CLI commands so th
 - **FR-003**: System MUST provide CLI commands for creating, listing, enabling/disabling, and deleting API keys.
 - **FR-004**: System MUST generate cryptographically secure random API keys with a configurable prefix.
 - **FR-005**: System MUST track request count and token usage per API key.
-- **FR-006**: System MUST persist usage data to file storage with periodic sync.
+- **FR-006**: System MUST persist usage data to a separate JSON file (usage-data.json) with periodic sync.
+- **FR-006a**: System MUST store API keys in a separate JSON file (api-keys.json) with key hashes only.
 - **FR-007**: System MUST provide CLI commands for querying usage reports with filtering options.
 - **FR-008**: System MUST store API key hashes (not plaintext) for security.
 - **FR-009**: System MUST support key expiration dates (optional configuration).
@@ -99,8 +100,8 @@ As a gateway administrator, I want to query usage reports via CLI commands so th
 
 ### Key Entities
 
-- **API Key**: Represents a client credential with attributes: ID, name, key hash, prefix (for identification), creation date, expiration date (optional), status (active/disabled).
-- **Usage Record**: Represents usage metrics for an API key with attributes: key ID, request count, input token count, output token count, last used timestamp, date bucket (for historical tracking).
+- **API Key**: Represents a client credential with attributes: ID (UUID format), name, key string (prefixed random format, e.g., `cpg_xxxxxxxxxxxx`), key hash (bcrypt), prefix (first 8 chars for identification), creation date, expiration date (optional), status (active/disabled).
+- **Usage Record**: Represents daily aggregated usage metrics for an API key with attributes: key ID, date (YYYY-MM-DD), request count, input token count, output token count, last request timestamp.
 - **Usage Report**: Aggregated view of usage data with attributes: key ID, key name, total requests, total tokens, date range, breakdown by period.
 
 ## Success Criteria *(mandatory)*
@@ -114,6 +115,16 @@ As a gateway administrator, I want to query usage reports via CLI commands so th
 - **SC-005**: Usage report generation completes in under 2 seconds for up to 10,000 records.
 - **SC-006**: Zero plaintext API keys stored in any persistent storage.
 - **SC-007**: Service restarts with zero loss of persisted usage data.
+
+## Clarifications
+
+### Session 2026-03-24
+
+- Q: What format should the API Key ID be? → A: UUID format (e.g., 550e8400-e29b-41d4-a716-446655440000)
+- Q: What format should the generated API Key string be? → A: Prefixed random string (e.g., `cpg_xxxxxxxxxxxx`)
+- Q: Where should API Keys be stored? → A: Separate JSON file (e.g., `api-keys.json`)
+- Q: What granularity should usage data be aggregated by? → A: Daily aggregation (one record per day per API key)
+- Q: What format should usage data be persisted in? → A: Separate JSON file (e.g., `usage-data.json`)
 
 ## Assumptions
 
