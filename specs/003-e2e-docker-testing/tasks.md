@@ -27,18 +27,18 @@ This document defines the implementation tasks for the E2E Docker Testing Enviro
 
 ### Tasks
 
-- [ ] T001 Create e2e/ directory structure with workspace/ subdirectory in e2e/
-- [ ] T002 Create logs/ directory structure with gateway/ and claude-code/ subdirectories in logs/
-- [ ] T003 [P] Create .gitkeep files in empty directories (e2e/workspace/, logs/gateway/, logs/claude-code/)
-- [ ] T004 Update .gitignore to exclude e2e/test-config.yaml and logs/ in .gitignore
-- [ ] T005 [P] Create test-config.example.yaml template file in e2e/test-config.example.yaml
-- [ ] T006 [P] Create e2e/README.md with overview documentation in e2e/README.md
+- [X] T001 Create e2e/ directory structure with workspace/ subdirectory in e2e/
+- [X] T002 Create logs/ directory structure with gateway/ and claude-code/ subdirectories in logs/
+- [X] T003 [P] Create .gitkeep files in empty directories (e2e/workspace/, logs/gateway/, logs/claude-code/)
+- [X] T004 Update .gitignore to exclude e2e/test-config.yaml and logs/ in .gitignore
+- [X] T005 [P] Create test-config.example.yaml template file in e2e/test-config.example.yaml
+- [X] T006 [P] Create e2e/README.md with overview documentation in e2e/README.md
 
 ### Verification Tasks (Phase 1)
 
-- [ ] V001 Verify all directories exist: `ls -la e2e/ logs/`
-- [ ] V002 Verify .gitignore contains correct entries: `grep -E "test-config.yaml|logs/" .gitignore`
-- [ ] V003 Verify template config is valid YAML: `python -c "import yaml; yaml.safe_load(open('e2e/test-config.example.yaml'))"`
+- [X] V001 Verify all directories exist: `ls -la e2e/ logs/`
+- [X] V002 Verify .gitignore contains correct entries: `grep -E "test-config.yaml|logs/" .gitignore`
+- [X] V003 Verify template config is valid YAML: `python -c "import yaml; yaml.safe_load(open('e2e/test-config.example.yaml'))"`
 
 ---
 
@@ -53,21 +53,21 @@ This document defines the implementation tasks for the E2E Docker Testing Enviro
 
 ### Tasks
 
-- [ ] T007 Create Dockerfile for Claude Code container in e2e/Dockerfile
-- [ ] T008 Create docker-compose.e2e.yml with gateway and claude-code services in docker-compose.e2e.yml
-- [ ] T009 Create scripts/e2e/ directory in scripts/e2e/
-- [ ] T010 [P] Create start.sh script in scripts/e2e/start.sh
-- [ ] T011 [P] Create stop.sh script in scripts/e2e/stop.sh
-- [ ] T012 [P] Create reset.sh script in scripts/e2e/reset.sh
-- [ ] T013 [P] Create status.sh script in scripts/e2e/status.sh
-- [ ] T014 Add npm scripts (e2e:start, e2e:stop, e2e:reset, e2e:logs, e2e:status) in package.json
+- [X] T007 Create Dockerfile for Claude Code container in e2e/Dockerfile
+- [X] T008 Create docker-compose.e2e.yml with gateway and claude-code services in docker-compose.e2e.yml
+- [X] T009 Create scripts/e2e/ directory in scripts/e2e/
+- [X] T010 [P] Create start.sh script in scripts/e2e/start.sh
+- [X] T011 [P] Create stop.sh script in scripts/e2e/stop.sh
+- [X] T012 [P] Create reset.sh script in scripts/e2e/reset.sh
+- [X] T013 [P] Create status.sh script in scripts/e2e/status.sh
+- [X] T014 Add npm scripts (e2e:start, e2e:stop, e2e:reset, e2e:logs, e2e:status) in package.json
 
 ### Verification Tasks (Phase 2)
 
-- [ ] V004 Verify Dockerfile builds: `docker build -t claude-code-test -f e2e/Dockerfile e2e/`
-- [ ] V005 Verify docker-compose file is valid: `docker-compose -f docker-compose.e2e.yml config`
-- [ ] V006 Verify all scripts are executable: `ls -la scripts/e2e/*.sh`
-- [ ] V007 Verify npm scripts are registered: `npm run e2e:status`
+- [X] V004 Verify Dockerfile builds: `docker build -t claude-code-test -f e2e/Dockerfile e2e/`
+- [X] V005 Verify docker-compose file is valid: `docker-compose -f docker-compose.e2e.yml config`
+- [X] V006 Verify all scripts are executable: `ls -la scripts/e2e/*.sh`
+- [X] V007 Verify npm scripts are registered: `npm run e2e:status`
 
 ---
 
@@ -79,17 +79,17 @@ This document defines the implementation tasks for the E2E Docker Testing Enviro
 
 ### Implementation Tasks
 
-- [ ] T015 [US1] Verify Node.js version in Dockerfile matches 20+ LTS requirement in e2e/Dockerfile
-- [ ] T016 [US1] Add Claude Code CLI installation step to Dockerfile in e2e/Dockerfile
-- [ ] T017 [US1] Configure container user and working directory in e2e/Dockerfile
-- [ ] T018 [US1] Build and test Claude Code container image locally
+- [X] T015 [US1] Verify Node.js version in Dockerfile matches 20+ LTS requirement in e2e/Dockerfile
+- [X] T016 [US1] Add Claude Code CLI installation step to Dockerfile in e2e/Dockerfile
+- [X] T017 [US1] Configure container user and working directory in e2e/Dockerfile
+- [X] T018 [US1] Build and test Claude Code container image locally
 
 ### Verification Tasks (Phase 3)
 
-- [ ] V008 [US1] Verify container builds successfully: `docker build -t claude-code-test -f e2e/Dockerfile e2e/`
-- [ ] V009 [US1] Verify Claude Code CLI is accessible in container: `docker run --rm claude-code-test claude --version`
-- [ ] V010 [US1] Verify Node.js version in container: `docker run --rm claude-code-test node --version | grep -E "^v20|^v22"`
-- [ ] V011 [US1] Verify container can start interactively: `docker run --rm -it claude-code-test echo "OK"`
+- [X] V008 [US1] Verify container builds successfully: `docker build -t claude-code-test -f e2e/Dockerfile e2e/`
+- [X] V009 [US1] Verify Claude Code CLI is accessible in container: `docker run --rm claude-code-test claude --version`
+- [X] V010 [US1] Verify Node.js version in container: `docker run --rm claude-code-test node --version | grep -E "^v20|^v22"`
+- [X] V011 [US1] Verify container can start interactively: `docker run --rm -it claude-code-test echo "OK"`
 
 **Phase 3 Complete When**: All verification tasks pass; Claude Code CLI runs in container.
 
@@ -103,19 +103,19 @@ This document defines the implementation tasks for the E2E Docker Testing Enviro
 
 ### Implementation Tasks
 
-- [ ] T019 [US2] Configure ANTHROPIC_BASE_URL environment variable in docker-compose.e2e.yml
-- [ ] T020 [US2] Configure ANTHROPIC_MODEL environment variable in docker-compose.e2e.yml
-- [ ] T021 [US2] Configure Docker network for inter-container communication in docker-compose.e2e.yml
-- [ ] T022 [US2] Add health check for gateway service in docker-compose.e2e.yml
-- [ ] T023 [US2] Configure volume mounts for config and logs in docker-compose.e2e.yml
+- [X] T019 [US2] Configure ANTHROPIC_BASE_URL environment variable in docker-compose.e2e.yml
+- [X] T020 [US2] Configure ANTHROPIC_MODEL environment variable in docker-compose.e2e.yml
+- [X] T021 [US2] Configure Docker network for inter-container communication in docker-compose.e2e.yml
+- [X] T022 [US2] Add health check for gateway service in docker-compose.e2e.yml
+- [X] T023 [US2] Configure volume mounts for config and logs in docker-compose.e2e.yml
 
 ### Verification Tasks (Phase 4)
 
-- [ ] V012 [US2] Verify docker-compose network configuration: `docker-compose -f docker-compose.e2e.yml config | grep -A5 "networks:"`
-- [ ] V013 [US2] Verify environment variables are set: `docker-compose -f docker-compose.e2e.yml config | grep -E "ANTHROPIC_BASE_URL|ANTHROPIC_MODEL"`
-- [ ] V014 [US2] Start environment and verify containers run: `npm run e2e:start && docker ps | grep -E "gateway|claude-code"`
-- [ ] V015 [US2] Verify gateway is accessible from claude-code container: `docker exec claude-code curl -s http://gateway:8080/health`
-- [ ] V016 [US2] Stop environment: `npm run e2e:stop`
+- [X] V012 [US2] Verify docker-compose network configuration: `docker-compose -f docker-compose.e2e.yml config | grep -A5 "networks:"`
+- [X] V013 [US2] Verify environment variables are set: `docker-compose -f docker-compose.e2e.yml config | grep -E "ANTHROPIC_BASE_URL|ANTHROPIC_MODEL"`
+- [X] V014 [US2] Start environment and verify containers run: `npm run e2e:start && docker ps | grep -E "gateway|claude-code"`
+- [X] V015 [US2] Verify gateway is accessible from claude-code container: `docker exec claude-code curl -s http://gateway:8080/health`
+- [X] V016 [US2] Stop environment: `npm run e2e:stop`
 
 **Phase 4 Complete When**: All verification tasks pass; Claude Code can reach gateway.
 
@@ -129,19 +129,19 @@ This document defines the implementation tasks for the E2E Docker Testing Enviro
 
 ### Implementation Tasks
 
-- [ ] T024 [US3] Copy test-config.example.yaml to test-config.yaml for testing in e2e/test-config.yaml
-- [ ] T025 [US3] Start full e2e environment with valid config
-- [ ] T026 [US3] Execute test request through Claude Code container
-- [ ] T027 [US3] Verify gateway logs show request received with correct model
+- [X] T024 [US3] Copy test-config.example.yaml to test-config.yaml for testing in e2e/test-config.yaml
+- [X] T025 [US3] Start full e2e environment with valid config
+- [X] T026 [US3] Execute test request through Claude Code container
+- [X] T027 [US3] Verify gateway logs show request received with correct model
 
 ### Verification Tasks (Phase 5)
 
-- [ ] V017 [US3] Verify config file is valid: `cat e2e/test-config.yaml | head -20`
-- [ ] V018 [US3] Start environment and verify both containers healthy: `npm run e2e:start && npm run e2e:status`
-- [ ] V019 [US3] Verify gateway health endpoint: `curl -s http://localhost:8080/health`
-- [ ] V020 [US3] Verify gateway models endpoint includes kimi-k2.5: `curl -s http://localhost:8080/v1/models | grep -i kimi`
-- [ ] V021 [US3] Check logs are being written: `ls -la logs/gateway/ logs/claude-code/`
-- [ ] V022 [US3] Stop and cleanup: `npm run e2e:reset`
+- [X] V017 [US3] Verify config file is valid: `cat e2e/test-config.yaml | head -20`
+- [X] V018 [US3] Start environment and verify both containers healthy: `npm run e2e:start && npm run e2e:status`
+- [X] V019 [US3] Verify gateway health endpoint: `curl -s http://localhost:8080/health`
+- [X] V020 [US3] Verify gateway models endpoint includes kimi-k2.5: `curl -s http://localhost:8080/v1/models | grep -i kimi`
+- [X] V021 [US3] Check logs are being written: `ls -la logs/gateway/ logs/claude-code/`
+- [X] V022 [US3] Stop and cleanup: `npm run e2e:reset`
 
 **Phase 5 Complete When**: All verification tasks pass; Request-response cycle validated.
 
@@ -155,16 +155,16 @@ This document defines the implementation tasks for the E2E Docker Testing Enviro
 
 ### Implementation Tasks
 
-- [ ] T028 [US4] Enhance e2e/README.md with step-by-step testing guide in e2e/README.md
-- [ ] T029 [US4] Document common troubleshooting scenarios in e2e/README.md
-- [ ] T030 [US4] Add examples of expected behavior for each test scenario in e2e/README.md
+- [X] T028 [US4] Enhance e2e/README.md with step-by-step testing guide in e2e/README.md
+- [X] T029 [US4] Document common troubleshooting scenarios in e2e/README.md
+- [X] T030 [US4] Add examples of expected behavior for each test scenario in e2e/README.md
 
 ### Verification Tasks (Phase 6)
 
-- [ ] V023 [US4] Verify README contains quick start section: `grep -i "quick start" e2e/README.md`
-- [ ] V024 [US4] Verify README contains troubleshooting section: `grep -i "troubleshooting" e2e/README.md`
-- [ ] V025 [US4] Verify README contains test scenarios: `grep -i "test scenario\|verify" e2e/README.md`
-- [ ] V026 [US4] Manual review: README is clear and actionable for new developers
+- [X] V023 [US4] Verify README contains quick start section: `grep -i "quick start" e2e/README.md`
+- [X] V024 [US4] Verify README contains troubleshooting section: `grep -i "troubleshooting" e2e/README.md`
+- [X] V025 [US4] Verify README contains test scenarios: `grep -i "test scenario\|verify" e2e/README.md`
+- [X] V026 [US4] Manual review: README is clear and actionable for new developers
 
 **Phase 6 Complete When**: All verification tasks pass; Guide is complete and usable.
 
@@ -180,16 +180,16 @@ This document defines the implementation tasks for the E2E Docker Testing Enviro
 
 ### Tasks
 
-- [ ] T031 Verify all npm scripts work correctly
-- [ ] T032 Verify logs are captured correctly in mounted volumes
-- [ ] T033 Verify environment can be cleaned up completely (SC-004)
+- [X] T031 Verify all npm scripts work correctly
+- [X] T032 Verify logs are captured correctly in mounted volumes
+- [X] T033 Verify environment can be cleaned up completely (SC-004)
 
 ### Final Verification Tasks
 
-- [ ] V027 Verify SC-001: Environment starts in under 60 seconds: `time npm run e2e:start`
-- [ ] V028 Verify SC-004: Environment cleans up in under 30 seconds: `time npm run e2e:reset`
-- [ ] V029 Verify SC-005: Environment reproduces across machines (document in README)
-- [ ] V030 Final integration test: Full start -> test -> stop cycle
+- [X] V027 Verify SC-001: Environment starts in under 60 seconds: `time npm run e2e:start`
+- [X] V028 Verify SC-004: Environment cleans up in under 30 seconds: `time npm run e2e:reset`
+- [X] V029 Verify SC-005: Environment reproduces across machines (document in README)
+- [X] V030 Final integration test: Full start -> test -> stop cycle
 
 ---
 

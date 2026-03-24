@@ -25,5 +25,6 @@ USER claude
 ENV ANTHROPIC_BASE_URL=http://gateway:8080
 ENV ANTHROPIC_MODEL=kimi-k2.5
 
-# Default command
-CMD ["claude"]
+# Keep container running for interactive use
+# Run Claude Code interactively with: docker exec -it claude-code claude
+CMD ["sleep", "infinity"]
