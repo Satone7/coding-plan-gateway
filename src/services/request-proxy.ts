@@ -211,7 +211,10 @@ export class RequestProxy {
     request: ChatCompletionRequest,
     options: ProxyRequestOptions
   ): Promise<UpstreamResponse<ChatCompletionResponse>> {
-    const url = new URL('/v1/chat/completions', options.baseUrl);
+    const basePath = options.baseUrl.endsWith('/')
+      ? options.baseUrl.slice(0, -1)
+      : options.baseUrl;
+    const url = new URL(`${basePath}/v1/chat/completions`);
     const startTime = Date.now();
 
     logger.debug('Forwarding OpenAI request', {
@@ -249,7 +252,10 @@ export class RequestProxy {
     onChunk: StreamCallback,
     reply: FastifyReply
   ): Promise<void> {
-    const url = new URL('/v1/chat/completions', options.baseUrl);
+    const basePath = options.baseUrl.endsWith('/')
+      ? options.baseUrl.slice(0, -1)
+      : options.baseUrl;
+    const url = new URL(`${basePath}/v1/chat/completions`);
     const startTime = Date.now();
 
     logger.debug('Forwarding OpenAI streaming request', {
@@ -295,7 +301,10 @@ export class RequestProxy {
     request: AnthropicMessageRequest,
     options: ProxyRequestOptions
   ): Promise<UpstreamResponse<AnthropicMessageResponse>> {
-    const url = new URL('/v1/messages', options.baseUrl);
+    const basePath = options.baseUrl.endsWith('/')
+      ? options.baseUrl.slice(0, -1)
+      : options.baseUrl;
+    const url = new URL(`${basePath}/v1/messages`);
     const startTime = Date.now();
 
     logger.debug('Forwarding Anthropic request', {
@@ -337,7 +346,10 @@ export class RequestProxy {
     onChunk: StreamCallback,
     reply: FastifyReply
   ): Promise<void> {
-    const url = new URL('/v1/messages', options.baseUrl);
+    const basePath = options.baseUrl.endsWith('/')
+      ? options.baseUrl.slice(0, -1)
+      : options.baseUrl;
+    const url = new URL(`${basePath}/v1/messages`);
     const startTime = Date.now();
 
     logger.debug('Forwarding Anthropic streaming request', {
