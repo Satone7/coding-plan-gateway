@@ -38,21 +38,21 @@ Implement API key authentication and usage tracking for the Coding Plan Gateway.
 
 ### Tasks
 
-- [ ] T009 [P] Create ApiKey interface in src/types/api-key.ts with fields: id, name, keyHash, prefix, status, createdAt, expiresAt, lastUsedAt
-- [ ] T010 [P] Create UsageRecord interface in src/types/usage.ts with fields: keyId, date, requestCount, inputTokens, outputTokens, lastRequest
-- [ ] T011 [P] Create UsageReport interface in src/types/usage.ts with aggregated metrics
-- [ ] T012 [P] Create Zod schemas for API key validation in src/types/api-key.ts
-- [ ] T013 [P] Create Zod schemas for usage data validation in src/types/usage.ts
-- [ ] T014 Export new types from src/types/index.ts
-- [ ] T015 Implement generateKeyString() function in src/utils/key-generator.ts - generates `cpg_` prefix + 32 random alphanumeric chars
-- [ ] T016 Implement generateKeyPrefix() function in src/utils/key-generator.ts - extracts first 8 chars after prefix
-- [ ] T017 Create auth configuration loader in src/config/auth-config.ts with environment variable parsing
+- [X] T009 [P] Create ApiKey interface in src/types/api-key.ts with fields: id, name, keyHash, prefix, status, createdAt, expiresAt, lastUsedAt
+- [X] T010 [P] Create UsageRecord interface in src/types/usage.ts with fields: keyId, date, requestCount, inputTokens, outputTokens, lastRequest
+- [X] T011 [P] Create UsageReport interface in src/types/usage.ts with aggregated metrics
+- [X] T012 [P] Create Zod schemas for API key validation in src/types/api-key.ts
+- [X] T013 [P] Create Zod schemas for usage data validation in src/types/usage.ts
+- [X] T014 Export new types from src/types/index.ts
+- [X] T015 Implement generateKeyString() function in src/utils/key-generator.ts - generates `cpg_` prefix + 32 random alphanumeric chars
+- [X] T016 Implement generateKeyPrefix() function in src/utils/key-generator.ts - extracts first 8 chars after prefix
+- [X] T017 Create auth configuration loader in src/config/auth-config.ts with environment variable parsing
 
 ### Verification
 
-- [ ] T018 Verify type exports by running TypeScript compilation: `npm run build` or `tsc --noEmit`
-- [ ] T019 Verify key generator produces valid format by creating a quick test script or unit test
-- [ ] T020 Verify auth config correctly reads environment variables with test values
+- [X] T018 Verify type exports by running TypeScript compilation: `npm run build` or `tsc --noEmit`
+- [X] T019 Verify key generator produces valid format by creating a quick test script or unit test
+- [X] T020 Verify auth config correctly reads environment variables with test values
 
 ---
 

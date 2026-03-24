@@ -82,3 +82,37 @@ export type {
 } from './anthropic';
 
 export { isAnthropicRequest } from './anthropic';
+
+// API Key types
+export type {
+  ApiKeyStatus,
+  ApiKey,
+  ApiKeyStorage,
+  CreateApiKeyInput,
+} from './api-key';
+
+export {
+  apiKeyStatusSchema,
+  apiKeySchema,
+  apiKeyStorageSchema,
+  createApiKeyInputSchema,
+} from './api-key';
+
+// Usage types
+export type {
+  UsageRecord,
+  DailyUsage,
+  DateRange,
+  UsageReport,
+  UsageDataStorage,
+  UsageRecordData,
+} from './usage';
+
+export {
+  usageRecordSchema,
+  dailyUsageSchema,
+  dateRangeSchema,
+  usageReportSchema,
+  usageRecordDataSchema,
+  usageDataStorageSchema,
+} from './usage';
