@@ -21,6 +21,7 @@ As a gateway administrator, I want to run management commands using the `cpg` ex
 2. **Given** the `cpg` executable is available, **When** I run `cpg key create --name "Test Key"`, **Then** a new API key is created and displayed.
 3. **Given** the `cpg` executable is available, **When** I run `cpg key list`, **Then** all existing API keys are listed with their metadata.
 4. **Given** an invalid command is provided, **When** I run `cpg invalid-command`, **Then** an error message is shown with available commands.
+5. **Given** a valid API key exists, **When** I run `cpg key test <key>`, **Then** the key validation status is displayed (valid/invalid/disabled/expired).
 
 ---
 
@@ -85,22 +86,36 @@ As a developer, I want the E2E testing environment to support the `cpg` CLI so t
 
 - **FR-001**: System MUST provide a standalone executable named `cpg` that can be invoked directly from the command line.
 - **FR-002**: System MUST support all existing API key management commands: `key create`, `key list`, `key disable`, `key enable`, `key delete`.
+- **FR-002b**: System MUST support `key test <key>` command to validate whether an API key is valid and active.
+- **FR-002a**: System MUST use fixed `cpg_` prefix for all generated API keys (no custom prefix support).
 - **FR-003**: System MUST support usage reporting command: `usage-report` with optional filtering parameters.
 - **FR-004**: System MUST display help information when invoked with `--help` or `-h` flag.
 - **FR-005**: System MUST display version information when invoked with `--version` or `-v` flag.
 - **FR-006**: System MUST exit with appropriate exit codes (0 for success, non-zero for errors).
-- **FR-007**: System MUST produce human-readable output with proper formatting (tables for lists, clear messages for actions).
-- **FR-008**: System MUST support configuration via environment variables (CONFIG_PATH, ENCRYPTION_KEY, etc.).
+- **FR-007**: System MUST produce human-readable output with proper formatting (tables for lists, clear messages for actions) by default.
+- **FR-007a**: System MUST support `--json` flag to output results in JSON format for automation and scripting.
+- **FR-008**: System MUST support configuration via environment variables (CONFIG_PATH, ENCRYPTION_KEY, GATEWAY_URL, etc.).
+- **FR-008a**: System MUST default GATEWAY_URL to `http://localhost:8080` for internal API communication.
 - **FR-009**: System MUST include the `cpg` executable in production Docker images.
 - **FR-010**: System MUST include the `cpg` executable in E2E testing Docker images.
 - **FR-011**: System MUST ensure CLI operations immediately update shared storage that the gateway service reads.
+- **FR-011a**: System MUST provide an internal API endpoint (e.g., `POST /internal/keys/reload`) for CLI to notify gateway of storage changes.
+- **FR-011a-1**: Internal API endpoint MUST be accessible only from localhost (no external network exposure).
+- **FR-011a-2**: Internal API endpoint MUST NOT require authentication (localhost binding provides sufficient security).
+- **FR-011b**: Gateway service MUST reload API keys from storage immediately upon receiving notification from CLI.
 - **FR-012**: System MUST support running CLI commands via `docker exec <container> cpg <command>`.
+
+### Security Requirements
+
+- **SR-001**: Internal API endpoints (e.g., `/internal/*`) MUST bind to localhost only, rejecting external network requests.
+- **SR-002**: Internal API endpoints MUST NOT require authentication, relying on localhost binding for security isolation.
 
 ### Key Entities
 
 - **CLI Entry Point**: The executable entry that parses command-line arguments, loads configuration, and dispatches to appropriate command handlers. Attributes: command name, subcommands, flags, arguments.
 - **Command Handler**: A function that executes a specific CLI command. Attributes: command name, argument schema, execution logic, output formatter.
 - **Shared Storage**: File-based storage (api-keys.json, usage-data.json) accessible by both CLI and running gateway service, enabling real-time key availability.
+- **Internal Notification API**: HTTP endpoint (`/internal/keys/reload`) that CLI calls after modifying storage, triggering gateway to reload keys immediately.
 
 ## Success Criteria *(mandatory)*
 
@@ -113,10 +128,21 @@ As a developer, I want the E2E testing environment to support the `cpg` CLI so t
 - **SC-005**: CLI works identically on host machine and inside Docker containers.
 - **SC-006**: Zero additional dependencies required beyond what's already in the production Docker image.
 
+## Clarifications
+
+### Session 2026-03-24
+
+- Q: Does CLI need to support machine-readable output formats for automation scripts? → A: Yes, add `--json` flag for JSON output support (default remains human-readable format).
+- Q: Should API key creation support custom prefixes or enforce fixed `cpg_` prefix? → A: Enforce fixed `cpg_` prefix only (simpler, avoids conflicts, easy to identify key origin).
+- Q: How does gateway service detect new API keys created by CLI? → A: CLI calls internal API to notify gateway service after creation (real-time update without polling delay).
+- Q: How does CLI find running gateway service to send notification? → A: Default to `localhost:8080`, configurable via `GATEWAY_URL` environment variable.
+- Q: Does internal API endpoint (`/internal/keys/reload`) require authentication? → A: No authentication needed, localhost-only access provides sufficient security isolation.
+- Q: Should CLI provide a command to validate if an API key is valid? → A: Yes, add `cpg key test <key>` command for key validation testing.
+
 ## Assumptions
 
 - File-based storage is shared between CLI and gateway service via volume mounts in Docker.
-- The gateway service already supports hot-reloading or polling for storage changes (via existing persistence mechanisms).
+- CLI notifies gateway service of storage changes via internal HTTP API for immediate key availability.
 - Node.js runtime is available in Docker images for executing the CLI.
 - Single-user deployment means no concurrent CLI access coordination is needed beyond atomic file writes.
 - The CLI will be implemented in TypeScript and compiled to JavaScript, executed via Node.js (no native binary compilation required).
