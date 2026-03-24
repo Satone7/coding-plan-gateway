@@ -18,6 +18,12 @@
     "clean": "rm -rf dist",
     "config:validate": "ts-node scripts/validate-config.ts",
     "reload": "curl -s -X POST http://localhost:8080/api/reload",
+    "key:create": "ts-node scripts/api-key.ts create",
+    "key:list": "ts-node scripts/api-key.ts list",
+    "key:disable": "ts-node scripts/api-key.ts disable",
+    "key:enable": "ts-node scripts/api-key.ts enable",
+    "key:delete": "ts-node scripts/api-key.ts delete",
+    "usage:report": "ts-node scripts/api-key.ts report",
     "e2e:start": "bash scripts/e2e/start.sh",
     "e2e:stop": "bash scripts/e2e/stop.sh",
     "e2e:reset": "bash scripts/e2e/reset.sh",
@@ -37,6 +43,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "dotenv": "^16.4.5",
     "fastify": "^4.28.0",
     "uuid": "^13.0.0",
@@ -44,6 +51,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/node": "^20.14.0",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^7.13.0",

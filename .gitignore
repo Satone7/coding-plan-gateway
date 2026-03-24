@@ -33,9 +33,11 @@ coverage/
 
 # Config files with secrets
 config.yaml
-config/
+/config/
 quota-state.json
 secrets.enc
+api-keys.json
+usage-data.json
 
 # E2E testing
 e2e/test-config.yaml

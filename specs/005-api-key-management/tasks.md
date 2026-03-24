@@ -18,17 +18,17 @@ Implement API key authentication and usage tracking for the Coding Plan Gateway.
 
 ### Tasks
 
-- [ ] T001 Install bcrypt and @types/bcrypt dependencies for key hashing
-- [ ] T002 Add API_KEY_PREFIX constant (value: `cpg_`) to src/config/defaults.ts
-- [ ] T003 Add auth-related environment variables to src/config/defaults.ts (API_KEYS_PATH, USAGE_DATA_PATH, AUTH_EXEMPT_PATHS, USAGE_SYNC_INTERVAL)
-- [ ] T004 Add npm scripts to package.json for key management commands (key:create, key:list, key:disable, key:enable, key:delete, usage:report)
-- [ ] T005 Run `npm install` to ensure dependencies are installed
+- [X] T001 Install bcrypt and @types/bcrypt dependencies for key hashing
+- [X] T002 Add API_KEY_PREFIX constant (value: `cpg_`) to src/config/defaults.ts
+- [X] T003 Add auth-related environment variables to src/config/defaults.ts (API_KEYS_PATH, USAGE_DATA_PATH, AUTH_EXEMPT_PATHS, USAGE_SYNC_INTERVAL)
+- [X] T004 Add npm scripts to package.json for key management commands (key:create, key:list, key:disable, key:enable, key:delete, usage:report)
+- [X] T005 Run `npm install` to ensure dependencies are installed
 
 ### Verification
 
-- [ ] T006 Verify bcrypt package is correctly installed by running `npm list bcrypt`
-- [ ] T007 Verify npm scripts are registered by running `npm run key:list --help` (should show command help or usage)
-- [ ] T008 Verify environment variable defaults by checking src/config/defaults.ts exports all auth config values
+- [X] T006 Verify bcrypt package is correctly installed by running `npm list bcrypt`
+- [X] T007 Verify npm scripts are registered by running `npm run key:list --help` (should show command help or usage)
+- [X] T008 Verify environment variable defaults by checking src/config/defaults.ts exports all auth config values
 
 ---
 

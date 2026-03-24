@@ -67,6 +67,16 @@ export const quotaSyncConfigSchema = z.object({
 });
 
 /**
+ * Auth configuration schema.
+ */
+export const authConfigSchema = z.object({
+  apiKeysPath: z.string().default('./api-keys.json'),
+  usageDataPath: z.string().default('./usage-data.json'),
+  authExemptPaths: z.string().default('/health,/ready'),
+  usageSyncIntervalMs: z.number().int().positive().default(60000),
+});
+
+/**
  * Full application configuration schema.
  */
 export const appConfigSchema = z.object({
@@ -74,6 +84,7 @@ export const appConfigSchema = z.object({
   paths: pathsConfigSchema,
   security: securityConfigSchema,
   quota: quotaSyncConfigSchema,
+  auth: authConfigSchema.optional(),
 });
 
 /**
@@ -85,4 +96,5 @@ export type ServerConfig = z.infer<typeof serverConfigSchema>;
 export type PathsConfig = z.infer<typeof pathsConfigSchema>;
 export type SecurityConfig = z.infer<typeof securityConfigSchema>;
 export type QuotaSyncConfig = z.infer<typeof quotaSyncConfigSchema>;
+export type AuthConfig = z.infer<typeof authConfigSchema>;
 export type AppConfig = z.infer<typeof appConfigSchema>;

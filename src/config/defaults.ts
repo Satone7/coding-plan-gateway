@@ -96,3 +96,28 @@ export const API_VERSION = '1.0.0';
  * Configuration file format version.
  */
 export const CONFIG_VERSION = '1.0';
+
+/**
+ * API key prefix for Coding Plan Gateway keys.
+ */
+export const API_KEY_PREFIX = 'cpg_';
+
+/**
+ * API key random portion length (characters after prefix).
+ */
+export const API_KEY_RANDOM_LENGTH = 32;
+
+/**
+ * Bcrypt cost factor for API key hashing.
+ */
+export const BCRYPT_COST_FACTOR = 12;
+
+/**
+ * Default auth configuration.
+ */
+export const DEFAULT_AUTH_CONFIG = {
+  apiKeysPath: './api-keys.json',
+  usageDataPath: './usage-data.json',
+  authExemptPaths: '/health,/ready',
+  usageSyncIntervalMs: 60000, // 60 seconds
+};
