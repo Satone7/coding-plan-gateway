@@ -36,3 +36,7 @@ config.yaml
 config/
 quota-state.json
 secrets.enc
+
+# E2E testing
+e2e/test-config.yaml
+logs/
