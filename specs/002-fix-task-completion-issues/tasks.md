@@ -17,9 +17,12 @@
 
 ## Phase 1: Setup
 
-**Purpose**: Prepare scripts directory for new CLI tools
+**Purpose**: Prepare scripts directory for new CLI tools and ensure environment variables are loaded automatically
 
 - [X] T001 Create scripts/ directory for CLI utilities
+- [X] T001a Add dotenv package and configure auto-loading in src/index.ts
+
+**Checkpoint**: Application starts successfully with `npm start` when ENCRYPTION_KEY is defined in .env file ✅ VERIFIED
 
 ---
 
@@ -146,7 +149,7 @@
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: No dependencies - can start immediately
+- **Setup (Phase 1)**: No dependencies - T001a (dotenv) enables `npm start` to work with .env file
 - **Fix Build Errors (Phase 1.5)**: 🚨 **BLOCKER** - Must complete before Phase 2-6
 - **User Story 1 (Phase 2)**: Depends on Phase 1.5
 - **User Story 2 (Phase 3)**: Depends on Phase 1.5 - can run parallel to US1
@@ -193,17 +196,17 @@ Task: "T018-T029 [US4] Lint warning fixes"
 
 ### MVP First (User Story 1 Only)
 
-1. Complete Phase 1: Setup (T001)
+1. Complete Phase 1: Setup (T001, T001a)
 2. ~~Complete Phase 2: User Story 1 (T002-T007)~~
 3. Complete Phase 1.5: Fix Build Errors (T001.1-T001.5)
-4. Complete Phase 2: User Story 1 (T002-T007)
 5. **STOP and VALIDATE**: Test graceful shutdown manually
 6. Quota state persistence is now reliable
 
 ### Incremental Delivery
 
-0. Fix Build Errors (Phase 1.5) → Project can be built ✓
-1. Complete US1 → Data integrity on shutdown ✓
+0. Complete Phase 1 (T001a) → .env auto-loading works ✓
+1. Fix Build Errors (Phase 1.5) → Project can be built ✓
+2. Complete US1 → Data integrity on shutdown ✓
 2. Add US2 → Developer convenience scripts ✓
 3. Add US3 → Code quality with 80%+ coverage ✓
 4. Add US4 → Clean lint output ✓

@@ -3,6 +3,9 @@
  * Creates and starts the Fastify server.
  */
 
+// Load environment variables from .env file (must be first import)
+import 'dotenv/config';
+
 import { createApp, startServer } from './app';
 import { logger } from './utils/logger';
 import { loadConfig } from './config';
