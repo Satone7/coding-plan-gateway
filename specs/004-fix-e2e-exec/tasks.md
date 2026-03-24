@@ -61,20 +61,20 @@ No blocking prerequisites for this fix. The changes are isolated and can be impl
 
 | Task ID | Description |
 |---------|-------------|
-| - [ ] T016 [US3] Run unit tests with `npm test` to verify all tests pass |
-| - [ ] T017 [US3] Run integration tests to verify schema changes work correctly |
-| - [ ] T018 [US3] Start E2E environment with `npm run e2e:start` |
-| - [ ] T019 [US3] Execute `docker exec claude-code claude -p "hello"` and verify valid AI response |
-| - [ ] T020 [US3] Test `system` as string format via curl request to `/v1/messages` |
-| - [ ] T021 [US3] Test `system` as array format via curl request to `/v1/messages` |
-| - [ ] T022 [US3] Stop E2E environment with `npm run e2e:stop` |
+| - [x] T016 [US3] Run unit tests with `npm test` to verify all tests pass |
+| - [x] T017 [US3] Run integration tests to verify schema changes work correctly |
+| - [x] T018 [US3] Start E2E environment with `npm run e2e:start` |
+| - [x] T019 [US3] Execute `docker exec claude-code claude -p "hello"` and verify valid AI response |
+| - [x] T020 [US3] Test `system` as string format via curl request to `/v1/messages` |
+| - [x] T021 [US3] Test `system` as array format via curl request to `/v1/messages` |
+| - [x] T022 [US3] Stop E2E environment with `npm run e2e:stop` |
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
 | Task ID | Description |
 |---------|-------------|
-| - [ ] T023 [P] Update `specs/004-fix-e2e-exec/quickstart.md` if any verification steps changed |
-| - [ ] T024 Run final verification: all tests pass, E2E environment works |
+| - [x] T023 [P] Update `specs/004-fix-e2e-exec/quickstart.md` if any verification steps changed |
+| - [x] T024 Run final verification: all tests pass, E2E environment works |
 
 ## Dependencies
 

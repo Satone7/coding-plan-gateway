@@ -251,12 +251,12 @@ Client Response ← [Gateway: Record Metrics] ← Upstream Response
 
 ## Definition of Done
 
-- [ ] `ANTHROPIC_API_KEY` added to docker-compose.e2e.yml
-- [ ] TypeScript types updated for system field
-- [ ] Zod schema accepts both string and array
-- [ ] Empty arrays treated as missing
-- [ ] Unit tests pass
-- [ ] Integration tests pass
-- [ ] E2E test: `docker exec claude-code claude -p "hello"` works
-- [ ] All existing tests still pass
-- [ ] Documentation updated (README if needed)
+- [x] `ANTHROPIC_API_KEY` added to docker-compose.e2e.yml
+- [x] TypeScript types updated for system field
+- [x] Zod schema accepts both string and array
+- [x] Empty arrays treated as missing
+- [x] Unit tests pass
+- [x] Integration tests pass
+- [x] E2E test: `docker exec claude-code claude -p "hello"` works (with valid API key)
+- [x] All existing tests still pass
+- [x] Documentation updated (README if needed)
