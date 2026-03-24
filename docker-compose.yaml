@@ -12,7 +12,15 @@ services:
       - NODE_ENV=production
       - PORT=8080
       - LOG_LEVEL=${LOG_LEVEL:-info}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      - CONFIG_PATH=/app/config/plans.yaml
+      - QUOTA_STATE_PATH=/app/data/quota-state.json
+      - QUOTA_SYNC_INTERVAL=${QUOTA_SYNC_INTERVAL:-60000}
+      - API_KEYS_PATH=/app/data/api-keys.json
+      - USAGE_DATA_PATH=/app/data/usage-data.json
+      - AUTH_EXEMPT_PATHS=${AUTH_EXEMPT_PATHS:-/health,/ready}
+      - USAGE_SYNC_INTERVAL=${USAGE_SYNC_INTERVAL:-60000}
+      - ENABLE_AUTH=${ENABLE_AUTH:-true}
     volumes:
       # Persist configuration
       - ./config:/app/config:ro
