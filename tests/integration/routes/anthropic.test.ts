@@ -311,4 +311,189 @@ describe('Anthropic Routes', () => {
       expect(response.statusCode).toBe(404);
     });
   });
+
+  describe('T014: System field as array format', () => {
+    it('should accept system field as array of text blocks', async () => {
+      await repository.save(
+        createMockPlanInput({
+          models: ['claude-sonnet-4-6'],
+        })
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'claude-sonnet-4-6',
+          messages: [{ role: 'user', content: 'Hello!' }],
+          max_tokens: 100,
+          system: [
+            { type: 'text', text: 'You are a helpful assistant.' },
+            { type: 'text', text: 'Be concise in your responses.' },
+          ],
+        },
+      });
+
+      // Should not return 400 validation error
+      // Will fail with 502/500 because no real upstream
+      expect(response.statusCode).not.toBe(400);
+      expect([502, 500]).toContain(response.statusCode);
+    });
+
+    it('should accept system field with cache_control in text blocks', async () => {
+      await repository.save(
+        createMockPlanInput({
+          models: ['claude-sonnet-4-6'],
+        })
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'claude-sonnet-4-6',
+          messages: [{ role: 'user', content: 'Hello!' }],
+          max_tokens: 100,
+          system: [
+            { type: 'text', text: 'You are helpful.', cache_control: { type: 'ephemeral' } },
+          ],
+        },
+      });
+
+      // Should not return 400 validation error
+      expect(response.statusCode).not.toBe(400);
+    });
+
+    it('should accept system field with image blocks', async () => {
+      await repository.save(
+        createMockPlanInput({
+          models: ['claude-sonnet-4-6'],
+        })
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'claude-sonnet-4-6',
+          messages: [{ role: 'user', content: 'Analyze this.' }],
+          max_tokens: 100,
+          system: [
+            { type: 'text', text: 'You analyze images.' },
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: 'image/png',
+                data: 'base64encodedimagedata',
+              },
+            },
+          ],
+        },
+      });
+
+      // Should not return 400 validation error
+      expect(response.statusCode).not.toBe(400);
+    });
+
+    it('should accept empty system array', async () => {
+      await repository.save(
+        createMockPlanInput({
+          models: ['claude-sonnet-4-6'],
+        })
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'claude-sonnet-4-6',
+          messages: [{ role: 'user', content: 'Hello!' }],
+          max_tokens: 100,
+          system: [],
+        },
+      });
+
+      // Should not return 400 validation error
+      expect(response.statusCode).not.toBe(400);
+    });
+
+    it('should pass through unknown fields with array system', async () => {
+      await repository.save(
+        createMockPlanInput({
+          models: ['claude-sonnet-4-6'],
+        })
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'claude-sonnet-4-6',
+          messages: [{ role: 'user', content: 'Hello!' }],
+          max_tokens: 100,
+          system: [{ type: 'text', text: 'Be helpful.' }],
+          custom_field: 'preserved',
+          experimental_option: { enabled: true },
+        },
+      });
+
+      // Should not return 400 validation error for unknown fields
+      expect(response.statusCode).not.toBe(400);
+    });
+  });
+
+  describe('T015: Streaming with array system format', () => {
+    it('should accept streaming request with array system field', async () => {
+      await repository.save(
+        createMockPlanInput({
+          models: ['claude-sonnet-4-6'],
+        })
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'claude-sonnet-4-6',
+          messages: [{ role: 'user', content: 'Hello!' }],
+          max_tokens: 100,
+          stream: true,
+          system: [
+            { type: 'text', text: 'You are a helpful assistant.' },
+          ],
+        },
+      });
+
+      // Should not return 400 validation error
+      // May fail due to no real upstream, but validation should pass
+      expect(response.statusCode).not.toBe(400);
+    });
+
+    it('should accept streaming request with mixed system blocks', async () => {
+      await repository.save(
+        createMockPlanInput({
+          models: ['claude-sonnet-4-6'],
+        })
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'claude-sonnet-4-6',
+          messages: [{ role: 'user', content: 'Hello!' }],
+          max_tokens: 100,
+          stream: true,
+          system: [
+            { type: 'text', text: 'System prompt 1' },
+            { type: 'text', text: 'System prompt 2', cache_control: { type: 'ephemeral' } },
+          ],
+        },
+      });
+
+      // Should not return 400 validation error
+      expect(response.statusCode).not.toBe(400);
+    });
+  });
 });

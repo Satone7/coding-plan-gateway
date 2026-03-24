@@ -17,6 +17,7 @@ import { planConfigSchema, type PlanConfig } from '@/config/schema';
 import {
   encryptApiKey,
   decryptApiKey,
+  isApiKeyEncrypted,
 } from '@/config/encryption';
 import { logger } from '@/utils/logger';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from '@/config/defaults';
@@ -235,6 +236,11 @@ export class FilePlanRepository implements IPlanRepository {
     }
 
     if (!this.encryptionKey) {
+      return plan.apiKeyEncrypted;
+    }
+
+    // Check if the key is actually encrypted before trying to decrypt
+    if (!isApiKeyEncrypted(plan.apiKeyEncrypted)) {
       return plan.apiKeyEncrypted;
     }
 

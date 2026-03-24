@@ -35,6 +35,7 @@ services:
     environment:
       - ANTHROPIC_BASE_URL=http://gateway:8080
       - ANTHROPIC_MODEL=kimi-k2.5
+      - ANTHROPIC_API_KEY=dummy-key-for-gateway
     volumes:
       - ./logs/claude-code:/home/claude/.claude/logs
       - ./e2e/workspace:/workspace
