@@ -7,6 +7,7 @@
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { ApiKeyManager } from '@/services/api-key-manager';
+import type { UsageTracker } from '@/services/usage-tracker';
 import { loadAuthConfig, parseExemptPaths, isExemptPath } from '@/config/auth-config';
 import { logger } from '@/utils/logger';
 import type { AuthConfig } from '@/config/schema';
@@ -53,6 +54,8 @@ declare module 'fastify' {
 export interface AuthMiddlewareOptions {
   /** ApiKeyManager instance */
   apiKeyManager: ApiKeyManager;
+  /** UsageTracker instance for tracking authenticated requests */
+  usageTracker?: UsageTracker;
   /** Auth configuration (optional, will load from env if not provided) */
   config?: AuthConfig;
 }
@@ -126,7 +129,7 @@ function extractBearerToken(authHeader: string | undefined): string | null {
  * @returns The preHandler hook function
  */
 function createAuthHook(options: AuthMiddlewareOptions) {
-  const { apiKeyManager, config } = options;
+  const { apiKeyManager, usageTracker, config } = options;
   const authConfig = config ?? loadAuthConfig();
   const exemptPaths = parseExemptPaths(authConfig.authExemptPaths);
 
@@ -174,6 +177,11 @@ function createAuthHook(options: AuthMiddlewareOptions) {
     }
 
     const apiKey = validationResult.key!;
+
+    // Track authenticated request
+    if (usageTracker) {
+      usageTracker.incrementRequestCount(apiKey.id);
+    }
 
     // Attach auth context to request
     request.auth = {

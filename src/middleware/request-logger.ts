@@ -7,6 +7,7 @@
 
 import { FastifyRequest, FastifyReply, HookHandlerDoneFunction, FastifyInstance } from 'fastify';
 import { logger, createRequestLogger } from '@/utils/logger';
+import type { UsageTracker } from '@/services/usage-tracker';
 
 /**
  * Token usage information extracted from responses.
@@ -42,6 +43,23 @@ declare module 'fastify' {
 }
 
 /**
+ * Auth context interface (imported from auth middleware).
+ */
+interface AuthContext {
+  apiKey: {
+    id: string;
+    name: string;
+    prefix: string;
+  };
+}
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    auth?: AuthContext;
+  }
+}
+
+/**
  * Request logging middleware.
  * Logs request start and end with timing information.
  */
@@ -68,10 +86,12 @@ export function requestLoggerMiddleware(
 /**
  * Response logging hook.
  * Logs response completion with timing, status, and usage metrics.
+ * Records token usage to UsageTracker if available.
  */
 export function responseLoggerMiddleware(
   request: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
+  usageTracker?: UsageTracker
 ): void {
   const requestId = request.id;
   const duration = request.startTime ? Date.now() - request.startTime : 0;
@@ -107,6 +127,15 @@ export function responseLoggerMiddleware(
     // Include provider response time if available
     if (request.providerMetrics.providerResponseTimeMs) {
       logData.providerResponseTimeMs = request.providerMetrics.providerResponseTimeMs;
+    }
+
+    // Record token usage to UsageTracker if request was authenticated
+    if (usageTracker && request.auth && request.providerMetrics.tokenUsage) {
+      usageTracker.recordTokenUsage(
+        request.auth.apiKey.id,
+        request.providerMetrics.tokenUsage.inputTokens,
+        request.providerMetrics.tokenUsage.outputTokens
+      );
     }
   }
 
@@ -207,14 +236,18 @@ export function extractAnthropicTokenUsage(
  * called during application initialization.
  *
  * @param app - The Fastify instance to register the logging hooks with
+ * @param usageTracker - Optional UsageTracker for recording token usage
  *
  * @example
  * ```typescript
  * const app = Fastify();
- * registerRequestLogger(app);
+ * registerRequestLogger(app, usageTracker);
  * ```
  */
-export function registerRequestLogger(app: FastifyInstance): void {
+export function registerRequestLogger(
+  app: FastifyInstance,
+  usageTracker?: UsageTracker
+): void {
   // Log request start - using middleware style with done callback
   app.addHook('onRequest', (request: FastifyRequest, _reply: FastifyReply, done: HookHandlerDoneFunction) => {
     requestLoggerMiddleware(request, _reply);
@@ -223,7 +256,7 @@ export function registerRequestLogger(app: FastifyInstance): void {
 
   // Log response completion
   app.addHook('onResponse', (request: FastifyRequest, reply: FastifyReply, done: HookHandlerDoneFunction) => {
-    responseLoggerMiddleware(request, reply);
+    responseLoggerMiddleware(request, reply, usageTracker);
     done();
   });
 }

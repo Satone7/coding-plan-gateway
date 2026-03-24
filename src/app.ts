@@ -13,6 +13,7 @@ import { logger } from '@/utils/logger';
 import { DEFAULT_SERVER_CONFIG } from '@/config/defaults';
 import type { QuotaManager } from '@/services/quota-manager';
 import type { ApiKeyManager } from '@/services/api-key-manager';
+import type { UsageTracker } from '@/services/usage-tracker';
 
 /**
  * Application configuration options.
@@ -28,6 +29,8 @@ export interface AppOptions extends Partial<FastifyServerOptions> {
   quotaManager?: QuotaManager;
   /** API key manager for authentication */
   apiKeyManager?: ApiKeyManager;
+  /** Usage tracker for recording API usage */
+  usageTracker?: UsageTracker;
   /** Enable authentication middleware */
   enableAuth?: boolean;
 }
@@ -60,11 +63,14 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   });
 
   // Register middleware
-  registerRequestLogger(app);
+  registerRequestLogger(app, options.usageTracker);
 
   // Register auth middleware if apiKeyManager is provided
   if (options.apiKeyManager && options.enableAuth !== false) {
-    registerAuthMiddleware(app, { apiKeyManager: options.apiKeyManager });
+    registerAuthMiddleware(app, {
+      apiKeyManager: options.apiKeyManager,
+      usageTracker: options.usageTracker,
+    });
   }
 
   registerErrorHandler(app);
@@ -93,6 +99,14 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     app.addHook('onClose', async () => {
       logger.info('Shutting down API key manager...');
       await options.apiKeyManager!.persistKeys();
+    });
+  }
+
+  // Register onClose hook for usage tracker shutdown
+  if (options.usageTracker) {
+    app.addHook('onClose', async () => {
+      logger.info('Shutting down usage tracker...');
+      await options.usageTracker!.shutdown();
     });
   }
 

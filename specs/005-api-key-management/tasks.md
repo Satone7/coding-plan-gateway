@@ -145,30 +145,30 @@ Implement API key authentication and usage tracking for the Coding Plan Gateway.
 
 ### Tasks
 
-- [ ] T060 [US3] Create UsageTracker class in src/services/usage-tracker.ts with in-memory storage
-- [ ] T061 [US3] Implement incrementRequestCount() method with date-based aggregation
-- [ ] T062 [US3] Implement recordTokenUsage() method for input/output tokens
-- [ ] T063 [US3] Implement persistUsage() method with atomic file write to usage-data.json
-- [ ] T064 [US3] Implement loadUsage() method to restore data on startup
-- [ ] T065 [US3] Implement periodic sync with configurable interval (USAGE_SYNC_INTERVAL)
-- [ ] T066 [US3] Modify auth middleware to track authenticated requests in UsageTracker
-- [ ] T067 [US3] Modify request handlers to extract token usage from upstream responses
-- [ ] T068 [US3] Add token extraction for OpenAI format responses (usage.prompt_tokens, usage.completion_tokens)
-- [ ] T069 [US3] Add token extraction for Anthropic format responses (usage.input_tokens, usage.output_tokens)
-- [ ] T070 [US3] Handle streaming responses - accumulate SSE events for token data
-- [ ] T071 [US3] Initialize UsageTracker on startup in src/index.ts
-- [ ] T072 [US3] Add graceful shutdown handler to persist final usage data
+- [X] T060 [US3] Create UsageTracker class in src/services/usage-tracker.ts with in-memory storage
+- [X] T061 [US3] Implement incrementRequestCount() method with date-based aggregation
+- [X] T062 [US3] Implement recordTokenUsage() method for input/output tokens
+- [X] T063 [US3] Implement persistUsage() method with atomic file write to usage-data.json
+- [X] T064 [US3] Implement loadUsage() method to restore data on startup
+- [X] T065 [US3] Implement periodic sync with configurable interval (USAGE_SYNC_INTERVAL)
+- [X] T066 [US3] Modify auth middleware to track authenticated requests in UsageTracker
+- [X] T067 [US3] Modify request handlers to extract token usage from upstream responses
+- [X] T068 [US3] Add token extraction for OpenAI format responses (usage.prompt_tokens, usage.completion_tokens)
+- [X] T069 [US3] Add token extraction for Anthropic format responses (usage.input_tokens, usage.output_tokens)
+- [X] T070 [US3] Handle streaming responses - accumulate SSE events for token data
+- [X] T071 [US3] Initialize UsageTracker on startup in src/index.ts
+- [X] T072 [US3] Add graceful shutdown handler to persist final usage data
 
 ### Verification
 
-- [ ] T073 [US3] Write unit tests for UsageTracker in tests/unit/services/usage-tracker.test.ts
-- [ ] T074 [US3] Write test for request count increment on authenticated request
-- [ ] T075 [US3] Write test for token extraction from OpenAI response format
-- [ ] T076 [US3] Write test for token extraction from Anthropic response format
-- [ ] T077 [US3] Write test for usage data persistence across service restart
-- [ ] T078 [US3] Write test for multiple API keys maintaining separate counters
-- [ ] T079 [US3] Run all tests: `npm test`
-- [ ] T080 [US3] Manual verification: Make multiple requests, restart service, verify counts persist
+- [X] T073 [US3] Write unit tests for UsageTracker in tests/unit/services/usage-tracker.test.ts
+- [X] T074 [US3] Write test for request count increment on authenticated request
+- [X] T075 [US3] Write test for token extraction from OpenAI response format
+- [X] T076 [US3] Write test for token extraction from Anthropic response format
+- [X] T077 [US3] Write test for usage data persistence across service restart
+- [X] T078 [US3] Write test for multiple API keys maintaining separate counters
+- [X] T079 [US3] Run all tests: `npm test`
+- [X] T080 [US3] Manual verification: Make multiple requests, restart service, verify counts persist
 
 ---
 

@@ -11,6 +11,7 @@ import { logger } from './utils/logger';
 import { loadConfig } from './config';
 import { createQuotaManager } from './services/quota-manager';
 import { createApiKeyManager } from './services/api-key-manager';
+import { createUsageTracker } from './services/usage-tracker';
 import { loadAuthConfig } from './config/auth-config';
 
 /**
@@ -49,12 +50,21 @@ async function main(): Promise<void> {
     });
     await apiKeyManager.initialize();
 
+    // Create and initialize usage tracker
+    const usageTracker = createUsageTracker({
+      usageDataPath: authConfig.usageDataPath,
+      syncIntervalMs: authConfig.usageSyncIntervalMs,
+    });
+    await usageTracker.initialize();
+    usageTracker.startPeriodicSync();
+
     // Create application with managers
     const app = await createApp({
       port: parseInt(process.env.PORT ?? '8080', 10),
       logLevel: process.env.LOG_LEVEL ?? 'info',
       quotaManager,
       apiKeyManager,
+      usageTracker,
       enableAuth: process.env.ENABLE_AUTH !== 'false',
     });
 
