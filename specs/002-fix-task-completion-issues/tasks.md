@@ -23,6 +23,28 @@
 
 ---
 
+## Phase 1.5: Fix Build Errors (BLOCKER) 🚨
+
+**Purpose**: Resolve TypeScript compilation errors that block all subsequent work
+
+**Goal**: `npm run build` completes successfully with zero TypeScript errors
+
+**Independent Test**: Run `npm run build` and verify zero compilation errors
+
+### Implementation
+
+- [ ] T001.1 Fix type mismatch in src/index.ts:37 - `config.plans` (PlanConfig[]) vs `CodingPlan[]`
+- [ ] T001.2 Fix `unknown` type error in src/routes/anthropic/handlers.ts:100 - add proper type assertion for usage data
+- [ ] T001.3 Fix `unknown` type error in src/routes/anthropic/handlers.ts:221 - add proper return type handling
+- [ ] T001.4 Fix `unknown` type error in src/routes/openai/handlers.ts:102 - add proper type assertion for usage data
+- [ ] T001.5 Fix `unknown` type error in src/routes/openai/handlers.ts:222 - add proper return type handling
+
+**Checkpoint**: `npm run build` exits 0 with no TypeScript errors
+
+**Root Cause Analysis**: These errors were introduced during refactoring in Phase 5 (US4). The refactoring changed function signatures and removed type assertions without updating dependent code.
+
+---
+
 ## Phase 2: User Story 1 - Quota Data Persisted on Application Exit (Priority: P1) 🎯 MVP
 
 **Goal**: Persist quota state to file when application receives shutdown signals (SIGINT/SIGTERM)
@@ -125,10 +147,11 @@
 ### Phase Dependencies
 
 - **Setup (Phase 1)**: No dependencies - can start immediately
-- **User Story 1 (Phase 2)**: No dependencies on Setup - can start immediately
-- **User Story 2 (Phase 3)**: No dependencies - can run parallel to US1
-- **User Story 3 (Phase 4)**: No dependencies - can run parallel to US1/US2
-- **User Story 4 (Phase 5)**: No dependencies - can run parallel to US1/US2/US3
+- **Fix Build Errors (Phase 1.5)**: 🚨 **BLOCKER** - Must complete before Phase 2-6
+- **User Story 1 (Phase 2)**: Depends on Phase 1.5
+- **User Story 2 (Phase 3)**: Depends on Phase 1.5 - can run parallel to US1
+- **User Story 3 (Phase 4)**: Depends on Phase 1.5 - can run parallel to US1/US2
+- **User Story 4 (Phase 5)**: Depends on Phase 1.5 - can run parallel to US1/US2/US3
 - **Polish (Phase 6)**: Depends on all user stories being complete
 
 ### User Story Dependencies
@@ -162,15 +185,24 @@ Task: "T018-T029 [US4] Lint warning fixes"
 
 ## Implementation Strategy
 
+### 🔴 CRITICAL: Fix Build First (Phase 1.5)
+
+1. **MUST complete Phase 1.5 before any other work**
+2. Run `npm run build` to verify fix
+3. Only proceed to US1-US4 after build succeeds
+
 ### MVP First (User Story 1 Only)
 
 1. Complete Phase 1: Setup (T001)
-2. Complete Phase 2: User Story 1 (T002-T007)
-3. **STOP and VALIDATE**: Test graceful shutdown manually
-4. Quota state persistence is now reliable
+2. ~~Complete Phase 2: User Story 1 (T002-T007)~~
+3. Complete Phase 1.5: Fix Build Errors (T001.1-T001.5)
+4. Complete Phase 2: User Story 1 (T002-T007)
+5. **STOP and VALIDATE**: Test graceful shutdown manually
+6. Quota state persistence is now reliable
 
 ### Incremental Delivery
 
+0. Fix Build Errors (Phase 1.5) → Project can be built ✓
 1. Complete US1 → Data integrity on shutdown ✓
 2. Add US2 → Developer convenience scripts ✓
 3. Add US3 → Code quality with 80%+ coverage ✓
@@ -179,7 +211,8 @@ Task: "T018-T029 [US4] Lint warning fixes"
 
 ### Risk Mitigation
 
-Per research.md risk assessment:
+- **Build Errors (Phase 1.5)**: Run `npm run build` after ANY code change to catch regressions early
+- Per research.md risk assessment:
 - Run full test suite after each refactoring task (US4)
 - Focus tests on uncovered lines identified in coverage report (US3)
 - Test shutdown with SIGINT, SIGTERM, and normal close (US1)
