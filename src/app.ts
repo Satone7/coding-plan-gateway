@@ -8,6 +8,7 @@ import { registerErrorHandler } from '@/middleware/error-handler';
 import { registerRequestLogger } from '@/middleware/request-logger';
 import { registerAuthMiddleware } from '@/middleware/auth';
 import { registerRoutes } from '@/routes';
+import { registerInternalApiKeyRoutes } from '@/routes/internal';
 import { logger } from '@/utils/logger';
 import { DEFAULT_SERVER_CONFIG } from '@/config/defaults';
 import type { QuotaManager } from '@/services/quota-manager';
@@ -70,6 +71,14 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
 
   // Register routes
   await registerRoutes(app);
+
+  // Register internal API key routes if apiKeyManager is provided
+  if (options.apiKeyManager) {
+    await registerInternalApiKeyRoutes(app, {
+      apiKeyManager: options.apiKeyManager,
+      prefix: '/internal',
+    });
+  }
 
   // Register onClose hook for quota manager shutdown
   if (options.quotaManager) {

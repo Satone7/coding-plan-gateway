@@ -110,26 +110,26 @@ Implement API key authentication and usage tracking for the Coding Plan Gateway.
 
 ### Tasks
 
-- [ ] T043 [US2] Create scripts/api-key.ts CLI entry point with command routing
-- [ ] T044 [US2] Implement `create` command in src/cli/api-key-cli.ts - prompt for name, generate key, display result
-- [ ] T045 [US2] Implement `list` command in src/cli/api-key-cli.ts - display all keys in table format
-- [ ] T046 [US2] Implement `disable` command in src/cli/api-key-cli.ts - change key status to disabled
-- [ ] T047 [US2] Implement `enable` command in src/cli/api-key-cli.ts - change key status to active
-- [ ] T048 [US2] Implement `delete` command in src/cli/api-key-cli.ts - remove key with confirmation
-- [ ] T049 [US2] Add CLI help text and usage examples for each command
-- [ ] T050 [US2] Add error handling for missing required arguments (e.g., --name for create, --id for others)
-- [ ] T051 [US2] Create internal API route handlers in src/routes/admin/api-keys.ts for CLI commands to use
-- [ ] T052 [US2] Register internal API routes in src/routes/index.ts (under /internal/keys)
+- [X] T043 [US2] Create scripts/api-key.ts CLI entry point with command routing
+- [X] T044 [US2] Implement `create` command in src/cli/api-key-cli.ts - prompt for name, generate key, display result
+- [X] T045 [US2] Implement `list` command in src/cli/api-key-cli.ts - display all keys in table format
+- [X] T046 [US2] Implement `disable` command in src/cli/api-key-cli.ts - change key status to disabled
+- [X] T047 [US2] Implement `enable` command in src/cli/api-key-cli.ts - change key status to active
+- [X] T048 [US2] Implement `delete` command in src/cli/api-key-cli.ts - remove key with confirmation
+- [X] T049 [US2] Add CLI help text and usage examples for each command
+- [X] T050 [US2] Add error handling for missing required arguments (e.g., --name for create, --id for others)
+- [X] T051 [US2] Create internal API route handlers in src/routes/admin/api-keys.ts for CLI commands to use
+- [X] T052 [US2] Register internal API routes in src/routes/index.ts (under /internal/keys)
 
 ### Verification
 
-- [ ] T053 [US2] Write contract tests for CLI commands in tests/contract/api-key-cli.test.ts
-- [ ] T054 [US2] Test create command: `npm run key:create -- --name "CLI Test Key"` - verify key is created
-- [ ] T055 [US2] Test list command: `npm run key:list` - verify all keys are displayed
-- [ ] T056 [US2] Test disable command: `npm run key:disable -- --id <created-key-id>` - verify status changes
-- [ ] T057 [US2] Test enable command: `npm run key:enable -- --id <created-key-id>` - verify status changes back
-- [ ] T058 [US2] Test delete command: `npm run key:delete -- --id <created-key-id>` - verify key is removed
-- [ ] T059 [US2] Test error handling: Run commands without required args and verify error messages
+- [X] T053 [US2] Write contract tests for CLI commands in tests/contract/api-key-cli.test.ts
+- [X] T054 [US2] Test create command: `npm run key:create -- --name "CLI Test Key"` - verify key is created
+- [X] T055 [US2] Test list command: `npm run key:list` - verify all keys are displayed
+- [X] T056 [US2] Test disable command: `npm run key:disable -- --id <created-key-id>` - verify status changes
+- [X] T057 [US2] Test enable command: `npm run key:enable -- --id <created-key-id>` - verify status changes back
+- [X] T058 [US2] Test delete command: `npm run key:delete -- --id <created-key-id>` - verify key is removed
+- [X] T059 [US2] Test error handling: Run commands without required args and verify error messages
 
 ---
 
