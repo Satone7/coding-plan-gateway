@@ -95,6 +95,8 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
 - YAML/JSON files (current), PostgreSQL with Drizzle ORM (future migration path prepared) (001-coding-plan-gateway)
 - TypeScript 5.x, Node.js 20+ LTS + Fastify 4.x, Vitest, Zod, ESLint (002-fix-task-completion-issues)
 - YAML/JSON file-based configuration (002-fix-task-completion-issues)
+- TypeScript 5.x / Node.js 20+ LTS (infrastructure scripts), Dockerfile (container definitions) + Docker, Docker Compose v2, @anthropic-ai/claude-code (npm package) (003-e2e-docker-testing)
+- File-based (YAML config mounts, log volumes) (003-e2e-docker-testing)
 
 ## Recent Changes
 - 001-coding-plan-gateway: Added TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Vitest, Zod (validation), MSW (mocking)

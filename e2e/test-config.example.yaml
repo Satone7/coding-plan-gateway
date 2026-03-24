@@ -1,0 +1,15 @@
+# Test Configuration Template for E2E Testing
+# Copy this file to test-config.yaml and fill in your values
+
+plans:
+  - id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    name: "Test Kimi K2.5 Plan"
+    baseUrl: "https://api.moonshot.cn/v1"
+    apiKey: "YOUR_KIMI_API_KEY_HERE"  # Replace with your actual API key
+    models:
+      - "kimi-k2.5"
+    quota:
+      limit: 1000
+      used: 0
+      period: "daily"
+    timeout: 30000
