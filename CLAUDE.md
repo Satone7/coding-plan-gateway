@@ -99,6 +99,8 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
 - File-based (YAML config mounts, log volumes) (003-e2e-docker-testing)
 - TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Zod (validation), Vitest (testing) (004-fix-e2e-exec)
 - YAML/JSON files (configuration), in-memory (quota tracking) (004-fix-e2e-exec)
+- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Zod (validation), bcrypt (key hashing), uuid (key ID generation) (005-api-key-management)
+- JSON files (api-keys.json for key metadata, usage-data.json for usage records) (005-api-key-management)
 
 ## Recent Changes
 - 001-coding-plan-gateway: Added TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Vitest, Zod (validation), MSW (mocking)

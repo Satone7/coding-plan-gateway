@@ -1,0 +1,334 @@
+openapi: 3.0.3
+info:
+  title: API Key Management
+  description: CLI commands and internal API for managing API keys and usage reports
+  version: 1.0.0
+  contact:
+    name: Coding Plan Gateway
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  # Internal API endpoints (used by CLI commands)
+  /internal/keys:
+    get:
+      summary: List all API keys
+      description: Returns all API keys with metadata (without full key values)
+      operationId: listKeys
+      tags:
+        - API Keys
+      responses:
+        '200':
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApiKeySummary'
+              example:
+                keys:
+                  - id: "550e8400-e29b-41d4-a716-446655440000"
+                    name: "Development Key"
+                    prefix: "abc12345"
+                    status: "active"
+                    createdAt: "2026-03-24T10:00:00Z"
+                    expiresAt: null
+                    lastUsedAt: "2026-03-24T10:25:00Z"
+
+    post:
+      summary: Create a new API key
+      description: Generates a new API key and returns the full key value (only shown once)
+      operationId: createKey
+      tags:
+        - API Keys
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKeyRequest'
+      responses:
+        '201':
+          description: API key created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateKeyResponse'
+              example:
+                id: "550e8400-e29b-41d4-a716-446655440000"
+                name: "My New Key"
+                key: "cpg_abc123def456ghi789jkl012mno345pqr"
+                prefix: "abc12345"
+                createdAt: "2026-03-24T10:00:00Z"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /internal/keys/{keyId}:
+    parameters:
+      - name: keyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: API key UUID
+
+    delete:
+      summary: Delete an API key
+      description: Permanently removes an API key
+      operationId: deleteKey
+      tags:
+        - API Keys
+      responses:
+        '204':
+          description: Key deleted successfully
+        '404':
+          description: Key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /internal/keys/{keyId}/status:
+    parameters:
+      - name: keyId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: API key UUID
+
+    patch:
+      summary: Update key status
+      description: Enable or disable an API key
+      operationId: updateKeyStatus
+      tags:
+        - API Keys
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: Status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeySummary'
+        '404':
+          description: Key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /internal/usage/report:
+    get:
+      summary: Get usage report
+      description: Returns usage metrics aggregated by API key
+      operationId: getUsageReport
+      tags:
+        - Usage
+      parameters:
+        - name: keyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter by specific API key
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Start date (YYYY-MM-DD)
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: End date (YYYY-MM-DD)
+      responses:
+        '200':
+          description: Usage report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageReportResponse'
+
+components:
+  schemas:
+    ApiKeySummary:
+      type: object
+      required:
+        - id
+        - name
+        - prefix
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier
+        name:
+          type: string
+          description: Human-readable name
+          example: "Development Key"
+        prefix:
+          type: string
+          description: First 8 characters after prefix for identification
+          example: "abc12345"
+        status:
+          type: string
+          enum: [active, disabled]
+          description: Key status
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Optional expiration date
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last successful authentication
+
+    CreateKeyRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Human-readable name for the key
+          example: "My New Key"
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Optional expiration date
+
+    CreateKeyResponse:
+      type: object
+      required:
+        - id
+        - name
+        - key
+        - prefix
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        key:
+          type: string
+          description: Full API key (only shown once)
+          example: "cpg_abc123def456ghi789jkl012mno345pqr"
+        prefix:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    UpdateStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [active, disabled]
+          description: New status for the key
+
+    UsageReportResponse:
+      type: object
+      properties:
+        dateRange:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date
+            end:
+              type: string
+              format: date
+        reports:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyUsageReport'
+
+    KeyUsageReport:
+      type: object
+      properties:
+        keyId:
+          type: string
+          format: uuid
+        keyName:
+          type: string
+        totalRequests:
+          type: integer
+        totalInputTokens:
+          type: integer
+        totalOutputTokens:
+          type: integer
+        totalTokens:
+          type: integer
+        dailyBreakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyUsage'
+
+    DailyUsage:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        requestCount:
+          type: integer
+        inputTokens:
+          type: integer
+        outputTokens:
+          type: integer
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+          properties:
+            message:
+              type: string
+            code:
+              type: string
+            details:
+              type: object
