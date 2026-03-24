@@ -82,6 +82,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   if (options.apiKeyManager) {
     await registerInternalApiKeyRoutes(app, {
       apiKeyManager: options.apiKeyManager,
+      usageTracker: options.usageTracker,
       prefix: '/internal',
     });
   }

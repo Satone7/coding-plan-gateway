@@ -184,24 +184,24 @@ Implement API key authentication and usage tracking for the Coding Plan Gateway.
 
 ### Tasks
 
-- [ ] T081 [US4] Implement getUsageReport() method in UsageTracker with filtering options
-- [ ] T082 [US4] Implement date range filtering (from, to parameters)
-- [ ] T083 [US4] Implement key ID filtering
-- [ ] T084 [US4] Implement daily breakdown aggregation
-- [ ] T085 [US4] Implement `report` command in src/cli/api-key-cli.ts
-- [ ] T086 [US4] Format report output as table with totals and daily breakdown
-- [ ] T087 [US4] Add internal API endpoint GET /internal/usage/report for programmatic access
-- [ ] T088 [US4] Handle empty usage data gracefully with informative message
+- [X] T081 [US4] Implement getUsageReport() method in UsageTracker with filtering options
+- [X] T082 [US4] Implement date range filtering (from, to parameters)
+- [X] T083 [US4] Implement key ID filtering
+- [X] T084 [US4] Implement daily breakdown aggregation
+- [X] T085 [US4] Implement `report` command in src/cli/api-key-cli.ts
+- [X] T086 [US4] Format report output as table with totals and daily breakdown
+- [X] T087 [US4] Add internal API endpoint GET /internal/usage/report for programmatic access
+- [X] T088 [US4] Handle empty usage data gracefully with informative message
 
 ### Verification
 
-- [ ] T089 [US4] Write unit tests for UsageTracker.getUsageReport() with various filters
-- [ ] T090 [US4] Write test for date range filtering
-- [ ] T091 [US4] Write test for key ID filtering
-- [ ] T092 [US4] Write test for empty usage data response
-- [ ] T093 [US4] Test report command: `npm run usage:report` - verify output format
-- [ ] T094 [US4] Test filtered report: `npm run usage:report -- --key-id <uuid> --from 2026-01-01`
-- [ ] T095 [US4] Test empty report: Run report with future date range, verify empty message
+- [X] T089 [US4] Write unit tests for UsageTracker.getUsageReport() with various filters
+- [X] T090 [US4] Write test for date range filtering
+- [X] T091 [US4] Write test for key ID filtering
+- [X] T092 [US4] Write test for empty usage data response
+- [X] T093 [US4] Test report command: `npm run usage:report` - verify output format
+- [X] T094 [US4] Test filtered report: `npm run usage:report -- --key-id <uuid> --from 2026-01-01`
+- [X] T095 [US4] Test empty report: Run report with future date range, verify empty message
 
 ---
 
@@ -211,24 +211,24 @@ Implement API key authentication and usage tracking for the Coding Plan Gateway.
 
 ### Tasks
 
-- [ ] T096 Run full test suite and ensure all tests pass: `npm test`
-- [ ] T097 Run linting and fix any issues: `npm run lint`
-- [ ] T098 Run type checking: `npm run build` or `tsc --noEmit`
-- [ ] T099 [P] Add JSDoc comments to public methods in ApiKeyManager
-- [ ] T100 [P] Add JSDoc comments to public methods in UsageTracker
-- [ ] T101 Verify all error messages are actionable and user-friendly
-- [ ] T102 Verify API key never appears in logs (security check)
-- [ ] T103 Update CLAUDE.md with new feature documentation if needed
-- [ ] T104 Create sample api-keys.json file for documentation/testing
-- [ ] T105 Create sample usage-data.json file for documentation/testing
+- [X] T096 Run full test suite and ensure all tests pass: `npm test`
+- [X] T097 Run linting and fix any issues: `npm run lint`
+- [X] T098 Run type checking: `npm run build` or `tsc --noEmit`
+- [X] T099 [P] Add JSDoc comments to public methods in ApiKeyManager
+- [X] T100 [P] Add JSDoc comments to public methods in UsageTracker
+- [X] T101 Verify all error messages are actionable and user-friendly
+- [X] T102 Verify API key never appears in logs (security check)
+- [X] T103 Update CLAUDE.md with new feature documentation if needed
+- [X] T104 Create sample api-keys.json file for documentation/testing
+- [X] T105 Create sample usage-data.json file for documentation/testing
 
 ### Verification
 
-- [ ] T106 Verify test coverage meets 80% minimum: `npm run test:coverage` (if available)
-- [ ] T107 Run final integration test: Create key, make requests, check usage report, disable/delete key
-- [ ] T108 Verify all npm scripts work: key:create, key:list, key:disable, key:enable, key:delete, usage:report
-- [ ] T109 Security review: Verify no plaintext keys in storage or logs
-- [ ] T110 Performance check: Verify auth middleware adds <5ms latency
+- [X] T106 Verify test coverage meets 80% minimum: `npm run test:coverage` (if available)
+- [X] T107 Run final integration test: Create key, make requests, check usage report, disable/delete key
+- [X] T108 Verify all npm scripts work: key:create, key:list, key:disable, key:enable, key:delete, usage:report
+- [X] T109 Security review: Verify no plaintext keys in storage or logs
+- [X] T110 Performance check: Verify auth middleware adds <5ms latency
 
 ---
 

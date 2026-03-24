@@ -3,7 +3,7 @@
  * Tests the CLI interface contract defined in contracts/api-key-api.yaml.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFile, readFile, unlink, mkdir, rmdir } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -17,8 +17,21 @@ import {
   handleReport,
 } from '@/cli/api-key-cli';
 import { createApiKeyManager } from '@/services/api-key-manager';
+import { createUsageTracker } from '@/services/usage-tracker';
 import type { ApiKeyManager } from '@/services/api-key-manager';
+import type { UsageTracker } from '@/services/usage-tracker';
 import type { ApiKeyStorage } from '@/types';
+
+// Mock logger
+vi.mock('@/utils/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    fatal: vi.fn(),
+  },
+}));
 
 describe('CLI Argument Parsing', () => {
   it('should parse --key value format', () => {
@@ -335,7 +348,15 @@ describe('CLI Commands', () => {
   });
 
   describe('handleReport', () => {
-    it('should show placeholder message', async () => {
+    let usageTracker: UsageTracker;
+
+    beforeEach(async () => {
+      const usageDataPath = join(testDir, 'usage-data.json');
+      usageTracker = createUsageTracker({ usageDataPath });
+      await usageTracker.initialize();
+    });
+
+    it('should show empty report when no usage data', async () => {
       const logs: string[] = [];
       const originalLog = console.log;
       console.log = (...args: unknown[]) => {
@@ -343,14 +364,105 @@ describe('CLI Commands', () => {
       };
 
       try {
-        await handleReport(manager, {});
+        await handleReport(manager, {}, usageTracker);
       } finally {
         console.log = originalLog;
       }
 
       const output = logs.join('\n');
-      expect(output).toContain('not yet implemented');
-      expect(output).toContain('Phase 6');
+      expect(output).toContain('No usage data found');
+    });
+
+    it('should show usage report with data', async () => {
+      // Create a key and add usage
+      const { key } = await manager.createKey({ name: 'Test Key' });
+      usageTracker.incrementRequestCount(key.id);
+      usageTracker.recordTokenUsage(key.id, 100, 50);
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (...args: unknown[]) => {
+        logs.push(args.join(' '));
+      };
+
+      try {
+        await handleReport(manager, {}, usageTracker);
+      } finally {
+        console.log = originalLog;
+      }
+
+      const output = logs.join('\n');
+      expect(output).toContain('Usage Report');
+      expect(output).toContain('Test Key');
+      expect(output).toContain('Summary by Key');
+    });
+
+    it('should filter by key ID', async () => {
+      // Create two keys with usage
+      const { key: key1 } = await manager.createKey({ name: 'Key 1' });
+      const { key: key2 } = await manager.createKey({ name: 'Key 2' });
+      usageTracker.incrementRequestCount(key1.id);
+      usageTracker.incrementRequestCount(key2.id);
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (...args: unknown[]) => {
+        logs.push(args.join(' '));
+      };
+
+      try {
+        await handleReport(manager, { 'key-id': key1.id }, usageTracker);
+      } finally {
+        console.log = originalLog;
+      }
+
+      const output = logs.join('\n');
+      expect(output).toContain('Key 1');
+      expect(output).not.toContain('Key 2');
+    });
+
+    it('should filter by date range', async () => {
+      const { key } = await manager.createKey({ name: 'Test Key' });
+      usageTracker.incrementRequestCount(key.id);
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (...args: unknown[]) => {
+        logs.push(args.join(' '));
+      };
+
+      try {
+        // Use a past date range that should return no data
+        await handleReport(manager, { from: '2020-01-01', to: '2020-12-31' }, usageTracker);
+      } finally {
+        console.log = originalLog;
+      }
+
+      const output = logs.join('\n');
+      expect(output).toContain('No usage data found');
+    });
+
+    it('should show daily breakdown', async () => {
+      const { key } = await manager.createKey({ name: 'Test Key' });
+      usageTracker.incrementRequestCount(key.id);
+      usageTracker.recordTokenUsage(key.id, 100, 50);
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (...args: unknown[]) => {
+        logs.push(args.join(' '));
+      };
+
+      try {
+        await handleReport(manager, {}, usageTracker);
+      } finally {
+        console.log = originalLog;
+      }
+
+      const output = logs.join('\n');
+      expect(output).toContain('Daily Breakdown');
+      expect(output).toContain('Input Tokens');
+      expect(output).toContain('Output Tokens');
     });
   });
 });

@@ -1,0 +1,36 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2026-03-24T12:00:00Z",
+  "keys": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Development Key",
+      "keyHash": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.aOy6.Xqt5KFqbG",
+      "prefix": "abc12345",
+      "status": "active",
+      "createdAt": "2026-03-24T10:00:00Z",
+      "expiresAt": null,
+      "lastUsedAt": "2026-03-24T11:30:00Z"
+    },
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "name": "CI/CD Pipeline",
+      "keyHash": "$2b$12$N9qo8uLOickgx2ZMRZoMyeIjZRGdjGj/n3.IT4aF2Q6Z9vB/fK7K.",
+      "prefix": "def67890",
+      "status": "active",
+      "createdAt": "2026-03-20T08:00:00Z",
+      "expiresAt": "2027-03-20T08:00:00Z",
+      "lastUsedAt": "2026-03-24T09:15:00Z"
+    },
+    {
+      "id": "770e8400-e29b-41d4-a716-446655440002",
+      "name": "Old Integration (Disabled)",
+      "keyHash": "$2b$12$EixZaYVK1j3h0N9gX8bOeWfYVKTqF1YQaZ9x1R5dT7F8E9sN3vIiO",
+      "prefix": "ghi11111",
+      "status": "disabled",
+      "createdAt": "2026-02-15T14:00:00Z",
+      "expiresAt": null,
+      "lastUsedAt": "2026-03-10T16:45:00Z"
+    }
+  ]
+}

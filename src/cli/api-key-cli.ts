@@ -4,13 +4,13 @@
  */
 
 import { createApiKeyManager, type ApiKeyManager } from '@/services/api-key-manager';
-import type { ApiKey } from '@/types';
+import { createUsageTracker, type UsageTracker } from '@/services/usage-tracker';
 
 /**
  * CLI command handler interface.
  */
 export interface CommandHandler {
-  (manager: ApiKeyManager, args: Record<string, string | undefined>): Promise<void>;
+  (manager: ApiKeyManager, args: Record<string, string | undefined>, usageTracker?: UsageTracker): Promise<void>;
 }
 
 /**
@@ -57,19 +57,10 @@ export function parseArgs(args: string[]): Record<string, string | undefined> {
  * @returns Formatted date string
  */
 function formatDate(date: Date | undefined): string {
-  if (!date) return 'N/A';
+  if (!date) {
+    return 'N/A';
+  }
   return date.toISOString().split('T')[0] ?? 'N/A';
-}
-
-/**
- * Format a datetime for display.
- *
- * @param date - Date to format
- * @returns Formatted datetime string
- */
-function formatDateTime(date: Date | undefined): string {
-  if (!date) return 'N/A';
-  return date.toISOString().replace('T', ' ').slice(0, 19);
 }
 
 /**
@@ -85,7 +76,7 @@ Commands:
   disable   Disable an API key
   enable    Enable an API key
   delete    Delete an API key
-  report    View usage report (coming soon)
+  report    View usage report for API keys
 
 Usage:
   npm run key:create -- --name "My Key" [--expires 2026-12-31]
@@ -330,19 +321,136 @@ export async function handleDelete(
 
 /**
  * Handle 'report' command.
- * Shows usage report for API keys.
- * Note: This is a placeholder - full implementation in Phase 6.
+ * Shows usage report for API keys with optional filtering.
  *
- * @param _manager - ApiKeyManager instance
- * @param _args - Parsed arguments
+ * @param manager - ApiKeyManager instance
+ * @param args - Parsed arguments (--key-id, --from, --to)
+ * @param usageTracker - UsageTracker instance (optional for backwards compatibility)
  */
 export async function handleReport(
-  _manager: ApiKeyManager,
-  _args: Record<string, string | undefined>
+  manager: ApiKeyManager,
+  args: Record<string, string | undefined>,
+  usageTracker?: UsageTracker
 ): Promise<void> {
-  console.log('\nUsage reporting is not yet implemented.');
-  console.log('This feature will be available in Phase 6.\n');
-  console.log('To check key status, use: npm run key:list\n');
+  // If no usageTracker provided, create one
+  const tracker = usageTracker ?? createUsageTracker();
+  if (!usageTracker) {
+    await tracker.initialize();
+  }
+
+  // Parse filter arguments
+  const keyId = args['key-id'];
+  const from = args.from;
+  const to = args.to;
+
+  // Validate date format if provided
+  const dateFormatRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (from && !dateFormatRegex.test(from)) {
+    console.error(`Error: Invalid --from date format: ${from}`);
+    console.error('Expected format: YYYY-MM-DD');
+    process.exit(1);
+  }
+  if (to && !dateFormatRegex.test(to)) {
+    console.error(`Error: Invalid --to date format: ${to}`);
+    console.error('Expected format: YYYY-MM-DD');
+    process.exit(1);
+  }
+
+  // Get usage report
+  const reports = tracker.getUsageReport({ keyId, from, to });
+
+  // Handle empty report
+  if (reports.length === 0) {
+    console.log('\nNo usage data found.');
+    if (keyId) {
+      console.log(`  Filter: key-id = ${keyId}`);
+    }
+    if (from || to) {
+      const dateFilter = [];
+      if (from) dateFilter.push(`from = ${from}`);
+      if (to) dateFilter.push(`to = ${to}`);
+      console.log(`  Date range: ${dateFilter.join(', ')}`);
+    }
+    console.log('\nMake some API requests to generate usage data.\n');
+    return;
+  }
+
+  // Enrich reports with key names
+  const enrichedReports = reports.map((report) => {
+    const key = manager.getKeyById(report.keyId);
+    return {
+      ...report,
+      keyName: key?.name ?? 'Unknown Key',
+    };
+  });
+
+  // Calculate totals
+  const totalRequests = enrichedReports.reduce((sum, r) => sum + r.totalRequests, 0);
+  const totalInputTokens = enrichedReports.reduce((sum, r) => sum + r.totalInputTokens, 0);
+  const totalOutputTokens = enrichedReports.reduce((sum, r) => sum + r.totalOutputTokens, 0);
+  const totalTokens = totalInputTokens + totalOutputTokens;
+
+  // Print header
+  console.log('\nUsage Report');
+  console.log('============\n');
+
+  if (from || to) {
+    const dateFilter = [];
+    if (from) dateFilter.push(`from ${from}`);
+    if (to) dateFilter.push(`to ${to}`);
+    console.log(`Date Range: ${dateFilter.join(' ')}`);
+  }
+  console.log(`Report Generated: ${new Date().toISOString().replace('T', ' ').slice(0, 19)}}\n`);
+
+  // Print summary table
+  console.log('Summary by Key:');
+  console.log('──────────────────────────────────────────────────────────────────────────────────────');
+  console.log('  Key ID                                  Name                 Requests   Tokens      ');
+  console.log('──────────────────────────────────────────────────────────────────────────────────────');
+
+  for (const report of enrichedReports) {
+    const keyIdShort = report.keyId.slice(0, 8) + '...';
+    const name = report.keyName.length > 20 ? report.keyName.slice(0, 17) + '...' : report.keyName.padEnd(20);
+    const requests = report.totalRequests.toString().padStart(8);
+    const tokens = report.totalTokens.toString().padStart(10);
+    console.log(`  ${keyIdShort}                                ${name} ${requests}   ${tokens}`);
+  }
+
+  console.log('──────────────────────────────────────────────────────────────────────────────────────');
+  console.log(`  TOTAL                                                        ${totalRequests.toString().padStart(8)}   ${totalTokens.toString().padStart(10)}`);
+  console.log();
+
+  // Print token breakdown
+  console.log('Token Breakdown:');
+  console.log(`  Input Tokens:  ${totalInputTokens.toLocaleString()}`);
+  console.log(`  Output Tokens: ${totalOutputTokens.toLocaleString()}`);
+  console.log(`  Total Tokens:  ${totalTokens.toLocaleString()}`);
+  console.log();
+
+  // Print daily breakdown for each key (if only one key or showing all)
+  if (enrichedReports.length <= 3) {
+    for (const report of enrichedReports) {
+      if (report.dailyBreakdown.length > 0) {
+        console.log(`\nDaily Breakdown for ${report.keyName}:`);
+        console.log('────────────────────────────────────────────────────────────────');
+        console.log('  Date         Requests   Input Tokens  Output Tokens  Total');
+        console.log('────────────────────────────────────────────────────────────────');
+
+        for (const day of report.dailyBreakdown) {
+          const total = day.inputTokens + day.outputTokens;
+          console.log(
+            `  ${day.date}   ${day.requestCount.toString().padStart(8)}   ` +
+            `${day.inputTokens.toString().padStart(12)}   ` +
+            `${day.outputTokens.toString().padStart(12)}   ` +
+            `${total.toString().padStart(8)}`
+          );
+        }
+        console.log('────────────────────────────────────────────────────────────────');
+      }
+    }
+  }
+
+  console.log();
 }
 
 /**
@@ -362,8 +470,13 @@ export const commands: Record<string, CommandHandler> = {
  *
  * @param command - Command name
  * @param args - Command-line arguments
+ * @param usageTracker - Optional UsageTracker instance for report command
  */
-export async function runCommand(command: string, args: string[]): Promise<void> {
+export async function runCommand(
+  command: string,
+  args: string[],
+  usageTracker?: UsageTracker
+): Promise<void> {
   // Handle help flag
   if (command === '--help' || command === '-h' || command === 'help') {
     printHelp();
@@ -384,5 +497,5 @@ export async function runCommand(command: string, args: string[]): Promise<void>
 
   // Parse arguments and run the command
   const parsedArgs = parseArgs(args);
-  await handler(manager, parsedArgs);
+  await handler(manager, parsedArgs, usageTracker);
 }

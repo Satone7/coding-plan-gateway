@@ -7,6 +7,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { ApiKeyManager } from '@/services/api-key-manager';
+import type { UsageTracker } from '@/services/usage-tracker';
 import type { ApiKey } from '@/types';
 
 /**
@@ -15,6 +16,8 @@ import type { ApiKey } from '@/types';
 export interface InternalApiKeyRoutesOptions {
   /** ApiKeyManager instance */
   apiKeyManager: ApiKeyManager;
+  /** UsageTracker instance for usage reports */
+  usageTracker?: UsageTracker;
   /** API prefix (default: '/internal') */
   prefix?: string;
 }
@@ -57,10 +60,26 @@ const updateStatusSchema = z.object({
   status: z.enum(['active', 'disabled']),
 });
 
+const usageReportQuerySchema = z.object({
+  keyId: z.string().uuid().optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
 /**
  * Create handlers for API key routes.
  */
-function createHandlers(apiKeyManager: ApiKeyManager) {
+function createHandlers(
+  apiKeyManager: ApiKeyManager,
+  usageTracker?: UsageTracker
+): {
+  listKeys: (request: FastifyRequest, reply: FastifyReply) => Promise<FastifyReply>;
+  createKey: (request: FastifyRequest<{ Body: unknown }>, reply: FastifyReply) => Promise<FastifyReply>;
+  getKey: (request: FastifyRequest<{ Params: { keyId: string } }>, reply: FastifyReply) => Promise<FastifyReply>;
+  updateKeyStatus: (request: FastifyRequest<{ Params: { keyId: string }; Body: unknown }>, reply: FastifyReply) => Promise<FastifyReply>;
+  deleteKey: (request: FastifyRequest<{ Params: { keyId: string } }>, reply: FastifyReply) => Promise<FastifyReply>;
+  getUsageReport: (request: FastifyRequest<{ Querystring: Record<string, string | undefined> }>, reply: FastifyReply) => Promise<FastifyReply>;
+} {
   return {
     /**
      * List all API keys.
@@ -209,6 +228,62 @@ function createHandlers(apiKeyManager: ApiKeyManager) {
 
       return reply.code(204).send();
     },
+
+    /**
+     * Get usage report.
+     * GET /internal/usage/report
+     */
+    async getUsageReport(
+      request: FastifyRequest<{ Querystring: Record<string, string | undefined> }>,
+      reply: FastifyReply
+    ): Promise<FastifyReply> {
+      if (!usageTracker) {
+        return reply.code(503).send({
+          error: {
+            message: 'Usage tracking is not enabled',
+            type: 'service_unavailable',
+            code: 'usage_tracking_disabled',
+          },
+        });
+      }
+
+      // Validate query parameters
+      const parseResult = usageReportQuerySchema.safeParse(request.query);
+      if (!parseResult.success) {
+        return reply.code(400).send({
+          error: {
+            message: 'Invalid query parameters',
+            type: 'validation_error',
+            details: parseResult.error.errors,
+          },
+        });
+      }
+
+      const { keyId, from, to } = parseResult.data;
+
+      // Get usage reports
+      const reports = usageTracker.getUsageReport({ keyId, from, to });
+
+      // Enrich reports with key names
+      const enrichedReports = reports.map((report) => {
+        const key = apiKeyManager.getKeyById(report.keyId);
+        return {
+          ...report,
+          keyName: key?.name ?? 'Unknown Key',
+        };
+      });
+
+      // Determine date range
+      const dateRange = {
+        start: from ?? (reports.length > 0 ? reports[0]?.dateRange.start : null),
+        end: to ?? (reports.length > 0 ? reports[0]?.dateRange.end : null),
+      };
+
+      return reply.send({
+        dateRange,
+        reports: enrichedReports,
+      });
+    },
   };
 }
 
@@ -222,8 +297,8 @@ export async function registerInternalApiKeyRoutes(
   app: FastifyInstance,
   options: InternalApiKeyRoutesOptions
 ): Promise<void> {
-  const { apiKeyManager, prefix = '/internal' } = options;
-  const handlers = createHandlers(apiKeyManager);
+  const { apiKeyManager, usageTracker, prefix = '/internal' } = options;
+  const handlers = createHandlers(apiKeyManager, usageTracker);
 
   await app.register(
     (fastify, _options, done) => {
@@ -241,6 +316,9 @@ export async function registerInternalApiKeyRoutes(
 
       // DELETE /internal/keys/:keyId - Delete a key
       fastify.delete('/keys/:keyId', handlers.deleteKey);
+
+      // GET /internal/usage/report - Get usage report
+      fastify.get('/usage/report', handlers.getUsageReport);
 
       done();
     },

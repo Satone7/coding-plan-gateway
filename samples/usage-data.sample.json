@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "lastSync": "2026-03-24T12:00:00Z",
+  "usage": {
+    "2026-03-24": {
+      "550e8400-e29b-41d4-a716-446655440000": {
+        "requestCount": 150,
+        "inputTokens": 45000,
+        "outputTokens": 12000,
+        "lastRequest": "2026-03-24T11:30:00Z"
+      },
+      "660e8400-e29b-41d4-a716-446655440001": {
+        "requestCount": 25,
+        "inputTokens": 8000,
+        "outputTokens": 2500,
+        "lastRequest": "2026-03-24T09:15:00Z"
+      }
+    },
+    "2026-03-23": {
+      "550e8400-e29b-41d4-a716-446655440000": {
+        "requestCount": 320,
+        "inputTokens": 95000,
+        "outputTokens": 28000,
+        "lastRequest": "2026-03-23T18:45:00Z"
+      },
+      "660e8400-e29b-41d4-a716-446655440001": {
+        "requestCount": 45,
+        "inputTokens": 12000,
+        "outputTokens": 4000,
+        "lastRequest": "2026-03-23T17:30:00Z"
+      }
+    },
+    "2026-03-22": {
+      "550e8400-e29b-41d4-a716-446655440000": {
+        "requestCount": 280,
+        "inputTokens": 85000,
+        "outputTokens": 25000,
+        "lastRequest": "2026-03-22T20:00:00Z"
+      }
+    }
+  }
+}
