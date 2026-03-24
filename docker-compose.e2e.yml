@@ -1,0 +1,49 @@
+# Docker Compose for E2E Testing Environment
+# Orchestrates the gateway and Claude Code test container
+
+services:
+  gateway:
+    image: coding-plan-gateway:test
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: gateway
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./e2e/test-config.yaml:/app/config.yaml:ro
+      - ./logs/gateway:/app/logs
+    networks:
+      - e2e-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  claude-code:
+    build:
+      context: ./e2e
+      dockerfile: Dockerfile
+    container_name: claude-code
+    environment:
+      - ANTHROPIC_BASE_URL=http://gateway:8080
+      - ANTHROPIC_MODEL=kimi-k2.5
+    volumes:
+      - ./logs/claude-code:/home/claude/.claude/logs
+      - ./e2e/workspace:/workspace
+    networks:
+      - e2e-network
+    depends_on:
+      gateway:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+networks:
+  e2e-network:
+    driver: bridge
