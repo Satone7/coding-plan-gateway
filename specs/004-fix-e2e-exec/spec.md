@@ -5,6 +5,13 @@
 **Status**: Draft
 **Input**: User description: "创建一个新的feature，当前项目中存在问题，你可以通过启动e2e测试环境，并使用命令`docker exec -it claude-code claude -p hello`验证，该feature的目的是修复问题，使得命令`docker exec -it claude-code claude -p hello`在e2e测试环境中正确运行，得到正常的返回结果"
 
+## Clarifications
+
+### Session 2026-03-24
+
+- Q: How should the gateway handle the `system` field format when forwarding to upstream providers? → A: Pass through unchanged - forward the `system` field exactly as received (string or array). Gateway should maintain pass-through behavior for all fields whenever possible.
+- Q: How should the gateway handle an empty `system` array versus a missing `system` field? → A: Treat empty array as missing - accept and forward without system prompt. An empty array provides no content, so treating it as absent is logically consistent.
+
 ## Problem Analysis
 
 After investigation, two issues were identified:
@@ -65,10 +72,10 @@ As a developer, I want to verify that the complete e2e testing flow works so tha
 
 ### Edge Cases
 
-- What happens when the `system` array contains multiple content blocks of different types (text, image)?
-- How does the gateway handle an empty `system` array versus a missing `system` field?
-- What happens when `ANTHROPIC_API_KEY` is set but the gateway configuration has no valid plans?
-- How does the system handle very long system prompts (either as string or array)?
+- The gateway MUST handle `system` arrays containing multiple content blocks of different types (text, image) by passing them through unchanged.
+- An empty `system` array is treated as a missing `system` field - the request is accepted and forwarded without a system prompt.
+- When `ANTHROPIC_API_KEY` is set but the gateway configuration has no valid plans, Claude Code receives a "model not found" error from the gateway.
+- Very long system prompts (string or array) are passed through unchanged; size limits are determined by upstream providers.
 
 ## Requirements *(mandatory)*
 
@@ -76,10 +83,10 @@ As a developer, I want to verify that the complete e2e testing flow works so tha
 
 - **FR-001**: The e2e Docker Compose configuration MUST include `ANTHROPIC_API_KEY` environment variable for the Claude Code container with a placeholder value.
 - **FR-002**: The gateway MUST accept the `system` field in Anthropic API requests as either a string or an array of content blocks.
-- **FR-003**: The gateway MUST preserve the `system` field format when forwarding requests to upstream providers, unless the provider requires a specific format.
+- **FR-003**: The gateway MUST pass through the `system` field unchanged (as string or array) when forwarding requests to upstream providers, maintaining transparency for all request fields whenever possible.
 - **FR-004**: The gateway MUST validate both string and array formats for the `system` field according to the Anthropic API specification.
 - **FR-005**: The e2e environment MUST allow Claude Code to make requests immediately after container startup without manual authentication steps.
-- **FR-006**: The gateway MUST log warnings if the `system` array format cannot be converted for a specific upstream provider (if applicable).
+- **FR-006**: The gateway MUST validate the `system` array format according to the Anthropic API specification (supporting text and image content blocks).
 
 ### Key Entities
 
