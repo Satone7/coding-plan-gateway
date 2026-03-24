@@ -28,6 +28,34 @@ export interface AnthropicImageBlock {
 export type AnthropicContentBlock = AnthropicTextBlock | AnthropicImageBlock;
 
 /**
+ * Anthropic system prompt text block.
+ * Used when system prompt is provided as an array of blocks.
+ */
+export interface AnthropicSystemTextBlock {
+  type: 'text';
+  text: string;
+  cache_control?: { type: 'ephemeral' };
+}
+
+/**
+ * Anthropic system prompt image block.
+ * Used when system prompt includes images.
+ */
+export interface AnthropicSystemImageBlock {
+  type: 'image';
+  source: {
+    type: 'url' | 'base64';
+    media_type: string;
+    data: string;
+  };
+}
+
+/**
+ * Union type for all system prompt content blocks.
+ */
+export type AnthropicSystemBlock = AnthropicSystemTextBlock | AnthropicSystemImageBlock;
+
+/**
  * Anthropic message structure.
  */
 export interface AnthropicMessage {
@@ -51,8 +79,8 @@ export interface AnthropicMessageRequest {
   /** Enable streaming response */
   stream?: boolean;
 
-  /** System prompt */
-  system?: string;
+  /** System prompt - can be a string or array of content blocks */
+  system?: string | AnthropicSystemBlock[];
 
   /** Sampling temperature (0-1) */
   temperature?: number;
@@ -70,6 +98,9 @@ export interface AnthropicMessageRequest {
   metadata?: {
     user_id?: string;
   };
+
+  /** Allow additional fields for pass-through support */
+  [key: string]: unknown;
 }
 
 /**

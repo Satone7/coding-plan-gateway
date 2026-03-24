@@ -28,7 +28,7 @@ No blocking prerequisites for this fix. The changes are isolated and can be impl
 
 | Task ID | Description |
 |---------|-------------|
-| - [ ] T001 | [US1] Add `ANTHROPIC_API_KEY=dummy-key-for-gateway` environment variable to claude-code service in `docker-compose.e2e.yml` |
+| - [x] T001 | [US1] Add `ANTHROPIC_API_KEY=dummy-key-for-gateway` environment variable to claude-code service in `docker-compose.e2e.yml` |
 
 ## Phase 4: User Story 2 - System Prompt Array Support (P1)
 
@@ -38,20 +38,20 @@ No blocking prerequisites for this fix. The changes are isolated and can be impl
 
 | Task ID | Description |
 |---------|-------------|
-| - [ ] T002 [P] [US2] Add `AnthropicSystemTextBlock` interface in `src/types/anthropic.ts` |
-| - [ ] T003 [P] [US2] Add `AnthropicSystemImageBlock` interface in `src/types/anthropic.ts` |
-| - [ ] T004 [P] [US2] Add `AnthropicSystemBlock` union type in `src/types/anthropic.ts` |
-| - [ ] T005 [US2] Update `system` field in `AnthropicMessageRequest` interface to accept `string \| AnthropicSystemBlock[]` in `src/types/anthropic.ts` |
-| - [ ] T006 [US2] Add index signature `[key: string]: unknown` to `AnthropicMessageRequest` interface for pass-through support in `src/types/anthropic.ts` |
-| - [ ] T007 [US2] Add `systemBlockSchema` Zod schema for validating system content blocks in `src/routes/anthropic/handlers.ts` |
-| - [ ] T008 [US2] Update `messageRequestSchema` to accept `system` as `z.union([z.string(), z.array(systemBlockSchema)])` in `src/routes/anthropic/handlers.ts` |
-| - [ ] T009 [US2] Add `.passthrough()` to `messageRequestSchema` for transparent field forwarding in `src/routes/anthropic/handlers.ts` |
-| - [ ] T010 [P] [US2] Add unit test for string `system` field validation in `tests/unit/routes/anthrophic/handlers.test.ts` |
-| - [ ] T011 [P] [US2] Add unit test for array `system` field validation in `tests/unit/routes/anthropic/handlers.test.ts` |
-| - [ ] T012 [P] [US2] Add unit test for empty array `system` handling in `tests/unit/routes/anthropic/handlers.test.ts` |
-| - [ ] T013 [P] [US2] Add unit test for unknown field pass-through in `tests/unit/routes/anthropic/handlers.test.ts` |
-| - [ ] T014 [P] [US2] Add integration test for request with array `system` field in `tests/integration/routes/anthropic.test.ts` |
-| - [ ] T015 [P] [US2] Add integration test for streaming request with array `system` field in `tests/integration/routes/anthropic.test.ts` |
+| - [x] T002 [P] [US2] Add `AnthropicSystemTextBlock` interface in `src/types/anthropic.ts` |
+| - [x] T003 [P] [US2] Add `AnthropicSystemImageBlock` interface in `src/types/anthropic.ts` |
+| - [x] T004 [P] [US2] Add `AnthropicSystemBlock` union type in `src/types/anthropic.ts` |
+| - [x] T005 [US2] Update `system` field in `AnthropicMessageRequest` interface to accept `string \| AnthropicSystemBlock[]` in `src/types/anthropic.ts` |
+| - [x] T006 [US2] Add index signature `[key: string]: unknown` to `AnthropicMessageRequest` interface for pass-through support in `src/types/anthropic.ts` |
+| - [x] T007 [US2] Add `systemBlockSchema` Zod schema for validating system content blocks in `src/routes/anthropic/handlers.ts` |
+| - [x] T008 [US2] Update `messageRequestSchema` to accept `system` as `z.union([z.string(), z.array(systemBlockSchema)])` in `src/routes/anthropic/handlers.ts` |
+| - [x] T009 [US2] Add `.passthrough()` to `messageRequestSchema` for transparent field forwarding in `src/routes/anthropic/handlers.ts` |
+| - [x] T010 [P] [US2] Add unit test for string `system` field validation in `tests/unit/routes/anthropic/handlers.test.ts` |
+| - [x] T011 [P] [US2] Add unit test for array `system` field validation in `tests/unit/routes/anthropic/handlers.test.ts` |
+| - [x] T012 [P] [US2] Add unit test for empty array `system` handling in `tests/unit/routes/anthropic/handlers.test.ts` |
+| - [x] T013 [P] [US2] Add unit test for unknown field pass-through in `tests/unit/routes/anthropic/handlers.test.ts` |
+| - [x] T014 [P] [US2] Add integration test for request with array `system` field in `tests/integration/routes/anthropic.test.ts` |
+| - [x] T015 [P] [US2] Add integration test for streaming request with array `system` field in `tests/integration/routes/anthropic.test.ts` |
 
 ## Phase 5: User Story 3 - End-to-End Verification (P2)
 
