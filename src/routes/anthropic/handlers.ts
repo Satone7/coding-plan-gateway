@@ -48,8 +48,6 @@ const messageRequestSchema = z.object({
   metadata: z.object({ user_id: z.string().optional() }).optional(),
 }).passthrough();
 
-type ValidatedRequest = z.infer<typeof messageRequestSchema>;
-
 /**
  * Anthropic handlers interface.
  */
@@ -71,14 +69,16 @@ interface HandlerServices {
 }
 
 /**
- * Validate request and return parsed data.
+ * Validate request and return parsed data as AnthropicMessageRequest.
  */
-function validateAndParse(request: FastifyRequest<{ Body: AnthropicMessageRequest }>): ValidatedRequest {
+function validateAndParse(request: FastifyRequest<{ Body: AnthropicMessageRequest }>): AnthropicMessageRequest {
   const validation = messageRequestSchema.safeParse(request.body);
   if (!validation.success) {
     throw validation.error;
   }
-  return validation.data;
+  // Cast to AnthropicMessageRequest since Zod's inferred type differs from the interface
+  // The validation ensures the structure is correct
+  return validation.data as AnthropicMessageRequest;
 }
 
 /**
@@ -126,7 +126,7 @@ function recordMetrics(
  */
 async function attemptFailover(
   services: HandlerServices,
-  body: ValidatedRequest,
+  body: AnthropicMessageRequest,
   requestId: string,
   plan: CodingPlan
 ): Promise<{ durationMs: number; statusCode: number; data: unknown } | null> {
