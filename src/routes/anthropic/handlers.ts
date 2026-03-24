@@ -91,13 +91,16 @@ function recordMetrics(
   model: string,
   response: { durationMs: number; statusCode: number; data: unknown }
 ): void {
+  // Type assertion for token usage extraction
+  type AnthropicUsageData = { usage?: { input_tokens?: number; output_tokens?: number } };
+  const usageData: AnthropicUsageData | undefined = response.data as AnthropicUsageData | undefined;
   attachProviderMetrics(request, {
     planId: plan.id,
     planName: plan.name,
     model,
     durationMs: response.durationMs,
     statusCode: response.statusCode,
-    tokenUsage: extractAnthropicTokenUsage(response.data),
+    tokenUsage: usageData ? extractAnthropicTokenUsage(usageData) : undefined,
     providerResponseTimeMs: response.durationMs,
   });
   logger.info('Anthropic message response', {
@@ -205,7 +208,7 @@ export function createAnthropicHandlers(
         });
         router.markPlanSuccess(plan.id);
         recordMetrics(request, plan, model, response);
-        return response.data;
+        return response.data as AnthropicMessageResponse;
       } catch (error) {
         router.markPlanFailed(plan.id);
 
@@ -218,7 +221,7 @@ export function createAnthropicHandlers(
           const result = await attemptFailover(services, body, requestId, altPlan);
           if (result) {
             recordMetrics(request, altPlan, model, result);
-            return result.data;
+            return result.data as AnthropicMessageResponse;
           }
         }
 

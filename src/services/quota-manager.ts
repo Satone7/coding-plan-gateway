@@ -7,7 +7,7 @@ import { readFile, writeFile, access } from 'fs/promises';
 import { constants } from 'fs';
 import { resolve, dirname } from 'path';
 import { mkdir } from 'fs/promises';
-import type { CodingPlan, QuotaState, QuotaPeriod } from '@/types';
+import type { QuotaState, QuotaPeriod } from '@/types';
 import { createInitialQuotaState, calculateResetAt } from '@/types';
 import { logger } from '@/utils/logger';
 import { DEFAULT_QUOTA_SYNC_CONFIG } from '@/config/defaults';
@@ -44,6 +44,18 @@ interface QuotaStateSerialized {
 }
 
 /**
+ * Minimal plan info needed for quota initialization.
+ * This interface allows both PlanConfig and CodingPlan to be used.
+ */
+interface PlanQuotaInfo {
+  id?: string;
+  quota: {
+    limit: number;
+    period: QuotaPeriod;
+  };
+}
+
+/**
  * QuotaManager - Manages quota tracking and persistence.
  *
  * @example
@@ -76,14 +88,19 @@ export class QuotaManager {
   /**
    * Initialize quota states from plans and load persisted state.
    *
-   * @param plans - All available coding plans
+   * @param plans - All available coding plans (or plan configs)
    */
-  async initialize(plans: CodingPlan[]): Promise<void> {
+  async initialize(plans: PlanQuotaInfo[]): Promise<void> {
     // Load persisted state
     const persistedStates = await this.loadPersistedState();
 
     // Initialize states for all plans
     for (const plan of plans) {
+      // Skip plans without an id
+      if (!plan.id) {
+        continue;
+      }
+
       if (persistedStates.has(plan.id)) {
         // Use persisted state but update limit from plan config
         const persisted = persistedStates.get(plan.id)!;

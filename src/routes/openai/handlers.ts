@@ -93,13 +93,16 @@ function recordMetrics(
   model: string,
   response: { durationMs: number; statusCode: number; data: unknown }
 ): void {
+  // Type assertion for token usage extraction
+  type OpenAIUsageData = { usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } };
+  const usageData: OpenAIUsageData | undefined = response.data as OpenAIUsageData | undefined;
   attachProviderMetrics(request, {
     planId: plan.id,
     planName: plan.name,
     model,
     durationMs: response.durationMs,
     statusCode: response.statusCode,
-    tokenUsage: extractOpenAITokenUsage(response.data),
+    tokenUsage: usageData ? extractOpenAITokenUsage(usageData) : undefined,
     providerResponseTimeMs: response.durationMs,
   });
   logger.info('Chat completion response', {
@@ -206,7 +209,7 @@ export function createOpenAIHandlers(
         });
         router.markPlanSuccess(plan.id);
         recordMetrics(request, plan, model, response);
-        return response.data;
+        return response.data as ChatCompletionResponse;
       } catch (error) {
         router.markPlanFailed(plan.id);
 
@@ -219,7 +222,7 @@ export function createOpenAIHandlers(
           const result = await attemptFailover(services, body, requestId, altPlan);
           if (result) {
             recordMetrics(request, altPlan, model, result);
-            return result.data;
+            return result.data as ChatCompletionResponse;
           }
         }
 
