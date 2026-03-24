@@ -6,10 +6,12 @@
 import Fastify, { FastifyInstance, FastifyServerOptions } from 'fastify';
 import { registerErrorHandler } from '@/middleware/error-handler';
 import { registerRequestLogger } from '@/middleware/request-logger';
+import { registerAuthMiddleware } from '@/middleware/auth';
 import { registerRoutes } from '@/routes';
 import { logger } from '@/utils/logger';
 import { DEFAULT_SERVER_CONFIG } from '@/config/defaults';
 import type { QuotaManager } from '@/services/quota-manager';
+import type { ApiKeyManager } from '@/services/api-key-manager';
 
 /**
  * Application configuration options.
@@ -23,6 +25,10 @@ export interface AppOptions extends Partial<FastifyServerOptions> {
   logLevel?: string;
   /** Quota manager for graceful shutdown */
   quotaManager?: QuotaManager;
+  /** API key manager for authentication */
+  apiKeyManager?: ApiKeyManager;
+  /** Enable authentication middleware */
+  enableAuth?: boolean;
 }
 
 /**
@@ -54,6 +60,12 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
 
   // Register middleware
   registerRequestLogger(app);
+
+  // Register auth middleware if apiKeyManager is provided
+  if (options.apiKeyManager && options.enableAuth !== false) {
+    registerAuthMiddleware(app, { apiKeyManager: options.apiKeyManager });
+  }
+
   registerErrorHandler(app);
 
   // Register routes
@@ -64,6 +76,14 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     app.addHook('onClose', async () => {
       logger.info('Shutting down quota manager...');
       await options.quotaManager!.shutdown();
+    });
+  }
+
+  // Register onClose hook for API key manager shutdown
+  if (options.apiKeyManager) {
+    app.addHook('onClose', async () => {
+      logger.info('Shutting down API key manager...');
+      await options.apiKeyManager!.persistKeys();
     });
   }
 

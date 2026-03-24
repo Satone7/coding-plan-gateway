@@ -69,31 +69,31 @@ Implement API key authentication and usage tracking for the Coding Plan Gateway.
 
 ### Tasks
 
-- [ ] T021 [US1] Create ApiKeyManager class in src/services/api-key-manager.ts with loadKeys() method
-- [ ] T022 [US1] Implement key storage file path configuration (API_KEYS_PATH env var)
-- [ ] T023 [US1] Implement createKey() method in ApiKeyManager - generates key, hashes it, stores metadata
-- [ ] T024 [US1] Implement validateKey() method in ApiKeyManager - bcrypt comparison against stored hashes
-- [ ] T025 [US1] Implement getKeyById() and getKeyByPrefix() lookup methods
-- [ ] T026 [US1] Implement updateKeyStatus() method for enable/disable functionality
-- [ ] T027 [US1] Implement deleteKey() method
-- [ ] T028 [US1] Implement persistKeys() method with atomic file write
-- [ ] T029 [US1] Create authentication middleware in src/middleware/auth.ts with Bearer token extraction
-- [ ] T030 [US1] Implement exemption path matching in auth middleware (health, ready endpoints)
-- [ ] T031 [US1] Add auth middleware hook registration in src/app.ts (preHandler hook)
-- [ ] T032 [US1] Add 401 Unauthorized error response format matching OpenAI/Anthropic style
-- [ ] T033 [US1] Add 403 Forbidden error response for disabled keys
-- [ ] T034 [US1] Initialize ApiKeyManager on startup in src/index.ts
+- [X] T021 [US1] Create ApiKeyManager class in src/services/api-key-manager.ts with loadKeys() method
+- [X] T022 [US1] Implement key storage file path configuration (API_KEYS_PATH env var)
+- [X] T023 [US1] Implement createKey() method in ApiKeyManager - generates key, hashes it, stores metadata
+- [X] T024 [US1] Implement validateKey() method in ApiKeyManager - bcrypt comparison against stored hashes
+- [X] T025 [US1] Implement getKeyById() and getKeyByPrefix() lookup methods
+- [X] T026 [US1] Implement updateKeyStatus() method for enable/disable functionality
+- [X] T027 [US1] Implement deleteKey() method
+- [X] T028 [US1] Implement persistKeys() method with atomic file write
+- [X] T029 [US1] Create authentication middleware in src/middleware/auth.ts with Bearer token extraction
+- [X] T030 [US1] Implement exemption path matching in auth middleware (health, ready endpoints)
+- [X] T031 [US1] Add auth middleware hook registration in src/app.ts (preHandler hook)
+- [X] T032 [US1] Add 401 Unauthorized error response format matching OpenAI/Anthropic style
+- [X] T033 [US1] Add 403 Forbidden error response for disabled keys
+- [X] T034 [US1] Initialize ApiKeyManager on startup in src/index.ts
 
 ### Verification
 
-- [ ] T035 [US1] Write unit tests for ApiKeyManager.validateKey() in tests/unit/services/api-key-manager.test.ts
-- [ ] T036 [US1] Write unit tests for auth middleware in tests/unit/middleware/auth.test.ts
-- [ ] T037 [US1] Write integration test for valid key authentication flow in tests/integration/auth-flow.test.ts
-- [ ] T038 [US1] Write integration test for invalid key rejection (401) in tests/integration/auth-flow.test.ts
-- [ ] T039 [US1] Write integration test for missing auth header (401) in tests/integration/auth-flow.test.ts
-- [ ] T040 [US1] Write integration test for disabled key rejection (403) in tests/integration/auth-flow.test.ts
-- [ ] T041 [US1] Run all tests and verify: `npm test`
-- [ ] T042 [US1] Manual verification: Create a test key, make curl request with valid/invalid keys
+- [X] T035 [US1] Write unit tests for ApiKeyManager.validateKey() in tests/unit/services/api-key-manager.test.ts
+- [X] T036 [US1] Write unit tests for auth middleware in tests/unit/middleware/auth.test.ts
+- [X] T037 [US1] Write integration test for valid key authentication flow in tests/integration/auth-flow.test.ts
+- [X] T038 [US1] Write integration test for invalid key rejection (401) in tests/integration/auth-flow.test.ts
+- [X] T039 [US1] Write integration test for missing auth header (401) in tests/integration/auth-flow.test.ts
+- [X] T040 [US1] Write integration test for disabled key rejection (403) in tests/integration/auth-flow.test.ts
+- [X] T041 [US1] Run all tests and verify: `npm test`
+- [X] T042 [US1] Manual verification: Create a test key, make curl request with valid/invalid keys
 
 ---
 

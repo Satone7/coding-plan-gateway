@@ -10,6 +10,8 @@ import { createApp, startServer } from './app';
 import { logger } from './utils/logger';
 import { loadConfig } from './config';
 import { createQuotaManager } from './services/quota-manager';
+import { createApiKeyManager } from './services/api-key-manager';
+import { loadAuthConfig } from './config/auth-config';
 
 /**
  * Main entry point.
@@ -40,11 +42,20 @@ async function main(): Promise<void> {
     await quotaManager.initialize(config.plans);
     quotaManager.startPeriodicSync();
 
-    // Create application with quota manager
+    // Create and initialize API key manager
+    const authConfig = loadAuthConfig();
+    const apiKeyManager = createApiKeyManager({
+      apiKeysPath: authConfig.apiKeysPath,
+    });
+    await apiKeyManager.initialize();
+
+    // Create application with managers
     const app = await createApp({
       port: parseInt(process.env.PORT ?? '8080', 10),
       logLevel: process.env.LOG_LEVEL ?? 'info',
       quotaManager,
+      apiKeyManager,
+      enableAuth: process.env.ENABLE_AUTH !== 'false',
     });
 
     // Start server
