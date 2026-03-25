@@ -1,0 +1,20 @@
+#!/usr/bin/env node
+/**
+ * CPG CLI Executable Entry Point
+ * This script runs the CLI from the compiled JavaScript
+ */
+
+'use strict';
+
+const path = require('path');
+
+// Try to find the compiled CLI
+const cliPath = path.resolve(__dirname, '..', 'dist', 'cli', 'index.js');
+
+try {
+  require(cliPath);
+} catch (error) {
+  console.error('Error: CLI not built. Run "npm run build" first.');
+  console.error(error.message);
+  process.exit(1);
+}

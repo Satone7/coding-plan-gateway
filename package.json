@@ -4,6 +4,9 @@
   "description": "A load balancer for managing multiple AI coding plan subscriptions",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "cpg": "./bin/cpg"
+  },
   "scripts": {
     "build": "tsc && tsc-alias",
     "start": "node dist/index.js",
@@ -18,6 +21,7 @@
     "clean": "rm -rf dist",
     "config:validate": "ts-node scripts/validate-config.ts",
     "reload": "curl -s -X POST http://localhost:8080/api/reload",
+    "cpg": "node bin/cpg",
     "key:create": "ts-node scripts/api-key.ts create",
     "key:list": "ts-node scripts/api-key.ts list",
     "key:disable": "ts-node scripts/api-key.ts disable",

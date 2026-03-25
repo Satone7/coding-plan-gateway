@@ -1,0 +1,91 @@
+/**
+ * Usage report command handler for CPG CLI.
+ */
+
+import { exit } from 'process';
+import { createApiKeyManager } from '@/services/api-key-manager';
+import { createUsageTracker } from '@/services/usage-tracker';
+import { CLI_EXIT_CODES, type CliContext, type CliError, type EnrichedUsageReport, type UsageTotals } from '@/types/cli';
+
+/**
+ * Create a CLI error with context.
+ */
+function createCliError(
+  type: CliError['type'],
+  message: string,
+  exitCode: number,
+  suggestion?: string
+): CliError {
+  return { type, message, exitCode, suggestion };
+}
+
+/**
+ * Handle usage-report command.
+ */
+export async function handleUsageReportCommand(context: CliContext): Promise<void> {
+  const { args, formatter } = context;
+
+  // Handle help flag
+  if (context.args.options.help || context.args.options.h) {
+    console.log(formatter.formatHelp('usage-report'));
+    return;
+  }
+
+  // Parse filter arguments
+  const keyId = args.options['key-id'] as string | undefined;
+  const from = args.options.from as string | undefined;
+  const to = args.options.to as string | undefined;
+
+  // Validate date format if provided
+  const dateFormatRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (from && !dateFormatRegex.test(from)) {
+    console.error(formatter.formatError(
+      createCliError('validation', `Invalid --from date format: ${from}`, CLI_EXIT_CODES.GENERAL_ERROR, 'Expected format: YYYY-MM-DD')
+    ));
+    exit(CLI_EXIT_CODES.GENERAL_ERROR);
+  }
+  if (to && !dateFormatRegex.test(to)) {
+    console.error(formatter.formatError(
+      createCliError('validation', `Invalid --to date format: ${to}`, CLI_EXIT_CODES.GENERAL_ERROR, 'Expected format: YYYY-MM-DD')
+    ));
+    exit(CLI_EXIT_CODES.GENERAL_ERROR);
+  }
+
+  // Create and initialize managers
+  const manager = createApiKeyManager();
+  const tracker = createUsageTracker();
+
+  try {
+    await manager.initialize();
+    await tracker.initialize();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(formatter.formatError(
+      createCliError('storage', `Failed to initialize: ${message}`, CLI_EXIT_CODES.STORAGE_ERROR)
+    ));
+    exit(CLI_EXIT_CODES.STORAGE_ERROR);
+  }
+
+  // Get usage report
+  const reports = tracker.getUsageReport({ keyId, from, to });
+
+  // Enrich reports with key names
+  const enrichedReports: EnrichedUsageReport[] = reports.map((report) => {
+    const key = manager.getKeyById(report.keyId);
+    return {
+      ...report,
+      keyName: key?.name ?? 'Unknown Key',
+    };
+  });
+
+  // Calculate totals
+  const totals: UsageTotals = {
+    totalRequests: enrichedReports.reduce((sum, r) => sum + r.totalRequests, 0),
+    totalInputTokens: enrichedReports.reduce((sum, r) => sum + r.totalInputTokens, 0),
+    totalOutputTokens: enrichedReports.reduce((sum, r) => sum + r.totalOutputTokens, 0),
+    totalTokens: enrichedReports.reduce((sum, r) => sum + r.totalTokens, 0),
+  };
+
+  // Output report
+  console.log(formatter.formatUsageReport(enrichedReports, totals));
+}

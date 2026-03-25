@@ -121,3 +121,8 @@ export const DEFAULT_AUTH_CONFIG = {
   authExemptPaths: '/health,/ready',
   usageSyncIntervalMs: 60000, // 60 seconds
 };
+
+/**
+ * Default gateway URL for CLI notifications.
+ */
+export const DEFAULT_GATEWAY_URL = 'http://localhost:8080';

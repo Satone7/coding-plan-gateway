@@ -116,3 +116,21 @@ export {
   usageRecordDataSchema,
   usageDataStorageSchema,
 } from './usage';
+
+// CLI types
+export type {
+  CliContext,
+  ParsedArgs,
+  OutputFormatter,
+  TestKeyResult,
+  CliError,
+  EnrichedUsageReport,
+  UsageTotals,
+} from './cli';
+
+export {
+  CLI_EXIT_CODES,
+  CLI_ENV_VARS,
+  DEFAULT_GATEWAY_URL,
+  CLI_VERSION,
+} from './cli';

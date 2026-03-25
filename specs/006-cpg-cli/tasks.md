@@ -24,10 +24,10 @@
 
 **Purpose**: Project initialization and CLI infrastructure
 
-- [ ] T001 Create bin/ directory and executable entry script in bin/cpg
-- [ ] T002 Add CLI types to src/types/cli.ts (CliContext, ParsedArgs, OutputFormatter, TestKeyResult, CliError)
-- [ ] T003 [P] Update package.json with bin field pointing to bin/cpg
-- [ ] T004 [P] Add CLI-related environment variables to src/config/defaults.ts (GATEWAY_URL default)
+- [x] T001 Create bin/ directory and executable entry script in bin/cpg
+- [x] T002 Add CLI types to src/types/cli.ts (CliContext, ParsedArgs, OutputFormatter, TestKeyResult, CliError)
+- [x] T003 [P] Update package.json with bin field pointing to bin/cpg
+- [x] T004 [P] Add CLI-related environment variables to src/config/defaults.ts (GATEWAY_URL default)
 
 ---
 
@@ -37,13 +37,13 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 Create output formatter interface and table formatter in src/cli/output/table.ts
-- [ ] T006 [P] Create JSON output formatter in src/cli/output/json.ts
-- [ ] T007 Create CLI context factory in src/cli/context.ts
-- [ ] T008 Refactor src/cli/api-key-cli.ts to use new output formatters
-- [ ] T009 Create main CLI entry point with command routing in src/cli/index.ts
-- [ ] T010 [P] Add unit tests for table formatter in tests/unit/cli/output/table.test.ts
-- [ ] T011 [P] Add unit tests for JSON formatter in tests/unit/cli/output/json.test.ts
+- [x] T005 Create output formatter interface and table formatter in src/cli/output/table.ts
+- [x] T006 [P] Create JSON output formatter in src/cli/output/json.ts
+- [x] T007 Create CLI context factory in src/cli/context.ts
+- [x] T008 Refactor src/cli/api-key-cli.ts to use new output formatters
+- [x] T009 Create main CLI entry point with command routing in src/cli/index.ts
+- [x] T010 [P] Add unit tests for table formatter in tests/unit/cli/output/table.test.ts
+- [x] T011 [P] Add unit tests for JSON formatter in tests/unit/cli/output/json.test.ts
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -57,22 +57,22 @@
 
 ### Tests for User Story 1
 
-- [ ] T012 [P] [US1] Add unit tests for key create command in tests/unit/cli/commands/key-create.test.ts
-- [ ] T013 [P] [US1] Add unit tests for key list command in tests/unit/cli/commands/key-list.test.ts
-- [ ] T014 [P] [US1] Add unit tests for key test command in tests/unit/cli/commands/key-test.test.ts
-- [ ] T015 [P] [US1] Add unit tests for key disable/enable commands in tests/unit/cli/commands/key-status.test.ts
-- [ ] T016 [P] [US1] Add unit tests for key delete command in tests/unit/cli/commands/key-delete.test.ts
+- [x] T012 [P] [US1] Add unit tests for key create command in tests/unit/cli/commands/key-create.test.ts
+- [x] T013 [P] [US1] Add unit tests for key list command in tests/unit/cli/commands/key-list.test.ts
+- [x] T014 [P] [US1] Add unit tests for key test command in tests/unit/cli/commands/key-test.test.ts
+- [x] T015 [P] [US1] Add unit tests for key disable/enable commands in tests/unit/cli/commands/key-status.test.ts
+- [x] T016 [P] [US1] Add unit tests for key delete command in tests/unit/cli/commands/key-delete.test.ts
 
 ### Implementation for User Story 1
 
-- [ ] T017 [P] [US1] Implement key create command handler in src/cli/commands/key.ts
-- [ ] T018 [P] [US1] Implement key list command handler in src/cli/commands/key.ts
-- [ ] T019 [US1] Implement key test command handler in src/cli/commands/key.ts
-- [ ] T020 [P] [US1] Implement key disable/enable command handlers in src/cli/commands/key.ts
-- [ ] T021 [P] [US1] Implement key delete command handler in src/cli/commands/key.ts
-- [ ] T022 [US1] Add --json flag support to all key commands
-- [ ] T023 [US1] Add --version and --help flags to CLI entry point
-- [ ] T024 [US1] Add integration test for CLI commands in tests/integration/cli/cli-integration.test.ts
+- [x] T017 [P] [US1] Implement key create command handler in src/cli/commands/key.ts
+- [x] T018 [P] [US1] Implement key list command handler in src/cli/commands/key.ts
+- [x] T019 [US1] Implement key test command handler in src/cli/commands/key.ts
+- [x] T020 [P] [US1] Implement key disable/enable command handlers in src/cli/commands/key.ts
+- [x] T021 [P] [US1] Implement key delete command handler in src/cli/commands/key.ts
+- [x] T022 [US1] Add --json flag support to all key commands
+- [x] T023 [US1] Add --version and --help flags to CLI entry point
+- [x] T024 [US1] Add integration test for CLI commands in tests/integration/cli/cli-integration.test.ts
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
