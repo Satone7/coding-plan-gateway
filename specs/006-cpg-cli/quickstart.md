@@ -131,6 +131,16 @@ docker exec gateway cpg key create --name "Test Key" --json
 curl -H "Authorization: Bearer cpg_xxx..." http://localhost:8080/v1/models
 ```
 
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error (invalid arguments, operation failed) |
+| 2 | Configuration error (missing ENCRYPTION_KEY) |
+| 3 | Network error (gateway unreachable) |
+| 4 | Storage error (file not accessible) |
+
 ## Environment Variables
 
 | Variable | Description |

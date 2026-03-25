@@ -5,6 +5,7 @@
 
 import { exit } from 'process';
 import { createApiKeyManager, type ApiKeyManager } from '@/services/api-key-manager';
+import { createGatewayNotifier, type GatewayNotifier } from '@/services/gateway-notifier';
 import { generateKeyPrefix } from '@/utils/key-generator';
 import { CLI_EXIT_CODES, type CliContext, type TestKeyResult, type CliError } from '@/types/cli';
 import type { ApiKey } from '@/types/api-key';
@@ -36,7 +37,8 @@ function createCliError(
  */
 async function handleCreate(
   context: CliContext,
-  manager: ApiKeyManager
+  manager: ApiKeyManager,
+  notifier: GatewayNotifier
 ): Promise<void> {
   const { args, formatter } = context;
   const options = args.options;
@@ -72,6 +74,13 @@ async function handleCreate(
   try {
     const result = await manager.createKey({ name, expiresAt });
     console.log(formatter.formatKeyCreate(result));
+
+    // Notify gateway of the new key
+    const notified = await notifier.notifyApiKeysChanged();
+    if (!notified) {
+      console.error('Warning: Failed to notify gateway. Key may not be immediately available.');
+      console.error('Restart the gateway or run: curl -X POST http://localhost:8080/internal/reload');
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(formatter.formatError(
@@ -142,7 +151,8 @@ async function handleTest(
  */
 async function handleDisable(
   context: CliContext,
-  manager: ApiKeyManager
+  manager: ApiKeyManager,
+  notifier: GatewayNotifier
 ): Promise<void> {
   const { args, formatter } = context;
   const options = args.options;
@@ -173,6 +183,9 @@ async function handleDisable(
     await manager.updateKeyStatus(id, 'disabled');
     const updatedKey = manager.getKeyById(id)!;
     console.log(formatter.formatKeyStatusChange(updatedKey, 'disabled'));
+
+    // Notify gateway of the status change
+    await notifier.notifyApiKeysChanged();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(formatter.formatError(
@@ -187,7 +200,8 @@ async function handleDisable(
  */
 async function handleEnable(
   context: CliContext,
-  manager: ApiKeyManager
+  manager: ApiKeyManager,
+  notifier: GatewayNotifier
 ): Promise<void> {
   const { args, formatter } = context;
   const options = args.options;
@@ -218,6 +232,9 @@ async function handleEnable(
     await manager.updateKeyStatus(id, 'active');
     const updatedKey = manager.getKeyById(id)!;
     console.log(formatter.formatKeyStatusChange(updatedKey, 'enabled'));
+
+    // Notify gateway of the status change
+    await notifier.notifyApiKeysChanged();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(formatter.formatError(
@@ -232,7 +249,8 @@ async function handleEnable(
  */
 async function handleDelete(
   context: CliContext,
-  manager: ApiKeyManager
+  manager: ApiKeyManager,
+  notifier: GatewayNotifier
 ): Promise<void> {
   const { args, formatter } = context;
   const options = args.options;
@@ -257,6 +275,9 @@ async function handleDelete(
   try {
     await manager.deleteKey(id);
     console.log(formatter.formatKeyDelete(key));
+
+    // Notify gateway of the deletion
+    await notifier.notifyApiKeysChanged();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(formatter.formatError(
@@ -302,10 +323,13 @@ export async function handleKeyCommand(
     exit(CLI_EXIT_CODES.STORAGE_ERROR);
   }
 
+  // Create the gateway notifier
+  const notifier = createGatewayNotifier({ gatewayUrl: context.gatewayUrl });
+
   // Route to subcommand handler
   switch (action) {
     case 'create':
-      await handleCreate(context, manager);
+      await handleCreate(context, manager, notifier);
       break;
     case 'list':
       await handleList(context, manager);
@@ -314,13 +338,13 @@ export async function handleKeyCommand(
       await handleTest(context, manager);
       break;
     case 'disable':
-      await handleDisable(context, manager);
+      await handleDisable(context, manager, notifier);
       break;
     case 'enable':
-      await handleEnable(context, manager);
+      await handleEnable(context, manager, notifier);
       break;
     case 'delete':
-      await handleDelete(context, manager);
+      await handleDelete(context, manager, notifier);
       break;
     default:
       console.error(`Error: Unknown key subcommand '${action}'`);

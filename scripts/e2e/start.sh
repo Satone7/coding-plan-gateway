@@ -64,12 +64,26 @@ if [ $WAITED -ge $MAX_WAIT ]; then
     exit 4
 fi
 
+# Verify CLI is available
+echo "Verifying CLI availability..."
+if docker exec gateway cpg --version > /dev/null 2>&1; then
+    CLI_VERSION=$(docker exec gateway cpg --version 2>/dev/null || echo "unknown")
+    echo -e "${GREEN}CLI is available: $CLI_VERSION${NC}"
+else
+    echo -e "${YELLOW}Warning: CLI not available in container. Some features may not work.${NC}"
+fi
+
 echo ""
 echo -e "${GREEN}E2E environment is ready!${NC}"
 echo ""
 echo "Gateway:     http://localhost:8080"
 echo "Health:      http://localhost:8080/health"
 echo "Models:      http://localhost:8080/v1/models"
+echo ""
+echo "CLI Commands:"
+echo "  docker exec gateway cpg --help"
+echo "  docker exec gateway cpg key create --name \"Test Key\""
+echo "  docker exec gateway cpg key list"
 echo ""
 echo "Run Claude Code:"
 echo "  docker exec -it claude-code claude"

@@ -86,13 +86,13 @@
 
 ### Tests for User Story 2
 
-- [ ] T025 [P] [US2] Add E2E test for Docker CLI execution in tests/e2e/docker-cli.test.ts
+- [x] T025 [P] [US2] Add E2E test for Docker CLI execution in tests/e2e/docker-cli.test.ts
 
 ### Implementation for User Story 2
 
-- [ ] T026 [US2] Update Dockerfile to copy bin/cpg and add to PATH
-- [ ] T027 [US2] Ensure bin/cpg has execute permissions in Docker image
-- [ ] T028 [US2] Verify CLI works with Docker volume mounts for storage access
+- [x] T026 [US2] Update Dockerfile to copy bin/cpg and add to PATH
+- [x] T027 [US2] Ensure bin/cpg has execute permissions in Docker image
+- [x] T028 [US2] Verify CLI works with Docker volume mounts for storage access
 
 **Checkpoint**: At this point, CLI works inside Docker containers
 
@@ -106,17 +106,17 @@
 
 ### Tests for User Story 3
 
-- [ ] T029 [P] [US3] Add unit tests for gateway notifier service in tests/unit/services/gateway-notifier.test.ts
-- [ ] T030 [P] [US3] Add unit tests for reload endpoint in tests/unit/routes/internal/reload.test.ts
-- [ ] T031 [US3] Add integration test for real-time key availability in tests/integration/cli/realtime-key.test.ts
+- [x] T029 [P] [US3] Add unit tests for gateway notifier service in tests/unit/services/gateway-notifier.test.ts
+- [x] T030 [P] [US3] Add unit tests for reload endpoint in tests/unit/routes/internal/reload.test.ts
+- [x] T031 [US3] Add integration test for real-time key availability in tests/integration/cli/realtime-key.test.ts
 
 ### Implementation for User Story 3
 
-- [ ] T032 [P] [US3] Create gateway notifier service in src/services/gateway-notifier.ts
-- [ ] T033 [US3] Create internal reload endpoint in src/routes/internal/reload.ts
-- [ ] T034 [US3] Register reload endpoint in src/routes/internal/index.ts
-- [ ] T035 [US3] Integrate gateway notifier into key command handlers (create, disable, enable, delete)
-- [ ] T036 [US3] Add GATEWAY_URL environment variable support to CLI context
+- [x] T032 [P] [US3] Create gateway notifier service in src/services/gateway-notifier.ts
+- [x] T033 [US3] Create internal reload endpoint in src/routes/internal/reload.ts
+- [x] T034 [US3] Register reload endpoint in src/routes/internal/index.ts
+- [x] T035 [US3] Integrate gateway notifier into key command handlers (create, disable, enable, delete)
+- [x] T036 [US3] Add GATEWAY_URL environment variable support to CLI context
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -130,14 +130,14 @@
 
 ### Tests for User Story 4
 
-- [ ] T037 [P] [US4] Add E2E test script for CLI operations in tests/e2e/e2e-cli.test.ts
+- [x] T037 [P] [US4] Add E2E test script for CLI operations in tests/e2e/e2e-cli.test.ts
 
 ### Implementation for User Story 4
 
-- [ ] T038 [US4] Update docker-compose.e2e.yml to ensure CLI availability
-- [ ] T039 [US4] Update E2E start script to verify CLI functionality
-- [ ] T040 [US4] Add usage-report command handler in src/cli/commands/usage.ts
-- [ ] T041 [US4] Add unit tests for usage-report command in tests/unit/cli/commands/usage.test.ts
+- [x] T038 [US4] Update docker-compose.e2e.yml to ensure CLI availability
+- [x] T039 [US4] Update E2E start script to verify CLI functionality
+- [x] T040 [US4] Add usage-report command handler in src/cli/commands/usage.ts
+- [x] T041 [US4] Add unit tests for usage-report command in tests/unit/cli/commands/usage.test.ts
 
 ---
 
@@ -145,12 +145,12 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T042 [P] Update README.md with CLI usage documentation
-- [ ] T043 [P] Add CLI exit codes documentation to quickstart.md
-- [ ] T044 Run quickstart.md validation scenarios
-- [ ] T045 [P] Verify test coverage meets 80% minimum for new code
-- [ ] T046 Run full test suite and verify all tests pass
-- [ ] T047 Security review for internal API endpoint (localhost-only binding)
+- [x] T042 [P] Update README.md with CLI usage documentation
+- [x] T043 [P] Add CLI exit codes documentation to quickstart.md
+- [x] T044 Run quickstart.md validation scenarios
+- [x] T045 [P] Verify test coverage meets 80% minimum for new code
+- [x] T046 Run full test suite and verify all tests pass
+- [x] T047 Security review for internal API endpoint (localhost-only binding)
 
 ---
 

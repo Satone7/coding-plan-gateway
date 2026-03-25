@@ -35,8 +35,15 @@ RUN npm ci --only=production && npm cache clean --force
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
+# Copy CLI executable
+COPY bin/cpg ./bin/cpg
+RUN chmod +x bin/cpg
+
 # Create config directory
 RUN mkdir -p /app/config && chown -R gateway:nodejs /app
+
+# Add CLI to PATH
+ENV PATH="/app/bin:${PATH}"
 
 # Switch to non-root user
 USER gateway

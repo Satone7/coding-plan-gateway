@@ -10,6 +10,7 @@ A load balancer for managing multiple AI coding plan subscriptions. Routes reque
 - **Quota management**: Track and prioritize usage across plans
 - **Circuit breaker**: Automatic failover when providers fail
 - **Streaming support**: Full SSE streaming for chat completions
+- **CLI tool**: Built-in `cpg` command-line tool for API key management and usage reports
 
 ## Quick Start
 
@@ -247,6 +248,82 @@ The gateway follows a service-oriented architecture:
 - All inputs validated with Zod schemas
 - No secrets in logs or error messages
 - Environment variables for sensitive configuration
+
+## CLI Usage
+
+The `cpg` command-line tool provides API key management and usage reporting.
+
+### Installation
+
+```bash
+# Build the project
+npm run build
+
+# Run CLI
+node bin/cpg --help
+
+# Or via npm script
+npm run cpg -- --help
+```
+
+### Commands
+
+#### API Key Management
+
+```bash
+# Create a new API key
+cpg key create --name "My Key"
+cpg key create --name "Production Key" --expires 2026-12-31
+
+# List all keys
+cpg key list
+cpg key list --json
+
+# Test a key
+cpg key test cpg_xxxxxxxx...
+
+# Disable/Enable keys
+cpg key disable --id <uuid>
+cpg key enable --id <uuid>
+
+# Delete a key
+cpg key delete --id <uuid>
+```
+
+#### Usage Reporting
+
+```bash
+# Show usage report
+cpg usage-report
+
+# Filter by key and date range
+cpg usage-report --key-id <uuid> --from 2026-03-01 --to 2026-03-31
+
+# JSON output
+cpg usage-report --json
+```
+
+### Docker Usage
+
+The CLI is available in Docker containers:
+
+```bash
+# Run CLI in gateway container
+docker exec gateway cpg key list
+
+# Create a key
+docker exec gateway cpg key create --name "Docker Key"
+```
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Configuration error (missing ENCRYPTION_KEY) |
+| 3 | Network error |
+| 4 | Storage error |
 
 ## License
 
