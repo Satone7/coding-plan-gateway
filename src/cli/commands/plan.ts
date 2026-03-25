@@ -12,6 +12,7 @@ import {
   type PlanUsageSummaryDisplay,
   type AdjustmentResultDisplay,
 } from '@/types/cli';
+import { loadPlanUsageConfig } from '@/config/defaults';
 
 /**
  * Create a CLI error with context.
@@ -48,9 +49,10 @@ export async function handlePlanListCommand(context: CliContext): Promise<void> 
   // Load plans from repository
   const configPath = process.env.CONFIG_PATH || './config.yaml';
   const encryptionKey = process.env.ENCRYPTION_KEY;
+  const planUsageConfig = loadPlanUsageConfig();
 
   const repository = createPlanRepository(configPath, encryptionKey);
-  const tracker = createPlanUsageTracker();
+  const tracker = createPlanUsageTracker({ planUsageDataPath: planUsageConfig.planUsageDataPath });
 
   try {
     await repository.reload();
@@ -157,9 +159,10 @@ export async function handlePlanSetUsageCommand(context: CliContext): Promise<vo
   // Load plans and tracker
   const configPath = process.env.CONFIG_PATH || './config.yaml';
   const encryptionKey = process.env.ENCRYPTION_KEY;
+  const planUsageConfig = loadPlanUsageConfig();
 
   const repository = createPlanRepository(configPath, encryptionKey);
-  const tracker = createPlanUsageTracker();
+  const tracker = createPlanUsageTracker({ planUsageDataPath: planUsageConfig.planUsageDataPath });
 
   try {
     await repository.reload();

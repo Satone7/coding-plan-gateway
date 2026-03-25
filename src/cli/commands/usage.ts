@@ -8,6 +8,8 @@ import { createUsageTracker } from '@/services/usage-tracker';
 import { createPlanUsageTracker } from '@/services/plan-usage-tracker';
 import { createPlanRepository } from '@/services/plan-repository';
 import { CLI_EXIT_CODES, type CliContext, type CliError, type EnrichedUsageReport, type UsageTotals, type PlanUsageReportDisplay } from '@/types/cli';
+import { loadAuthConfig } from '@/config/auth-config';
+import { loadPlanUsageConfig } from '@/config/defaults';
 
 /**
  * Create a CLI error with context.
@@ -70,9 +72,10 @@ async function handleApiKeyUsageReport(context: CliContext): Promise<void> {
     exit(CLI_EXIT_CODES.GENERAL_ERROR);
   }
 
-  // Create and initialize managers
-  const manager = createApiKeyManager();
-  const tracker = createUsageTracker();
+  // Create and initialize managers with config from environment
+  const authConfig = loadAuthConfig();
+  const manager = createApiKeyManager({ apiKeysPath: authConfig.apiKeysPath });
+  const tracker = createUsageTracker({ usageDataPath: authConfig.usageDataPath });
 
   try {
     await manager.initialize();
@@ -137,9 +140,10 @@ async function handlePlanUsageReport(context: CliContext, planId: string): Promi
   // Load plans and tracker
   const configPath = process.env.CONFIG_PATH || './config.yaml';
   const encryptionKey = process.env.ENCRYPTION_KEY;
+  const planUsageConfig = loadPlanUsageConfig();
 
   const repository = createPlanRepository(configPath, encryptionKey);
-  const tracker = createPlanUsageTracker();
+  const tracker = createPlanUsageTracker({ planUsageDataPath: planUsageConfig.planUsageDataPath });
 
   try {
     await repository.reload();

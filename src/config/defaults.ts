@@ -136,3 +136,22 @@ export const PLAN_USAGE_DEFAULTS = {
   syncIntervalMs: 60000, // 60 seconds
   retentionDays: 90,
 };
+
+/**
+ * Plan usage environment variable names.
+ */
+export const PLAN_USAGE_ENV_VARS = {
+  PLAN_USAGE_DATA_PATH: 'PLAN_USAGE_DATA_PATH',
+  ADJUSTMENT_HISTORY_PATH: 'ADJUSTMENT_HISTORY_PATH',
+} as const;
+
+/**
+ * Loads plan usage configuration from environment variables.
+ * Falls back to defaults for missing values.
+ */
+export function loadPlanUsageConfig(): { planUsageDataPath: string; adjustmentHistoryPath: string } {
+  return {
+    planUsageDataPath: process.env[PLAN_USAGE_ENV_VARS.PLAN_USAGE_DATA_PATH] ?? PLAN_USAGE_DEFAULTS.planUsageDataPath,
+    adjustmentHistoryPath: process.env[PLAN_USAGE_ENV_VARS.ADJUSTMENT_HISTORY_PATH] ?? PLAN_USAGE_DEFAULTS.adjustmentHistoryPath,
+  };
+}
