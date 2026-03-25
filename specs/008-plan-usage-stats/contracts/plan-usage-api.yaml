@@ -1,0 +1,445 @@
+openapi: 3.0.3
+info:
+  title: Plan Usage Statistics API
+  description: API endpoints for plan usage tracking and management
+  version: 1.0.0
+  contact:
+    name: Coding Plan Gateway
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /api/plans/{planId}/usage:
+    get:
+      summary: Get plan usage report
+      description: Retrieve usage statistics for a specific plan with optional date range filtering
+      operationId: getPlanUsage
+      tags:
+        - Plan Usage
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          description: UUID of the plan
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: false
+          description: Start date (YYYY-MM-DD)
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: to
+          in: query
+          required: false
+          description: End date (YYYY-MM-DD)
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+      responses:
+        '200':
+          description: Usage report retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanUsageReportResponse'
+        '404':
+          description: Plan not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/plans/{planId}/usage/adjust:
+    post:
+      summary: Adjust plan usage
+      description: Manually set the usage count for a plan (count or percentage)
+      operationId: adjustPlanUsage
+      tags:
+        - Plan Usage
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          description: UUID of the plan
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsageAdjustmentRequest'
+      responses:
+        '200':
+          description: Usage adjusted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageAdjustmentResponse'
+        '404':
+          description: Plan not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid adjustment value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/plans/{planId}/usage/history:
+    get:
+      summary: Get usage adjustment history
+      description: Retrieve the history of manual usage adjustments for a plan
+      operationId: getUsageHistory
+      tags:
+        - Plan Usage
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          description: UUID of the plan
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of records to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Adjustment history retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdjustmentHistoryResponse'
+        '404':
+          description: Plan not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/plans/usage/summary:
+    get:
+      summary: Get usage summary for all plans
+      description: Retrieve usage statistics summary for all configured plans
+      operationId: getPlansUsageSummary
+      tags:
+        - Plan Usage
+      responses:
+        '200':
+          description: Usage summary retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlansUsageSummaryResponse'
+
+components:
+  schemas:
+    PlanUsageReportResponse:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/PlanUsageReport'
+        meta:
+          type: object
+          properties:
+            requestId:
+              type: string
+              format: uuid
+            timestamp:
+              type: string
+              format: date-time
+
+    PlanUsageReport:
+      type: object
+      required:
+        - planId
+        - planName
+        - totalRequests
+        - limit
+        - remaining
+        - percentage
+        - dateRange
+        - dailyBreakdown
+        - quotaPeriod
+      properties:
+        planId:
+          type: string
+          format: uuid
+          description: Plan identifier
+        planName:
+          type: string
+          description: Plan display name
+        totalRequests:
+          type: integer
+          minimum: 0
+          description: Total requests in the date range
+        limit:
+          type: integer
+          minimum: 0
+          description: Quota limit from plan configuration
+        remaining:
+          type: integer
+          description: Remaining quota (can be negative for overage)
+        percentage:
+          type: number
+          minimum: 0
+          description: Usage percentage
+        dateRange:
+          type: object
+          required:
+            - start
+            - end
+          properties:
+            start:
+              type: string
+              pattern: '^\d{4}-\d{2}-\d{2}$'
+            end:
+              type: string
+              pattern: '^\d{4}-\d{2}-\d{2}$'
+        dailyBreakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyPlanUsage'
+        quotaPeriod:
+          type: string
+          enum: [daily, monthly, total]
+        resetAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    DailyPlanUsage:
+      type: object
+      required:
+        - date
+        - requestCount
+      properties:
+        date:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        requestCount:
+          type: integer
+          minimum: 0
+
+    UsageAdjustmentRequest:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 0
+          description: Set usage to exact count value
+        percent:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Set usage as percentage of limit
+      oneOf:
+        - required: [count]
+        - required: [percent]
+
+    UsageAdjustmentResponse:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          type: object
+          required:
+            - planId
+            - oldValue
+            - newValue
+            - adjustmentId
+          properties:
+            planId:
+              type: string
+              format: uuid
+            oldValue:
+              type: integer
+              minimum: 0
+            newValue:
+              type: integer
+              minimum: 0
+            adjustmentId:
+              type: string
+              format: uuid
+            warning:
+              type: string
+              description: Warning message if usage exceeds limit
+        meta:
+          type: object
+          properties:
+            requestId:
+              type: string
+              format: uuid
+            timestamp:
+              type: string
+              format: date-time
+
+    AdjustmentHistoryResponse:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdjustmentRecord'
+        meta:
+          type: object
+          properties:
+            requestId:
+              type: string
+              format: uuid
+            timestamp:
+              type: string
+              format: date-time
+            count:
+              type: integer
+
+    AdjustmentRecord:
+      type: object
+      required:
+        - id
+        - planId
+        - timestamp
+        - oldValue
+        - newValue
+        - adjustmentType
+      properties:
+        id:
+          type: string
+          format: uuid
+        planId:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        oldValue:
+          type: integer
+          minimum: 0
+        newValue:
+          type: integer
+          minimum: 0
+        adjustmentType:
+          type: string
+          enum: [count, percent]
+        adjustmentValue:
+          type: number
+
+    PlansUsageSummaryResponse:
+      type: object
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanUsageSummary'
+        meta:
+          type: object
+          properties:
+            requestId:
+              type: string
+              format: uuid
+            timestamp:
+              type: string
+              format: date-time
+            totalPlans:
+              type: integer
+            totalRequests:
+              type: integer
+
+    PlanUsageSummary:
+      type: object
+      required:
+        - planId
+        - planName
+        - limit
+        - used
+        - remaining
+        - percentage
+        - quotaPeriod
+      properties:
+        planId:
+          type: string
+          format: uuid
+        planName:
+          type: string
+        limit:
+          type: integer
+          minimum: 0
+        used:
+          type: integer
+          minimum: 0
+        remaining:
+          type: integer
+        percentage:
+          type: number
+          minimum: 0
+        quotaPeriod:
+          type: string
+          enum: [daily, monthly, total]
+        resetAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - meta
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+            - code
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            code:
+              type: string
+            details:
+              type: object
+        meta:
+          type: object
+          properties:
+            requestId:
+              type: string
+              format: uuid
+            timestamp:
+              type: string
+              format: date-time
