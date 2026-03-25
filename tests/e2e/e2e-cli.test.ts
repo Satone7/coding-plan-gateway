@@ -26,6 +26,7 @@ function isDockerAvailable(): boolean {
 // Check if the gateway container is running
 function isGatewayRunning(): boolean {
   try {
+    // Check for either coding-plan-gateway (production) or gateway (E2E environment)
     const result = execSync('docker ps --filter "name=gateway" --filter "status=running" -q', {
       encoding: 'utf-8',
     });
@@ -38,7 +39,9 @@ function isGatewayRunning(): boolean {
 // Execute command in the gateway container
 function execInGateway(command: string): { stdout: string; stderr: string; exitCode: number } {
   try {
-    const stdout = execSync(`docker exec gateway ${command}`, {
+    // Use coding-plan-gateway container name for production, gateway for E2E environment
+    const containerName = process.env.E2E_CONTAINER_NAME || 'coding-plan-gateway';
+    const stdout = execSync(`docker exec ${containerName} ${command}`, {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -53,15 +56,97 @@ function execInGateway(command: string): { stdout: string; stderr: string; exitC
   }
 }
 
-// Execute curl against the gateway
-function curlGateway(path: string, method: string = 'GET', body?: string): {
+// Extract the last JSON object from CLI output (which may include log lines)
+// Log lines are single-line JSON starting with {"timestamp"
+// Output JSON is multiline and starts after all log lines
+function extractLastJson(output: string): unknown {
+  const lines = output.trim().split('\n');
+
+  // First, skip all log lines (they start with {"timestamp")
+  let jsonStartIndex = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith('{"timestamp"')) {
+      jsonStartIndex = i + 1;
+    } else {
+      break;
+    }
+  }
+
+  // Now find the { that starts the JSON output
+  let startIndex = -1;
+  for (let i = jsonStartIndex; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line === '{') {
+      startIndex = i;
+      break;
+    }
+  }
+
+  if (startIndex === -1) {
+    throw new Error('No JSON object found in output');
+  }
+
+  // Extract from the opening brace to the matching closing brace
+  let braceCount = 0;
+  let endIndex = -1;
+
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i];
+    for (const char of line) {
+      if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+      }
+
+      if (braceCount === 0 && i > startIndex) {
+        endIndex = i;
+        break;
+      }
+    }
+    if (endIndex !== -1) {
+      break;
+    }
+  }
+
+  if (endIndex === -1) {
+    throw new Error('No closing brace found for JSON object');
+  }
+
+  const jsonLines = lines.slice(startIndex, endIndex + 1).join('\n');
+  return JSON.parse(jsonLines);
+}
+
+// Execute wget against the gateway
+function wgetGateway(path: string, method: string = 'GET', body?: string, headers?: Record<string, string>): {
   stdout: string;
   exitCode: number;
 } {
-  const bodyFlag = body ? `-d '${body}'` : '';
+  // Use coding-plan-gateway container name for production, gateway for E2E environment
+  const containerName = process.env.E2E_CONTAINER_NAME || 'coding-plan-gateway';
+
+  const args: string[] = ['wget', '-qO-'];
+
+  if (body) {
+    args.push(`--post-data='${body}'`);
+  }
+
+  if (method !== 'GET' && !body) {
+    args.push(`--method=${method}`);
+  }
+
+  if (headers) {
+    for (const [key, value] of Object.entries(headers)) {
+      args.push(`--header='${key}: ${value}'`);
+    }
+  }
+
+  args.push(`http://127.0.0.1:8080${path}`);
+
   try {
     const stdout = execSync(
-      `docker exec gateway wget -qO- --method=${method} ${bodyFlag} http://localhost:8080${path}`,
+      `docker exec ${containerName} ${args.join(' ')}`,
       { encoding: 'utf-8' }
     );
     return { stdout, exitCode: 0 };
@@ -115,7 +200,7 @@ describe('E2E CLI Operations', () => {
 
       expect(result.exitCode).toBe(0);
 
-      const output = JSON.parse(result.stdout);
+      const output = extractLastJson(result.stdout) as { success: boolean; key: { name: string; plaintextKey: string } };
       expect(output.success).toBe(true);
       expect(output.key.name).toBe('E2E Test Key');
       expect(output.key.plaintextKey).toMatch(/^cpg_/);
@@ -128,7 +213,7 @@ describe('E2E CLI Operations', () => {
       const result = execInGateway('cpg key list --json');
       expect(result.exitCode).toBe(0);
 
-      const output = JSON.parse(result.stdout);
+      const output = extractLastJson(result.stdout) as { keys: unknown[] };
       expect(Array.isArray(output.keys)).toBe(true);
       expect(output.keys.length).toBeGreaterThan(0);
     });
@@ -138,14 +223,14 @@ describe('E2E CLI Operations', () => {
       const createResult = execInGateway(
         'cpg key create --name "Test Valid Key" --json'
       );
-      const createOutput = JSON.parse(createResult.stdout);
+      const createOutput = extractLastJson(createResult.stdout) as { key: { plaintextKey: string } };
       const key = createOutput.key.plaintextKey;
 
       // Test the key
       const testResult = execInGateway(`cpg key test ${key} --json`);
       expect(testResult.exitCode).toBe(0);
 
-      const testOutput = JSON.parse(testResult.stdout);
+      const testOutput = extractLastJson(testResult.stdout) as { status: string };
       expect(testOutput.status).toBe('valid');
     });
 
@@ -154,7 +239,7 @@ describe('E2E CLI Operations', () => {
       const createResult = execInGateway(
         'cpg key create --name "Disable Test Key" --json'
       );
-      const createOutput = JSON.parse(createResult.stdout);
+      const createOutput = extractLastJson(createResult.stdout) as { key: { id: string; plaintextKey: string } };
       const keyId = createOutput.key.id;
       const plaintextKey = createOutput.key.plaintextKey;
 
@@ -164,7 +249,7 @@ describe('E2E CLI Operations', () => {
 
       // Test should show disabled
       const testDisabled = execInGateway(`cpg key test ${plaintextKey} --json`);
-      const testOutput = JSON.parse(testDisabled.stdout);
+      const testOutput = extractLastJson(testDisabled.stdout) as { status: string };
       expect(testOutput.status).toBe('disabled');
 
       // Enable the key
@@ -173,30 +258,55 @@ describe('E2E CLI Operations', () => {
 
       // Test should show valid again
       const testEnabled = execInGateway(`cpg key test ${plaintextKey} --json`);
-      const testOutput2 = JSON.parse(testEnabled.stdout);
+      const testOutput2 = extractLastJson(testEnabled.stdout) as { status: string };
       expect(testOutput2.status).toBe('valid');
     });
   });
 
-  describe('Real-time Key Availability', () => {
-    it.skipIf(!dockerAvailable || !gatewayRunning)('should make key immediately available after creation', () => {
+  describe('Reload Endpoint (T012)', () => {
+    it.skipIf(!dockerAvailable || !gatewayRunning)('should allow POST /internal/reload without authentication', () => {
+      // Test that the reload endpoint is accessible without API key
+      const result = wgetGateway(
+        '/internal/reload',
+        'POST',
+        '{"type":"api-keys"}',
+        { 'Content-Type': 'application/json' }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.message).toContain('Reloaded: api-keys');
+    });
+  });
+
+  describe('Real-time Key Availability (T013)', () => {
+    it.skipIf(!dockerAvailable || !gatewayRunning)('should make key immediately available for authentication after creation', () => {
       // Create a key
       const createResult = execInGateway(
-        'cpg key create --name "Immediate Test Key" --json'
+        'cpg key create --name "Immediate Auth Test Key" --json'
       );
       expect(createResult.exitCode).toBe(0);
 
-      const createOutput = JSON.parse(createResult.stdout);
+      const createOutput = extractLastJson(createResult.stdout) as { key: { plaintextKey: string } };
       const plaintextKey = createOutput.key.plaintextKey;
 
-      // Immediately try to use the key for authentication
-      // This tests that the gateway was notified and has the key loaded
-      const authResult = curlGateway(
+      // Immediately try to authenticate with the key to /v1/models
+      // This tests that the gateway was notified via /internal/reload and has the key loaded
+      const authResult = wgetGateway(
         '/v1/models',
-        'GET'
+        'GET',
+        undefined,
+        { 'Authorization': `Bearer ${plaintextKey}` }
       );
-      // The gateway should respond (even if with an error, it should recognize the key)
+
       expect(authResult.exitCode).toBe(0);
+
+      const modelsOutput = JSON.parse(authResult.stdout);
+      expect(modelsOutput.object).toBe('list');
+      expect(Array.isArray(modelsOutput.data)).toBe(true);
+      expect(modelsOutput.data.length).toBeGreaterThan(0);
     });
   });
 
@@ -207,12 +317,93 @@ describe('E2E CLI Operations', () => {
 
       // Empty or valid JSON response is acceptable
       try {
-        const output = JSON.parse(result.stdout);
+        const output = extractLastJson(result.stdout) as { reports: unknown };
         expect(output).toHaveProperty('reports');
       } catch {
         // Empty response is OK for new installations
         expect(result.stdout).toBeTruthy();
       }
+    });
+  });
+
+  describe('Key Persistence Across Restart (T017)', () => {
+    // This test requires docker compose to be available and may disrupt other tests
+    // It should be run in isolation or at the end of the test suite
+    const canRestartContainer = dockerAvailable && gatewayRunning && process.env.E2E_ALLOW_RESTART === 'true';
+
+    it.skipIf(!canRestartContainer)('should persist API keys across container restart', () => {
+      // Generate unique key name with timestamp to avoid conflicts
+      const timestamp = Date.now();
+      const keyName = `Persistence Test ${timestamp}`;
+
+      // Create a key
+      const createResult = execInGateway(
+        `cpg key create --name "${keyName}" --json`
+      );
+      expect(createResult.exitCode).toBe(0);
+
+      const createOutput = extractLastJson(createResult.stdout) as {
+        success: boolean;
+        key: { id: string; plaintextKey: string; prefix: string };
+      };
+      expect(createOutput.success).toBe(true);
+      const keyId = createOutput.key.id;
+      const plaintextKey = createOutput.key.plaintextKey;
+      const prefix = createOutput.key.prefix;
+
+      // Verify the key works before restart
+      const testBeforeRestart = execInGateway(`cpg key test ${plaintextKey} --json`);
+      const testOutputBefore = extractLastJson(testBeforeRestart.stdout) as { status: string };
+      expect(testOutputBefore.status).toBe('valid');
+
+      // Restart the container using docker compose
+      // Note: This will temporarily disrupt the gateway
+      const containerName = process.env.E2E_CONTAINER_NAME || 'coding-plan-gateway';
+      execSync('docker compose down', { stdio: 'inherit' });
+      execSync('docker compose up -d', { stdio: 'inherit' });
+
+      // Wait for the container to be ready (from host)
+      let ready = false;
+      let attempts = 0;
+      const maxAttempts = 60; // 60 seconds max
+      while (!ready && attempts < maxAttempts) {
+        try {
+          // Check health from host (more reliable than from inside container)
+          const healthCheck = execSync('curl -s http://localhost:8080/health', {
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'pipe'],
+          });
+          if (healthCheck.includes('healthy') || healthCheck.includes('"status"')) {
+            ready = true;
+          } else {
+            attempts++;
+            execSync('sleep 1', { stdio: 'ignore' });
+          }
+        } catch {
+          attempts++;
+          execSync('sleep 1', { stdio: 'ignore' });
+        }
+      }
+      expect(ready).toBe(true);
+
+      // Verify the key still exists after restart
+      const listResult = execInGateway('cpg key list --json');
+      const listOutput = extractLastJson(listResult.stdout) as { keys: Array<{ id: string }> };
+      const keyIds = listOutput.keys.map((k) => k.id);
+      expect(keyIds).toContain(keyId);
+
+      // Verify the key still works after restart
+      const testAfterRestart = execInGateway(`cpg key test ${plaintextKey} --json`);
+      expect(testAfterRestart.exitCode).toBe(0);
+
+      const testOutputAfter = extractLastJson(testAfterRestart.stdout) as {
+        status: string;
+        prefix: string;
+        key: { id: string };
+      };
+      expect(testOutputAfter.status).toBe('valid');
+      expect(testOutputAfter.key.id).toBe(keyId);
+      expect(testOutputAfter.prefix).toBe(prefix);
     });
   });
 });

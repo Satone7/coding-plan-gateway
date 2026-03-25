@@ -2,7 +2,7 @@
  * Unit tests for internal reload endpoint.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import Fastify from 'fastify';
 import { registerReloadRoutes } from '@/routes/internal/reload';
 import type { ApiKeyManager } from '@/services/api-key-manager';
@@ -69,8 +69,8 @@ describe('Reload Routes', () => {
       const body = JSON.parse(response.body);
       expect(body.success).toBe(true);
       expect(body.message).toContain('api-keys');
-      expect(mockApiKeyManager.initialize).toHaveBeenCalled();
-      expect(mockUsageTracker.initialize).not.toHaveBeenCalled();
+      expect((mockApiKeyManager.initialize as Mock).mock.calls.length).toBeGreaterThan(0);
+      expect((mockUsageTracker.initialize as Mock).mock.calls.length).toBe(0);
     });
 
     it('should reload usage when type is usage', async () => {
@@ -86,8 +86,8 @@ describe('Reload Routes', () => {
       const body = JSON.parse(response.body);
       expect(body.success).toBe(true);
       expect(body.message).toContain('usage');
-      expect(mockUsageTracker.initialize).toHaveBeenCalled();
-      expect(mockApiKeyManager.initialize).not.toHaveBeenCalled();
+      expect((mockUsageTracker.initialize as Mock).mock.calls.length).toBeGreaterThan(0);
+      expect((mockApiKeyManager.initialize as Mock).mock.calls.length).toBe(0);
     });
 
     it('should reload all when type is all', async () => {
@@ -104,8 +104,8 @@ describe('Reload Routes', () => {
       expect(body.success).toBe(true);
       expect(body.message).toContain('api-keys');
       expect(body.message).toContain('usage');
-      expect(mockApiKeyManager.initialize).toHaveBeenCalled();
-      expect(mockUsageTracker.initialize).toHaveBeenCalled();
+      expect((mockApiKeyManager.initialize as Mock).mock.calls.length).toBeGreaterThan(0);
+      expect((mockUsageTracker.initialize as Mock).mock.calls.length).toBeGreaterThan(0);
     });
 
     it('should default to all when no type specified', async () => {
@@ -120,8 +120,8 @@ describe('Reload Routes', () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.success).toBe(true);
-      expect(mockApiKeyManager.initialize).toHaveBeenCalled();
-      expect(mockUsageTracker.initialize).toHaveBeenCalled();
+      expect((mockApiKeyManager.initialize as Mock).mock.calls.length).toBeGreaterThan(0);
+      expect((mockUsageTracker.initialize as Mock).mock.calls.length).toBeGreaterThan(0);
     });
 
     it('should return 400 for invalid type', async () => {

@@ -8,7 +8,7 @@ import { registerErrorHandler } from '@/middleware/error-handler';
 import { registerRequestLogger } from '@/middleware/request-logger';
 import { registerAuthMiddleware } from '@/middleware/auth';
 import { registerRoutes } from '@/routes';
-import { registerInternalApiKeyRoutes } from '@/routes/internal';
+import { registerInternalApiKeyRoutes, registerReloadRoutes } from '@/routes/internal';
 import { logger } from '@/utils/logger';
 import { DEFAULT_SERVER_CONFIG } from '@/config/defaults';
 import type { QuotaManager } from '@/services/quota-manager';
@@ -84,6 +84,12 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       apiKeyManager: options.apiKeyManager,
       usageTracker: options.usageTracker,
       prefix: '/internal',
+    });
+
+    // Register reload routes for CLI notifications
+    await registerReloadRoutes(app, {
+      apiKeyManager: options.apiKeyManager,
+      usageTracker: options.usageTracker,
     });
   }
 

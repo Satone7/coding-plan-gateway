@@ -1,0 +1,126 @@
+openapi: 3.0.3
+info:
+  title: Coding Plan Gateway - Internal API
+  description: Internal API endpoints for CLI-to-gateway communication
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /internal/reload:
+    post:
+      summary: Reload data from storage
+      description: |
+        Triggers the gateway to reload its in-memory state from persistent storage.
+        This endpoint is called by the CLI after modifying stored data (e.g., creating
+        a new API key) to ensure the gateway's in-memory cache is synchronized.
+
+        **Authentication**: Not required. This endpoint is exempt from authentication
+        as it is only accessible from localhost within the container.
+      operationId: reload
+      tags:
+        - Internal
+      requestBody:
+        description: Reload request parameters
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReloadRequest'
+            examples:
+              reload-api-keys:
+                summary: Reload API keys only
+                value:
+                  type: api-keys
+              reload-all:
+                summary: Reload all data
+                value:
+                  type: all
+      responses:
+        '200':
+          description: Reload successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReloadResponse'
+              example:
+                success: true
+                message: 'Reloaded: api-keys'
+                timestamp: '2026-03-25T10:00:00.000Z'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: 'Invalid request body'
+                timestamp: '2026-03-25T10:00:00.000Z'
+        '500':
+          description: Reload failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                message: 'Failed to reload: Permission denied'
+                timestamp: '2026-03-25T10:00:00.000Z'
+
+components:
+  schemas:
+    ReloadRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - api-keys
+            - usage
+            - all
+          default: all
+          description: Type of data to reload
+      example:
+        type: api-keys
+
+    ReloadResponse:
+      type: object
+      required:
+        - success
+        - message
+        - timestamp
+      properties:
+        success:
+          type: boolean
+          description: Whether the reload operation succeeded
+        message:
+          type: string
+          description: Human-readable result message
+        timestamp:
+          type: string
+          format: date-time
+          description: Server timestamp
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - message
+        - timestamp
+      properties:
+        success:
+          type: boolean
+          description: Always false for error responses
+        message:
+          type: string
+          description: Error message
+        timestamp:
+          type: string
+          format: date-time
+          description: Server timestamp
+
+tags:
+  - name: Internal
+    description: Internal API endpoints for gateway management

@@ -103,23 +103,31 @@ function createForbiddenResponse(requestId: string, message: string): AuthErrorR
 }
 
 /**
- * Extract Bearer token from Authorization header.
+ * Extract API key from Authorization header (Bearer token) or x-api-key header.
  *
- * @param authHeader - The Authorization header value
+ * @param request - The Fastify request
  * @returns The token or null if not found/invalid format
  */
-function extractBearerToken(authHeader: string | undefined): string | null {
-  if (!authHeader) {
-    return null;
+function extractApiKey(request: FastifyRequest): string | null {
+  // First, try Authorization header with Bearer token
+  const authHeader = request.headers.authorization;
+  if (authHeader) {
+    const parts = authHeader.split(' ');
+    if (parts.length === 2 && parts[0]?.toLowerCase() === 'bearer') {
+      const token = parts[1];
+      if (token && token.length > 0) {
+        return token;
+      }
+    }
   }
 
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0]?.toLowerCase() !== 'bearer') {
-    return null;
+  // Fallback to x-api-key header (used by Anthropic SDK)
+  const apiKeyHeader = request.headers['x-api-key'];
+  if (typeof apiKeyHeader === 'string' && apiKeyHeader.length > 0) {
+    return apiKeyHeader;
   }
 
-  const token = parts[1];
-  return token && token.length > 0 ? token : null;
+  return null;
 }
 
 /**
@@ -143,9 +151,8 @@ function createAuthHook(options: AuthMiddlewareOptions) {
       return;
     }
 
-    // Extract Authorization header
-    const authHeader = request.headers.authorization;
-    const token = extractBearerToken(authHeader);
+    // Extract API key from Authorization header or x-api-key header
+    const token = extractApiKey(request);
 
     if (!token) {
       logger.debug('Missing or invalid Authorization header', { requestId, path });

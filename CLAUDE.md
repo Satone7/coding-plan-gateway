@@ -103,6 +103,9 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
 - JSON files (api-keys.json for key metadata, usage-data.json for usage records) (005-api-key-management)
 - TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Commander.js (CLI framework), Zod (validation), bcrypt (key hashing) (006-cpg-cli)
 - JSON files (api-keys.json, usage-data.json) (006-cpg-cli)
+- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Zod (validation), Vitest (testing), Docker (E2E) (007-fix-cli-reload)
+- JSON files (`api-keys.json`, `usage-data.json`) in Docker named volume (007-fix-cli-reload)
 
 ## Recent Changes
+- 007-fix-cli-reload: Fixed CLI reload endpoint registration, authentication exemption for internal routes, x-api-key header support
 - 001-coding-plan-gateway: Added TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Vitest, Zod (validation), MSW (mocking)
