@@ -39,8 +39,8 @@ COPY --from=builder /app/dist ./dist
 COPY bin/cpg ./bin/cpg
 RUN chmod +x bin/cpg
 
-# Create config directory
-RUN mkdir -p /app/config && chown -R gateway:nodejs /app
+# Create data and config directories with proper permissions
+RUN mkdir -p /app/config /app/data && chown -R gateway:nodejs /app
 
 # Add CLI to PATH
 ENV PATH="/app/bin:${PATH}"

@@ -9,6 +9,7 @@ import { createGatewayNotifier, type GatewayNotifier } from '@/services/gateway-
 import { generateKeyPrefix } from '@/utils/key-generator';
 import { CLI_EXIT_CODES, type CliContext, type TestKeyResult, type CliError } from '@/types/cli';
 import type { ApiKey } from '@/types/api-key';
+import { loadAuthConfig } from '@/config/auth-config';
 
 /**
  * Format date for display.
@@ -311,8 +312,9 @@ export async function handleKeyCommand(
     exit(CLI_EXIT_CODES.GENERAL_ERROR);
   }
 
-  // Create and initialize the manager
-  const manager = createApiKeyManager();
+  // Create and initialize the manager with config from environment
+  const authConfig = loadAuthConfig();
+  const manager = createApiKeyManager({ apiKeysPath: authConfig.apiKeysPath });
   try {
     await manager.initialize();
   } catch (error) {

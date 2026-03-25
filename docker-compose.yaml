@@ -13,7 +13,7 @@ services:
       - PORT=8080
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
-      - CONFIG_PATH=/app/config/plans.yaml
+      - CONFIG_PATH=/app/config.yaml
       - QUOTA_STATE_PATH=/app/data/quota-state.json
       - QUOTA_SYNC_INTERVAL=${QUOTA_SYNC_INTERVAL:-60000}
       - API_KEYS_PATH=/app/data/api-keys.json
@@ -22,8 +22,8 @@ services:
       - USAGE_SYNC_INTERVAL=${USAGE_SYNC_INTERVAL:-60000}
       - ENABLE_AUTH=${ENABLE_AUTH:-true}
     volumes:
-      # Persist configuration
-      - ./config:/app/config:ro
+      # Persist configuration - mount config.yaml to container root
+      - ./config.yaml:/app/config.yaml:ro
       # Persist quota state
       - gateway-data:/app/data
     restart: unless-stopped
@@ -56,7 +56,7 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
     volumes:
       - ./src:/app/src:ro
-      - ./config:/app/config:ro
+      - ./config.yaml:/app/config.yaml:ro
       - gateway-data:/app/data
     restart: unless-stopped
     networks:
