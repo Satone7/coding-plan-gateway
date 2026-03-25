@@ -1,0 +1,215 @@
+openapi: 3.0.3
+info:
+  title: CPG Internal API
+  description: Internal API endpoints for CLI-to-gateway communication
+  version: 1.0.0
+  contact:
+    name: Coding Plan Gateway
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /internal/reload:
+    post:
+      summary: Reload in-memory data from storage
+      description: |
+        Notifies the gateway to reload data from storage files.
+        Used by CLI after modifying storage to ensure immediate availability.
+
+        **Security**: This endpoint is only accessible from localhost.
+        No authentication is required as localhost binding provides security isolation.
+      operationId: reloadStorage
+      tags:
+        - Internal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReloadRequest'
+            examples:
+              reload-api-keys:
+                summary: Reload API keys after creation
+                value:
+                  type: api-keys
+              reload-all:
+                summary: Reload all data
+                value:
+                  type: all
+      responses:
+        '200':
+          description: Reload successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReloadResponse'
+              example:
+                success: true
+                message: API keys reloaded successfully
+                timestamp: '2026-03-25T10:30:00.000Z'
+        '500':
+          description: Reload failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  message: Failed to reload API keys
+                  type: storage_error
+                  code: reload_failed
+
+  /internal/keys:
+    get:
+      summary: List all API keys
+      description: Returns a list of all API keys (without sensitive data).
+      operationId: listKeys
+      tags:
+        - API Keys
+      responses:
+        '200':
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyListResponse'
+
+  /internal/keys/test:
+    post:
+      summary: Test API key validity
+      description: Validates an API key and returns detailed status.
+      operationId: testKey
+      tags:
+        - API Keys
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestKeyRequest'
+      responses:
+        '200':
+          description: Key test result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestKeyResponse'
+
+components:
+  schemas:
+    ReloadRequest:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - api-keys
+            - usage
+            - all
+          description: Type of data to reload
+
+    ReloadResponse:
+      type: object
+      required:
+        - success
+        - message
+        - timestamp
+      properties:
+        success:
+          type: boolean
+          description: Whether the reload was successful
+        message:
+          type: string
+          description: Human-readable result message
+        timestamp:
+          type: string
+          format: date-time
+          description: When the reload occurred
+
+    TestKeyRequest:
+      type: object
+      required:
+        - key
+      properties:
+        key:
+          type: string
+          description: The API key to test
+          example: cpg_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+
+    TestKeyResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - valid
+            - invalid
+            - disabled
+            - expired
+          description: Validation status of the key
+        key:
+          $ref: '#/components/schemas/ApiKeySummary'
+        error:
+          type: string
+          description: Error message if invalid
+
+    ApiKeySummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        prefix:
+          type: string
+          description: First 8 characters of the key for identification
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastUsedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ApiKeyListResponse:
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiKeySummary'
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            code:
+              type: string
+
+tags:
+  - name: Internal
+    description: Internal endpoints for CLI communication
+  - name: API Keys
+    description: API key management operations

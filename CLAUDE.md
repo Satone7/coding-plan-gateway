@@ -101,6 +101,8 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
 - YAML/JSON files (configuration), in-memory (quota tracking) (004-fix-e2e-exec)
 - TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Zod (validation), bcrypt (key hashing), uuid (key ID generation) (005-api-key-management)
 - JSON files (api-keys.json for key metadata, usage-data.json for usage records) (005-api-key-management)
+- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Commander.js (CLI framework), Zod (validation), bcrypt (key hashing) (006-cpg-cli)
+- JSON files (api-keys.json, usage-data.json) (006-cpg-cli)
 
 ## Recent Changes
 - 001-coding-plan-gateway: Added TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Vitest, Zod (validation), MSW (mocking)
