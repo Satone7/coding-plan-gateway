@@ -126,6 +126,9 @@ export type {
   CliError,
   EnrichedUsageReport,
   UsageTotals,
+  PlanUsageReportDisplay,
+  PlanUsageSummaryDisplay,
+  AdjustmentResultDisplay,
 } from './cli';
 
 export {
@@ -134,3 +137,26 @@ export {
   DEFAULT_GATEWAY_URL,
   CLI_VERSION,
 } from './cli';
+
+// Plan usage types
+export type {
+  PlanUsageRecord,
+  DailyPlanUsage,
+  PlanUsageReport,
+  UsageAdjustmentHistory,
+  PlanUsageDataStorage,
+  PlanUsageRecordData,
+  AdjustmentHistoryStorage,
+  AdjustmentRecordData,
+  PlanUsageSummary,
+} from './plan-usage';
+
+export {
+  planUsageRecordSchema,
+  dailyPlanUsageSchema,
+  planUsageRecordDataSchema,
+  planUsageDataStorageSchema,
+  adjustmentRecordDataSchema,
+  adjustmentHistoryStorageSchema,
+  usageAdjustmentRequestSchema,
+} from './plan-usage';

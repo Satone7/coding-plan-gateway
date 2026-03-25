@@ -11,6 +11,7 @@ import type { QuotaState, QuotaPeriod } from '@/types';
 import { createInitialQuotaState, calculateResetAt } from '@/types';
 import { logger } from '@/utils/logger';
 import { DEFAULT_QUOTA_SYNC_CONFIG } from '@/config/defaults';
+import type { PlanUsageTracker } from './plan-usage-tracker';
 
 /**
  * QuotaManager configuration.
@@ -74,6 +75,7 @@ export class QuotaManager {
   private readonly quotaStates: Map<string, QuotaState> = new Map();
   private syncInterval: NodeJS.Timeout | null = null;
   private initialized: boolean = false;
+  private planUsageTracker: PlanUsageTracker | null = null;
 
   /**
    * Create a new QuotaManager.
@@ -83,6 +85,16 @@ export class QuotaManager {
   constructor(config: QuotaManagerConfig = {}) {
     this.quotaStatePath = resolve(config.quotaStatePath ?? './quota-state.json');
     this.syncIntervalMs = config.syncIntervalMs ?? DEFAULT_QUOTA_SYNC_CONFIG.syncIntervalMs;
+  }
+
+  /**
+   * Set the plan usage tracker for daily tracking integration.
+   *
+   * @param tracker - The PlanUsageTracker instance
+   */
+  setPlanUsageTracker(tracker: PlanUsageTracker): void {
+    this.planUsageTracker = tracker;
+    logger.debug('PlanUsageTracker attached to QuotaManager');
   }
 
   /**
@@ -202,6 +214,13 @@ export class QuotaManager {
     state.used += amount;
     state.lastUpdated = new Date();
 
+    // Track daily usage if tracker is attached
+    if (this.planUsageTracker) {
+      for (let i = 0; i < amount; i++) {
+        this.planUsageTracker.incrementDailyUsage(planId);
+      }
+    }
+
     logger.debug('Quota consumed', {
       planId,
       amount,
@@ -227,6 +246,13 @@ export class QuotaManager {
 
     state.used = Math.max(0, state.used - amount);
     state.lastUpdated = new Date();
+
+    // Track daily usage refund if tracker is attached
+    if (this.planUsageTracker) {
+      for (let i = 0; i < amount; i++) {
+        this.planUsageTracker.decrementDailyUsage(planId);
+      }
+    }
 
     logger.debug('Quota refunded', {
       planId,

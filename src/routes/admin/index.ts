@@ -7,6 +7,7 @@ import { FastifyInstance } from 'fastify';
 import { createAdminHandlers } from './handlers';
 import { IPlanRepository } from '@/services/plan-repository';
 import type { QuotaManager } from '@/services/quota-manager';
+import type { PlanUsageTracker } from '@/services/plan-usage-tracker';
 
 /**
  * Options for admin routes.
@@ -16,6 +17,8 @@ export interface AdminRoutesOptions {
   repository: IPlanRepository;
   /** Quota manager instance (optional) */
   quotaManager?: QuotaManager;
+  /** Plan usage tracker instance (optional) */
+  planUsageTracker?: PlanUsageTracker;
   /** API prefix (default: '/api') */
   prefix?: string;
 }
@@ -30,8 +33,8 @@ export async function registerAdminRoutes(
   app: FastifyInstance,
   options: AdminRoutesOptions
 ): Promise<void> {
-  const { repository, quotaManager, prefix = '/api' } = options;
-  const handlers = createAdminHandlers(repository, quotaManager);
+  const { repository, quotaManager, planUsageTracker, prefix = '/api' } = options;
+  const handlers = createAdminHandlers(repository, quotaManager, planUsageTracker);
 
   await app.register(
     (fastify, _options, done) => {
@@ -58,6 +61,21 @@ export async function registerAdminRoutes(
 
         // POST /api/quota/:planId/reset - Reset quota for a plan
         fastify.post('/quota/:planId/reset', handlers.resetQuota);
+      }
+
+      // Plan usage tracking endpoints (only if planUsageTracker is provided)
+      if (planUsageTracker) {
+        // GET /api/plans/usage/summary - Get usage summary for all plans
+        fastify.get('/plans/usage/summary', handlers.getPlansUsageSummary);
+
+        // GET /api/plans/:planId/usage - Get plan usage report
+        fastify.get('/plans/:planId/usage', handlers.getPlanUsage);
+
+        // POST /api/plans/:planId/usage/adjust - Adjust plan usage
+        fastify.post('/plans/:planId/usage/adjust', handlers.adjustPlanUsage);
+
+        // GET /api/plans/:planId/usage/history - Get usage adjustment history
+        fastify.get('/plans/:planId/usage/history', handlers.getUsageAdjustmentHistory);
       }
 
       // POST /api/reload - Reload configuration

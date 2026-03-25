@@ -8,8 +8,10 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { IPlanRepository } from '@/services/plan-repository';
 import type { QuotaManager } from '@/services/quota-manager';
+import type { PlanUsageTracker } from '@/services/plan-usage-tracker';
 import { logger } from '@/utils/logger';
 import { createGatewayError } from '@/types';
+import { usageAdjustmentRequestSchema } from '@/types/plan-usage';
 
 /**
  * Request with planId parameter.
@@ -185,6 +187,14 @@ interface AdminHandlers {
   resetQuota: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSuccessResponse>;
   /** POST /api/reload - Reload configuration */
   reloadConfig: (request: FastifyRequest, reply: FastifyReply) => Promise<ReloadResponse>;
+  /** GET /api/plans/:planId/usage - Get plan usage report */
+  getPlanUsage: (request: FastifyRequest<{ Params: PlanParams; Querystring: PlanUsageQuery }>, reply: FastifyReply) => Promise<PlanUsageResponse>;
+  /** POST /api/plans/:planId/usage/adjust - Adjust plan usage */
+  adjustPlanUsage: (request: FastifyRequest<{ Params: PlanParams; Body: z.infer<typeof usageAdjustmentRequestSchema> }>, reply: FastifyReply) => Promise<UsageAdjustmentResponse>;
+  /** GET /api/plans/:planId/usage/history - Get usage adjustment history */
+  getUsageAdjustmentHistory: (request: FastifyRequest<{ Params: PlanParams; Querystring: HistoryQuery }>, reply: FastifyReply) => Promise<AdjustmentHistoryResponse>;
+  /** GET /api/plans/usage/summary - Get usage summary for all plans */
+  getPlansUsageSummary: (request: FastifyRequest, reply: FastifyReply) => Promise<PlansUsageSummaryResponse>;
 }
 
 /**
@@ -197,6 +207,118 @@ interface ReloadResponse {
 }
 
 /**
+ * Plan usage query parameters.
+ */
+interface PlanUsageQuery {
+  from?: string;
+  to?: string;
+}
+
+/**
+ * History query parameters.
+ */
+interface HistoryQuery {
+  limit?: number;
+}
+
+/**
+ * Daily plan usage in response.
+ */
+interface DailyPlanUsageResponse {
+  date: string;
+  requestCount: number;
+}
+
+/**
+ * Plan usage report response.
+ */
+interface PlanUsageReportData {
+  planId: string;
+  planName: string;
+  totalRequests: number;
+  limit: number;
+  remaining: number;
+  percentage: number;
+  dateRange: {
+    start: string;
+    end: string;
+  };
+  dailyBreakdown: DailyPlanUsageResponse[];
+  quotaPeriod: string;
+  resetAt: string | null;
+}
+
+/**
+ * Plan usage response.
+ */
+interface PlanUsageResponse {
+  data: PlanUsageReportData;
+  meta: MetaResponse;
+}
+
+/**
+ * Usage adjustment response data.
+ */
+interface UsageAdjustmentData {
+  planId: string;
+  oldValue: number;
+  newValue: number;
+  adjustmentId: string;
+  warning?: string;
+}
+
+/**
+ * Usage adjustment response.
+ */
+interface UsageAdjustmentResponse {
+  data: UsageAdjustmentData;
+  meta: MetaResponse;
+}
+
+/**
+ * Adjustment history record.
+ */
+interface AdjustmentHistoryRecord {
+  id: string;
+  planId: string;
+  timestamp: string;
+  oldValue: number;
+  newValue: number;
+  adjustmentType: 'count' | 'percent';
+  adjustmentValue: number;
+}
+
+/**
+ * Adjustment history response.
+ */
+interface AdjustmentHistoryResponse {
+  data: AdjustmentHistoryRecord[];
+  meta: MetaResponse & { count: number };
+}
+
+/**
+ * Plan usage summary item.
+ */
+interface PlanUsageSummaryItem {
+  planId: string;
+  planName: string;
+  limit: number;
+  used: number;
+  remaining: number;
+  percentage: number;
+  quotaPeriod: string;
+  resetAt: string | null;
+}
+
+/**
+ * Plans usage summary response.
+ */
+interface PlansUsageSummaryResponse {
+  data: PlanUsageSummaryItem[];
+  meta: MetaResponse & { totalPlans: number; totalRequests: number };
+}
+
+/**
  * Create admin route handlers with dependency injection.
  *
  * Creates handlers for admin API endpoints including plan CRUD operations
@@ -206,6 +328,7 @@ interface ReloadResponse {
  *
  * @param repository - The plan repository for accessing and modifying coding plan configurations
  * @param quotaManager - Optional quota manager for usage tracking and quota operations
+ * @param planUsageTracker - Optional plan usage tracker for daily usage tracking
  * @returns An object containing handler methods for admin endpoints
  *
  * @example
@@ -227,7 +350,8 @@ interface ReloadResponse {
 // eslint-disable-next-line max-lines-per-function
 export function createAdminHandlers(
   repository: IPlanRepository,
-  quotaManager?: QuotaManager
+  quotaManager?: QuotaManager,
+  planUsageTracker?: PlanUsageTracker
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 ): AdminHandlers {
   return {
@@ -588,6 +712,286 @@ export function createAdminHandlers(
           error: errorMessage,
         };
       }
+    },
+
+    /**
+     * GET /api/plans/:planId/usage - Get plan usage report.
+     */
+    async getPlanUsage(
+      request: FastifyRequest<{ Params: PlanParams; Querystring: PlanUsageQuery }>,
+      _reply: FastifyReply
+    ): Promise<PlanUsageResponse> {
+      const { planId } = request.params;
+      const { from, to } = request.query;
+
+      // Validate planId
+      const validationResult = uuidSchema.safeParse(planId);
+      if (!validationResult.success) {
+        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
+          field: 'planId',
+        });
+      }
+
+      const plan = await repository.findById(planId);
+      if (!plan) {
+        throw createGatewayError('PLAN_NOT_FOUND', `Plan not found: ${planId}`);
+      }
+
+      if (!planUsageTracker) {
+        throw createGatewayError(
+          'INTERNAL_ERROR',
+          'Plan usage tracking is not enabled'
+        );
+      }
+
+      // Get usage report
+      const report = planUsageTracker.getUsageReport(
+        planId,
+        { id: plan.id, name: plan.name, quota: plan.quota },
+        from,
+        to
+      );
+
+      // Calculate reset date
+      let resetAt: Date | null = null;
+      if (plan.quota.period === 'daily') {
+        const tomorrow = new Date();
+        tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+        tomorrow.setUTCHours(0, 0, 0, 0);
+        resetAt = tomorrow;
+      } else if (plan.quota.period === 'monthly') {
+        const nextMonth = new Date();
+        nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
+        nextMonth.setUTCDate(1);
+        nextMonth.setUTCHours(0, 0, 0, 0);
+        resetAt = nextMonth;
+      }
+
+      const responseData: PlanUsageReportData = report ? {
+        planId: report.planId,
+        planName: report.planName,
+        totalRequests: report.totalRequests,
+        limit: report.limit,
+        remaining: report.remaining,
+        percentage: report.percentage,
+        dateRange: report.dateRange,
+        dailyBreakdown: report.dailyBreakdown,
+        quotaPeriod: report.quotaPeriod,
+        resetAt: report.resetAt?.toISOString() ?? resetAt?.toISOString() ?? null,
+      } : {
+        planId,
+        planName: plan.name,
+        totalRequests: 0,
+        limit: plan.quota.limit,
+        remaining: plan.quota.limit,
+        percentage: 0,
+        dateRange: {
+          start: from ?? new Date().toISOString().split('T')[0]!,
+          end: to ?? new Date().toISOString().split('T')[0]!,
+        },
+        dailyBreakdown: [],
+        quotaPeriod: plan.quota.period,
+        resetAt: resetAt?.toISOString() ?? null,
+      };
+
+      return {
+        data: responseData,
+        meta: {
+          requestId: request.id,
+          timestamp: new Date().toISOString(),
+        },
+      };
+    },
+
+    /**
+     * POST /api/plans/:planId/usage/adjust - Adjust plan usage.
+     */
+    async adjustPlanUsage(
+      request: FastifyRequest<{ Params: PlanParams; Body: z.infer<typeof usageAdjustmentRequestSchema> }>,
+      _reply: FastifyReply
+    ): Promise<UsageAdjustmentResponse> {
+      const { planId } = request.params;
+
+      // Validate planId
+      const validationResult = uuidSchema.safeParse(planId);
+      if (!validationResult.success) {
+        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
+          field: 'planId',
+        });
+      }
+
+      // Validate request body
+      const bodyValidation = usageAdjustmentRequestSchema.safeParse(request.body);
+      if (!bodyValidation.success) {
+        throw bodyValidation.error;
+      }
+
+      const plan = await repository.findById(planId);
+      if (!plan) {
+        throw createGatewayError('PLAN_NOT_FOUND', `Plan not found: ${planId}`);
+      }
+
+      if (!planUsageTracker) {
+        throw createGatewayError(
+          'INTERNAL_ERROR',
+          'Plan usage tracking is not enabled'
+        );
+      }
+
+      // Calculate new value
+      const { count, percent } = bodyValidation.data;
+      const newValue = count !== undefined ? count : Math.round((percent! / 100) * plan.quota.limit);
+      const adjustmentType = count !== undefined ? 'count' : 'percent';
+      const adjustmentValue = count ?? percent!;
+
+      // Perform adjustment
+      const result = planUsageTracker.adjustUsage(
+        planId,
+        newValue,
+        plan.quota.limit,
+        adjustmentType,
+        adjustmentValue
+      );
+
+      // Persist changes
+      await planUsageTracker.persist();
+
+      logger.info('Plan usage adjusted via API', {
+        requestId: request.id,
+        planId,
+        adjustmentId: result.adjustmentId,
+        oldValue: result.oldValue,
+        newValue: result.newValue,
+      });
+
+      const responseData: UsageAdjustmentData = {
+        planId: result.planId,
+        oldValue: result.oldValue,
+        newValue: result.newValue,
+        adjustmentId: result.adjustmentId,
+        warning: result.warning,
+      };
+
+      return {
+        data: responseData,
+        meta: {
+          requestId: request.id,
+          timestamp: new Date().toISOString(),
+        },
+      };
+    },
+
+    /**
+     * GET /api/plans/:planId/usage/history - Get usage adjustment history.
+     */
+    async getUsageAdjustmentHistory(
+      request: FastifyRequest<{ Params: PlanParams; Querystring: HistoryQuery }>,
+      _reply: FastifyReply
+    ): Promise<AdjustmentHistoryResponse> {
+      const { planId } = request.params;
+      const { limit = 20 } = request.query;
+
+      // Validate planId
+      const validationResult = uuidSchema.safeParse(planId);
+      if (!validationResult.success) {
+        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
+          field: 'planId',
+        });
+      }
+
+      const plan = await repository.findById(planId);
+      if (!plan) {
+        throw createGatewayError('PLAN_NOT_FOUND', `Plan not found: ${planId}`);
+      }
+
+      if (!planUsageTracker) {
+        throw createGatewayError(
+          'INTERNAL_ERROR',
+          'Plan usage tracking is not enabled'
+        );
+      }
+
+      const history = planUsageTracker.getAdjustmentHistory(planId, limit);
+
+      const responseData: AdjustmentHistoryRecord[] = history.map((a) => ({
+        id: a.id,
+        planId: a.planId,
+        timestamp: a.timestamp.toISOString(),
+        oldValue: a.oldValue,
+        newValue: a.newValue,
+        adjustmentType: a.adjustmentType,
+        adjustmentValue: a.adjustmentValue,
+      }));
+
+      return {
+        data: responseData,
+        meta: {
+          requestId: request.id,
+          timestamp: new Date().toISOString(),
+          count: responseData.length,
+        },
+      };
+    },
+
+    /**
+     * GET /api/plans/usage/summary - Get usage summary for all plans.
+     */
+    async getPlansUsageSummary(
+      request: FastifyRequest,
+      _reply: FastifyReply
+    ): Promise<PlansUsageSummaryResponse> {
+      const plans = await repository.findAll();
+
+      if (!planUsageTracker) {
+        throw createGatewayError(
+          'INTERNAL_ERROR',
+          'Plan usage tracking is not enabled'
+        );
+      }
+
+      const summaryData: PlanUsageSummaryItem[] = plans.map((plan) => {
+        const used = planUsageTracker.getTotalUsage(plan.id);
+        const remaining = plan.quota.limit - used;
+        const percentage = plan.quota.limit > 0 ? Math.round((used / plan.quota.limit) * 100) : 0;
+
+        // Calculate reset date
+        let resetAt: Date | null = null;
+        if (plan.quota.period === 'daily') {
+          const tomorrow = new Date();
+          tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+          tomorrow.setUTCHours(0, 0, 0, 0);
+          resetAt = tomorrow;
+        } else if (plan.quota.period === 'monthly') {
+          const nextMonth = new Date();
+          nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
+          nextMonth.setUTCDate(1);
+          nextMonth.setUTCHours(0, 0, 0, 0);
+          resetAt = nextMonth;
+        }
+
+        return {
+          planId: plan.id,
+          planName: plan.name,
+          limit: plan.quota.limit,
+          used,
+          remaining,
+          percentage,
+          quotaPeriod: plan.quota.period,
+          resetAt: resetAt?.toISOString() ?? null,
+        };
+      });
+
+      const totalRequests = summaryData.reduce((sum, s) => sum + s.used, 0);
+
+      return {
+        data: summaryData,
+        meta: {
+          requestId: request.id,
+          timestamp: new Date().toISOString(),
+          totalPlans: plans.length,
+          totalRequests,
+        },
+      };
     },
   };
 }

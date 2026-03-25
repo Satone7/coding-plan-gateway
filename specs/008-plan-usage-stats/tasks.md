@@ -19,10 +19,10 @@ Enhance plan usage tracking with daily records, manual usage adjustment, and fix
 
 **Goal**: Create foundational types and service skeleton
 
-- [ ] T001 Create plan usage types and Zod schemas in src/types/plan-usage.ts
-- [ ] T002 Export new types from src/types/index.ts
-- [ ] T003 Create PlanUsageTracker service skeleton in src/services/plan-usage-tracker.ts
-- [ ] T004 Add default storage paths to src/config/defaults.ts for plan-usage-data.json and usage-adjustment-history.json
+- [X] T001 Create plan usage types and Zod schemas in src/types/plan-usage.ts
+- [X] T002 Export new types from src/types/index.ts
+- [X] T003 Create PlanUsageTracker service skeleton in src/services/plan-usage-tracker.ts
+- [X] T004 Add default storage paths to src/config/defaults.ts for plan-usage-data.json and usage-adjustment-history.json
 
 ---
 
@@ -30,15 +30,15 @@ Enhance plan usage tracking with daily records, manual usage adjustment, and fix
 
 **Goal**: Implement core PlanUsageTracker service with persistence
 
-- [ ] T005 Implement PlanUsageTracker.initialize() to load persisted data from JSON file
-- [ ] T006 Implement PlanUsageTracker.incrementDailyUsage(planId) to track daily request counts
-- [ ] T007 Implement PlanUsageTracker.getUsageReport(planId, from, to) to generate reports
-- [ ] T008 Implement PlanUsageTracker.adjustUsage(planId, newValue, type) with history recording
-- [ ] T009 Implement PlanUsageTracker.getAdjustmentHistory(planId, limit) for audit trail
-- [ ] T010 Implement 90-day retention cleanup in PlanUsageTracker.cleanupOldRecords()
-- [ ] T011 Implement PlanUsageTracker.persist() with atomic file write pattern
-- [ ] T012 Implement PlanUsageTracker.startPeriodicSync() and stopPeriodicSync()
-- [ ] T013 Integrate PlanUsageTracker with QuotaManager.consumeQuota() in src/services/quota-manager.ts
+- [X] T005 Implement PlanUsageTracker.initialize() to load persisted data from JSON file
+- [X] T006 Implement PlanUsageTracker.incrementDailyUsage(planId) to track daily request counts
+- [X] T007 Implement PlanUsageTracker.getUsageReport(planId, from, to) to generate reports
+- [X] T008 Implement PlanUsageTracker.adjustUsage(planId, newValue, type) with history recording
+- [X] T009 Implement PlanUsageTracker.getAdjustmentHistory(planId, limit) for audit trail
+- [X] T010 Implement 90-day retention cleanup in PlanUsageTracker.cleanupOldRecords()
+- [X] T011 Implement PlanUsageTracker.persist() with atomic file write pattern
+- [X] T012 Implement PlanUsageTracker.startPeriodicSync() and stopPeriodicSync()
+- [X] T013 Integrate PlanUsageTracker with QuotaManager.consumeQuota() in src/services/quota-manager.ts
 
 ---
 
@@ -48,9 +48,9 @@ Enhance plan usage tracking with daily records, manual usage adjustment, and fix
 
 **Independent Test**: Run `cpg usage-report` and verify properly formatted table output
 
-- [ ] T014 [US4] Fix table column alignment in formatUsageReport() in src/cli/output/table.ts
-- [ ] T015 [US4] Add proper padding using padStart/padEnd for consistent column widths in src/cli/output/table.ts
-- [ ] T016 [US4] Verify JSON output format works correctly in src/cli/output/json.ts
+- [X] T014 [US4] Fix table column alignment in formatUsageReport() in src/cli/output/table.ts
+- [X] T015 [US4] Add proper padding using padStart/padEnd for consistent column widths in src/cli/output/table.ts
+- [X] T016 [US4] Verify JSON output format works correctly in src/cli/output/json.ts
 
 ---
 
@@ -66,12 +66,12 @@ Enhance plan usage tracking with daily records, manual usage adjustment, and fix
 - Empty data shows appropriate message
 - Backward compatible (no `--plan` = API key usage)
 
-- [ ] T017 [US1] Add formatPlanUsageReport() method to OutputFormatter interface in src/types/cli.ts
-- [ ] T018 [P] [US1] Implement formatPlanUsageReport() table formatting in src/cli/output/table.ts
-- [ ] T019 [P] [US1] Implement formatPlanUsageReport() JSON formatting in src/cli/output/json.ts
-- [ ] T020 [US1] Modify handleUsageReportCommand() to support --plan flag in src/cli/commands/usage.ts
-- [ ] T021 [US1] Add --plan, --from, --to option parsing in src/cli/context.ts
-- [ ] T022 [US1] Add GET /api/plans/:planId/usage endpoint in src/routes/admin/handlers.ts
+- [X] T017 [US1] Add formatPlanUsageReport() method to OutputFormatter interface in src/types/cli.ts
+- [X] T018 [P] [US1] Implement formatPlanUsageReport() table formatting in src/cli/output/table.ts
+- [X] T019 [P] [US1] Implement formatPlanUsageReport() JSON formatting in src/cli/output/json.ts
+- [X] T020 [US1] Modify handleUsageReportCommand() to support --plan flag in src/cli/commands/usage.ts
+- [X] T021 [US1] Add --plan, --from, --to option parsing in src/cli/context.ts
+- [X] T022 [US1] Add GET /api/plans/:planId/usage endpoint in src/routes/admin/handlers.ts
 
 ---
 
@@ -88,12 +88,12 @@ Enhance plan usage tracking with daily records, manual usage adjustment, and fix
 - Exceeding limit shows warning but applies
 - Mutually exclusive flags detected
 
-- [ ] T023 [US2] Create plan.ts command module with set-usage subcommand in src/cli/commands/plan.ts
-- [ ] T024 [US2] Implement --count and --percent flag validation (mutually exclusive) in src/cli/commands/plan.ts
-- [ ] T025 [US2] Add formatPlanUsageAdjustment() to table formatter in src/cli/output/table.ts
-- [ ] T026 [US2] Add POST /api/plans/:planId/usage/adjust endpoint in src/routes/admin/handlers.ts
-- [ ] T027 [US2] Add GET /api/plans/:planId/usage/history endpoint in src/routes/admin/handlers.ts
-- [ ] T028 [US2] Register plan command in CLI router in src/cli/index.ts
+- [X] T023 [US2] Create plan.ts command module with set-usage subcommand in src/cli/commands/plan.ts
+- [X] T024 [US2] Implement --count and --percent flag validation (mutually exclusive) in src/cli/commands/plan.ts
+- [X] T025 [US2] Add formatPlanUsageAdjustment() to table formatter in src/cli/output/table.ts
+- [X] T026 [US2] Add POST /api/plans/:planId/usage/adjust endpoint in src/routes/admin/handlers.ts
+- [X] T027 [US2] Add GET /api/plans/:planId/usage/history endpoint in src/routes/admin/handlers.ts
+- [X] T028 [US2] Register plan command in CLI router in src/cli/index.ts
 
 ---
 
@@ -108,9 +108,9 @@ Enhance plan usage tracking with daily records, manual usage adjustment, and fix
 - Shows quota period and reset date
 - Works with --json flag
 
-- [ ] T029 [US3] Implement list subcommand in src/cli/commands/plan.ts
-- [ ] T030 [US3] Add formatPlanList() to table formatter in src/cli/output/table.ts
-- [ ] T031 [US3] Add GET /api/plans/usage/summary endpoint in src/routes/admin/handlers.ts
+- [X] T029 [US3] Implement list subcommand in src/cli/commands/plan.ts
+- [X] T030 [US3] Add formatPlanList() to table formatter in src/cli/output/table.ts
+- [X] T031 [US3] Add GET /api/plans/usage/summary endpoint in src/routes/admin/handlers.ts
 
 ---
 
@@ -118,12 +118,12 @@ Enhance plan usage tracking with daily records, manual usage adjustment, and fix
 
 **Goal**: Ensure quality, documentation, and integration
 
-- [ ] T032 Add unit tests for PlanUsageTracker in tests/unit/services/plan-usage-tracker.test.ts
-- [ ] T033 Add CLI integration tests in tests/integration/cli/plan-commands.test.ts
-- [ ] T034 Update help text for usage-report --plan in src/cli/output/table.ts
-- [ ] T035 Update help text for plan subcommands in src/cli/output/table.ts
-- [ ] T036 Verify 90-day retention cleanup works correctly in tests
-- [ ] T037 Run full test suite and ensure all tests pass
+- [X] T032 Add unit tests for PlanUsageTracker in tests/unit/services/plan-usage-tracker.test.ts
+- [X] T033 Add CLI integration tests in tests/integration/cli/plan-commands.test.ts
+- [X] T034 Update help text for usage-report --plan in src/cli/output/table.ts
+- [X] T035 Update help text for plan subcommands in src/cli/output/table.ts
+- [X] T036 Verify 90-day retention cleanup works correctly in tests
+- [X] T037 Run full test suite and ensure all tests pass
 
 ---
 

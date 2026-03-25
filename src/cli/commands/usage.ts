@@ -5,7 +5,9 @@
 import { exit } from 'process';
 import { createApiKeyManager } from '@/services/api-key-manager';
 import { createUsageTracker } from '@/services/usage-tracker';
-import { CLI_EXIT_CODES, type CliContext, type CliError, type EnrichedUsageReport, type UsageTotals } from '@/types/cli';
+import { createPlanUsageTracker } from '@/services/plan-usage-tracker';
+import { createPlanRepository } from '@/services/plan-repository';
+import { CLI_EXIT_CODES, type CliContext, type CliError, type EnrichedUsageReport, type UsageTotals, type PlanUsageReportDisplay } from '@/types/cli';
 
 /**
  * Create a CLI error with context.
@@ -30,6 +32,23 @@ export async function handleUsageReportCommand(context: CliContext): Promise<voi
     console.log(formatter.formatHelp('usage-report'));
     return;
   }
+
+  // Check if plan usage report is requested
+  const planId = args.options.plan as string | undefined;
+
+  if (planId) {
+    return handlePlanUsageReport(context, planId);
+  }
+
+  // Original API key usage report
+  return handleApiKeyUsageReport(context);
+}
+
+/**
+ * Handle API key usage report (original functionality).
+ */
+async function handleApiKeyUsageReport(context: CliContext): Promise<void> {
+  const { args, formatter } = context;
 
   // Parse filter arguments
   const keyId = args.options['key-id'] as string | undefined;
@@ -88,4 +107,104 @@ export async function handleUsageReportCommand(context: CliContext): Promise<voi
 
   // Output report
   console.log(formatter.formatUsageReport(enrichedReports, totals));
+}
+
+/**
+ * Handle plan usage report (new functionality).
+ */
+async function handlePlanUsageReport(context: CliContext, planId: string): Promise<void> {
+  const { args, formatter } = context;
+
+  // Parse filter arguments
+  const from = args.options.from as string | undefined;
+  const to = args.options.to as string | undefined;
+
+  // Validate date format if provided
+  const dateFormatRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (from && !dateFormatRegex.test(from)) {
+    console.error(formatter.formatError(
+      createCliError('validation', `Invalid --from date format: ${from}`, CLI_EXIT_CODES.GENERAL_ERROR, 'Expected format: YYYY-MM-DD')
+    ));
+    exit(CLI_EXIT_CODES.GENERAL_ERROR);
+  }
+  if (to && !dateFormatRegex.test(to)) {
+    console.error(formatter.formatError(
+      createCliError('validation', `Invalid --to date format: ${to}`, CLI_EXIT_CODES.GENERAL_ERROR, 'Expected format: YYYY-MM-DD')
+    ));
+    exit(CLI_EXIT_CODES.GENERAL_ERROR);
+  }
+
+  // Load plans and tracker
+  const configPath = process.env.CONFIG_PATH || './config.yaml';
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+
+  const repository = createPlanRepository(configPath, encryptionKey);
+  const tracker = createPlanUsageTracker();
+
+  try {
+    await repository.reload();
+    await tracker.initialize();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(formatter.formatError(
+      createCliError('storage', `Failed to initialize: ${message}`, CLI_EXIT_CODES.STORAGE_ERROR)
+    ));
+    exit(CLI_EXIT_CODES.STORAGE_ERROR);
+  }
+
+  // Find the plan
+  const plan = await repository.findById(planId);
+  if (!plan) {
+    console.error(formatter.formatError(
+      createCliError('not_found', `Plan not found: ${planId}`, CLI_EXIT_CODES.GENERAL_ERROR)
+    ));
+    exit(CLI_EXIT_CODES.GENERAL_ERROR);
+  }
+
+  // Get usage report
+  const report = tracker.getUsageReport(
+    planId,
+    {
+      id: plan.id,
+      name: plan.name,
+      quota: plan.quota,
+    },
+    from,
+    to
+  );
+
+  if (!report) {
+    console.log(formatter.formatPlanUsageReport({
+      planId,
+      planName: plan.name,
+      totalRequests: 0,
+      limit: plan.quota.limit,
+      remaining: plan.quota.limit,
+      percentage: 0,
+      dateRange: {
+        start: from || new Date().toISOString().split('T')[0]!,
+        end: to || new Date().toISOString().split('T')[0]!,
+      },
+      dailyBreakdown: [],
+      quotaPeriod: plan.quota.period,
+      resetAt: null,
+    }));
+    return;
+  }
+
+  // Format and output
+  const displayReport: PlanUsageReportDisplay = {
+    planId: report.planId,
+    planName: report.planName,
+    totalRequests: report.totalRequests,
+    limit: report.limit,
+    remaining: report.remaining,
+    percentage: report.percentage,
+    dateRange: report.dateRange,
+    dailyBreakdown: report.dailyBreakdown,
+    quotaPeriod: report.quotaPeriod,
+    resetAt: report.resetAt,
+  };
+
+  console.log(formatter.formatPlanUsageReport(displayReport));
 }
