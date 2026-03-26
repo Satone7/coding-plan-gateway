@@ -10,6 +10,7 @@ import { registerAnthropicRoutes } from './anthropic';
 import { registerAdminRoutes } from './admin';
 import { createPlanRepository } from '@/services/plan-repository';
 import { createPlanIdCounter } from '@/services/plan-id-counter';
+import { isMigrationNeeded, performMigration } from '@/migration/uuid-to-int';
 import type { QuotaManager } from '@/services/quota-manager';
 import { createRequestProxy } from '@/services/request-proxy';
 import { dirname, join } from 'path';
@@ -51,8 +52,35 @@ export async function registerRoutes(
   // Create and initialize PlanIdCounter
   const configDir = dirname(configPath);
   const counterPath = join(configDir, 'plan-id-counter.json');
+  const migrationLogPath = join(configDir, 'migration-log.json');
+  const quotaStatePath = process.env.QUOTA_STATE_PATH ?? join(configDir, 'quota-state.json');
   const planIdCounter = createPlanIdCounter({ counterPath });
   await planIdCounter.initialize();
+
+  // Check if migration is needed and perform it
+  if (!planIdCounter.isMigrationComplete()) {
+    const needsMigration = await isMigrationNeeded(configPath);
+    if (needsMigration) {
+      logger.info('UUID-based plan IDs detected, starting migration...');
+      try {
+        const result = await performMigration({
+          configPath,
+          quotaStatePath,
+          planIdCounter,
+          migrationLogPath,
+        });
+        if (result.migrated) {
+          logger.info('Migration completed successfully', {
+            planCount: result.planCount,
+            migrationLogPath,
+          });
+        }
+      } catch (error) {
+        logger.error('Migration failed', error as Error);
+        throw error;
+      }
+    }
+  }
 
   // Connect counter to repository
   repository.setPlanIdCounter(planIdCounter);

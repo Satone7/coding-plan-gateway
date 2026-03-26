@@ -76,15 +76,15 @@ Goal: Create core components that all user stories depend on.
 
 ### Implementation
 
-- [ ] T022 [US3] Create `MigrationLog` interface in `src/types/migration.ts`
-- [ ] T023 [US3] Implement UUID detection logic in `src/migration/uuid-to-int.ts`
-- [ ] T024 [US3] Implement migration function that assigns sequential integers in `src/migration/uuid-to-int.ts`
-- [ ] T025 [US3] Update quota-state.json with new integer IDs during migration in `src/migration/uuid-to-int.ts`
-- [ ] T026 [US3] Create backup of config and quota-state files before migration in `src/migration/uuid-to-int.ts`
-- [ ] T027 [US3] Write migration log with UUID→int mapping in `src/migration/uuid-to-int.ts`
-- [ ] T028 [US3] Integrate migration check into app startup in `src/app.ts`
-- [ ] T029 [US3] Set `migrationComplete` flag after successful migration in `src/services/plan-id-counter.ts`
-- [ ] T030 [US3] Create unit tests for migration logic in `tests/unit/migration/uuid-to-int.test.ts`
+- [X] T022 [US3] Create `MigrationLog` interface in `src/types/plan-id-counter.ts`
+- [X] T023 [US3] Implement UUID detection logic in `src/migration/uuid-to-int.ts`
+- [X] T024 [US3] Implement migration function that assigns sequential integers in `src/migration/uuid-to-int.ts`
+- [X] T025 [US3] Update quota-state.json with new integer IDs during migration in `src/migration/uuid-to-int.ts`
+- [X] T026 [US3] Create backup of config and quota-state files before migration in `src/migration/uuid-to-int.ts`
+- [X] T027 [US3] Write migration log with UUID→int mapping in `src/migration/uuid-to-int.ts`
+- [X] T028 [US3] Integrate migration check into app startup in `src/routes/index.ts`
+- [X] T029 [US3] Set `migrationComplete` flag after successful migration in `src/services/plan-id-counter.ts`
+- [X] T030 [US3] Create unit tests for migration logic in `tests/unit/migration/uuid-to-int.test.ts`
 
 ---
 
@@ -107,7 +107,7 @@ Goal: Create core components that all user stories depend on.
 Goal: Final cleanup and verification.
 
 - [X] T034 Run full test suite and ensure all tests pass
-- [ ] T035 Run ESLint and fix any type errors
+- [X] T035 Run ESLint and fix any type errors
 - [ ] T036 Update API documentation to reflect integer ID format
 
 ---
