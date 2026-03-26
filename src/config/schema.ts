@@ -6,6 +6,48 @@
 import { z } from 'zod';
 
 /**
+ * Load balancing strategy schema.
+ */
+export const loadBalanceStrategySchema = z.enum([
+  'quota-priority',
+  'round-robin',
+  'weighted-round-robin',
+  'random',
+]);
+
+/**
+ * Factor weights schema for multi-factor scoring.
+ * Values must sum to 1.0.
+ */
+export const factorWeightsSchema = z
+  .object({
+    expiration: z.number().min(0).max(1).default(0.4),
+    rpm: z.number().min(0).max(1).default(0.4),
+    quota: z.number().min(0).max(1).default(0.2),
+  })
+  .refine(
+    (data) => {
+      const sum = data.expiration + data.rpm + data.quota;
+      return Math.abs(sum - 1.0) < 0.001; // Allow small floating point errors
+    },
+    {
+      message: 'Factor weights must sum to 1.0',
+    }
+  );
+
+/**
+ * Load balancing configuration schema.
+ */
+export const loadBalanceConfigSchema = z.object({
+  strategy: loadBalanceStrategySchema.default('quota-priority'),
+  factorWeights: factorWeightsSchema.default({
+    expiration: 0.4,
+    rpm: 0.4,
+    quota: 0.2,
+  }),
+});
+
+/**
  * Quota configuration schema.
  */
 export const quotaConfigSchema = z.object({
@@ -25,6 +67,10 @@ export const planConfigSchema = z.object({
   quota: quotaConfigSchema,
   timeout: z.number().int().min(1000).max(300000).optional(),
   status: z.enum(['active', 'paused']).optional(),
+  // Load balancing and expiration fields
+  expiresOn: z.number().int().min(1).max(31).optional(),
+  expiresAt: z.string().datetime().optional(),
+  weight: z.number().int().min(1).max(100).optional(),
 });
 
 /**
@@ -33,6 +79,7 @@ export const planConfigSchema = z.object({
 export const configSchema = z.object({
   version: z.string().optional(),
   plans: z.array(planConfigSchema).default([]),
+  loadBalancing: loadBalanceConfigSchema.optional(),
 });
 
 /**
@@ -98,3 +145,5 @@ export type SecurityConfig = z.infer<typeof securityConfigSchema>;
 export type QuotaSyncConfig = z.infer<typeof quotaSyncConfigSchema>;
 export type AuthConfig = z.infer<typeof authConfigSchema>;
 export type AppConfig = z.infer<typeof appConfigSchema>;
+export type LoadBalanceConfigInput = z.infer<typeof loadBalanceConfigSchema>;
+export type FactorWeightsInput = z.infer<typeof factorWeightsSchema>;

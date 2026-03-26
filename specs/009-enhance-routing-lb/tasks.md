@@ -19,8 +19,8 @@
 
 **Purpose**: Create new type file structure for load balancing enhancements
 
-- [ ] T001 Create load balancing types file at `src/types/load-balancing.ts` with LoadBalanceStrategy, FactorWeights, LoadBalanceConfig interfaces
-- [ ] T002 Create RPM tracker types file at `src/types/rpm-tracker.ts` with RpmBucket and RpmTrackerState interfaces
+- [x] T001 Create load balancing types file at `src/types/load-balancing.ts` with LoadBalanceStrategy, FactorWeights, LoadBalanceConfig interfaces
+- [x] T002 Create RPM tracker types file at `src/types/rpm-tracker.ts` with RpmBucket and RpmTrackerState interfaces
 
 ---
 
@@ -30,9 +30,9 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T003 Extend CodingPlan interface in `src/types/coding-plan.ts` to add optional fields: expiresOn (number 1-31), expiresAt (string ISO 8601), weight (number 1-100, default 1)
-- [ ] T004 [P] Extend plan configuration schema in `src/config/schema.ts` to validate expiresOn, expiresAt, and weight fields per contracts/config-schema.json
-- [ ] T005 [P] Add loadBalancing configuration section to schema in `src/config/schema.ts` with strategy and factorWeights validation
+- [x] T003 Extend CodingPlan interface in `src/types/coding-plan.ts` to add optional fields: expiresOn (number 1-31), expiresAt (string ISO 8601), weight (number 1-100, default 1)
+- [x] T004 [P] Extend plan configuration schema in `src/config/schema.ts` to validate expiresOn, expiresAt, and weight fields per contracts/config-schema.json
+- [x] T005 [P] Add loadBalancing configuration section to schema in `src/config/schema.ts` with strategy and factorWeights validation
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
