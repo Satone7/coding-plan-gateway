@@ -27,8 +27,8 @@ import { logger } from '@/utils/logger';
  */
 export class RpmTracker {
   private readonly config: RpmTrackerConfig;
-  private readonly buckets: Map<string, RpmBucket[]>;
-  private readonly bucketTimestamps: Map<string, number[]>;
+  private readonly buckets: Map<number, RpmBucket[]>;
+  private readonly bucketTimestamps: Map<number, number[]>;
 
   constructor(config?: Partial<RpmTrackerConfig>) {
     this.config = { ...DEFAULT_RPM_TRACKER_CONFIG, ...config };
@@ -46,7 +46,7 @@ export class RpmTracker {
   /**
    * Initialize buckets for a plan if not exists.
    */
-  private initializePlan(planId: string): void {
+  private initializePlan(planId: number): void {
     if (!this.buckets.has(planId)) {
       // Initialize with empty buckets
       const emptyBuckets: RpmBucket[] = Array.from(
@@ -65,9 +65,9 @@ export class RpmTracker {
    * Record a request for a plan.
    * Updates the current bucket count, advancing to a new bucket if needed.
    *
-   * @param planId - The plan identifier
+   * @param planId - The plan identifier (integer)
    */
-  recordRequest(planId: string): void {
+  recordRequest(planId: number): void {
     this.initializePlan(planId);
 
     const currentTimestamp = this.getCurrentBucketTimestamp();
@@ -123,10 +123,10 @@ export class RpmTracker {
    * Get the current RPM (requests per minute) for a plan.
    * Sums all non-expired buckets within the sliding window.
    *
-   * @param planId - The plan identifier
+   * @param planId - The plan identifier (integer)
    * @returns The current RPM (0 if no requests or plan not found)
    */
-  getRpm(planId: string): number {
+  getRpm(planId: number): number {
     const buckets = this.buckets.get(planId);
     if (!buckets) {
       return 0;
@@ -167,9 +167,9 @@ export class RpmTracker {
   /**
    * Reset tracking for a specific plan.
    *
-   * @param planId - The plan identifier
+   * @param planId - The plan identifier (integer)
    */
-  resetPlan(planId: string): void {
+  resetPlan(planId: number): void {
     this.buckets.delete(planId);
     this.bucketTimestamps.delete(planId);
     logger.debug('RPM tracking reset for plan', { planId });
@@ -187,14 +187,14 @@ export class RpmTracker {
   /**
    * Get all plan IDs currently being tracked.
    */
-  getTrackedPlans(): string[] {
+  getTrackedPlans(): number[] {
     return Array.from(this.buckets.keys());
   }
 
   /**
    * Get debug information for a plan.
    */
-  getDebugInfo(planId: string): { buckets: RpmBucket[]; rpm: number } | null {
+  getDebugInfo(planId: number): { buckets: RpmBucket[]; rpm: number } | null {
     const buckets = this.buckets.get(planId);
     if (!buckets) {
       return null;

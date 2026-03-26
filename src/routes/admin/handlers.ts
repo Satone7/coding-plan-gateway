@@ -12,18 +12,21 @@ import type { PlanUsageTracker } from '@/services/plan-usage-tracker';
 import { logger } from '@/utils/logger';
 import { createGatewayError } from '@/types';
 import { usageAdjustmentRequestSchema } from '@/types/plan-usage';
+import { planIdParamSchema } from '@/utils/validators';
 
 /**
  * Request with planId parameter.
  */
 interface PlanParams {
-  planId: string;
+  planId: string; // String from URL, will be parsed to number
 }
 
 /**
- * UUID validation schema.
+ * Integer plan ID parameter (parsed from URL).
  */
-const uuidSchema = z.string().uuid();
+interface PlanIdParam {
+  planId: number;
+}
 
 /**
  * Create plan request body schema.
@@ -62,7 +65,7 @@ const updatePlanBodySchema = z.object({
  * Plan response schema (without sensitive data).
  */
 interface PlanResponse {
-  id: string;
+  id: number;
   name: string;
   baseUrl: string;
   models: string[];
@@ -85,7 +88,7 @@ interface PlanResponse {
  * Quota status response.
  */
 interface QuotaStatusResponse {
-  planId: string;
+  planId: number;
   used: number;
   limit: number;
   remaining: number;
@@ -127,11 +130,25 @@ interface QuotaSuccessResponse {
 }
 
 /**
- * Transform a CodingPlan to a response object (without sensitive data).
+ * Parse and validate plan ID from URL parameter.
+ *
+ * @param planIdStr - The plan ID string from URL
+ * @returns The parsed integer plan ID
+ * @throws GatewayError if invalid
  */
+function parsePlanId(planIdStr: string): number {
+  const result = planIdParamSchema.safeParse(planIdStr);
+  if (!result.success) {
+    throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format. Must be a positive integer.', {
+      field: 'planId',
+    });
+  }
+  return result.data;
+}
+
 function toPlanResponse(
   plan: {
-    id: string;
+    id: number;
     name: string;
     baseUrl: string;
     models: string[];
@@ -233,7 +250,7 @@ interface DailyPlanUsageResponse {
  * Plan usage report response.
  */
 interface PlanUsageReportData {
-  planId: string;
+  planId: number;
   planName: string;
   totalRequests: number;
   limit: number;
@@ -260,7 +277,7 @@ interface PlanUsageResponse {
  * Usage adjustment response data.
  */
 interface UsageAdjustmentData {
-  planId: string;
+  planId: number;
   oldValue: number;
   newValue: number;
   adjustmentId: string;
@@ -280,7 +297,7 @@ interface UsageAdjustmentResponse {
  */
 interface AdjustmentHistoryRecord {
   id: string;
-  planId: string;
+  planId: number;
   timestamp: string;
   oldValue: number;
   newValue: number;
@@ -300,7 +317,7 @@ interface AdjustmentHistoryResponse {
  * Plan usage summary item.
  */
 interface PlanUsageSummaryItem {
-  planId: string;
+  planId: number;
   planName: string;
   limit: number;
   used: number;
@@ -390,15 +407,7 @@ export function createAdminHandlers(
       request: FastifyRequest<{ Params: PlanParams }>,
       _reply: FastifyReply
     ): Promise<PlanSuccessResponse> {
-      const { planId } = request.params;
-
-      // Validate planId
-      const validationResult = uuidSchema.safeParse(planId);
-      if (!validationResult.success) {
-        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
-          field: 'planId',
-        });
-      }
+      const planId = parsePlanId(request.params.planId);
 
       const plan = await repository.findById(planId);
 
@@ -476,15 +485,7 @@ export function createAdminHandlers(
       }>,
       _reply: FastifyReply
     ): Promise<PlanSuccessResponse> {
-      const { planId } = request.params;
-
-      // Validate planId
-      const idValidation = uuidSchema.safeParse(planId);
-      if (!idValidation.success) {
-        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
-          field: 'planId',
-        });
-      }
+      const planId = parsePlanId(request.params.planId);
 
       // Validate request body
       const bodyValidation = updatePlanBodySchema.safeParse(request.body);
@@ -532,15 +533,7 @@ export function createAdminHandlers(
       request: FastifyRequest<{ Params: PlanParams }>,
       reply: FastifyReply
     ): Promise<void> {
-      const { planId } = request.params;
-
-      // Validate planId
-      const validationResult = uuidSchema.safeParse(planId);
-      if (!validationResult.success) {
-        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
-          field: 'planId',
-        });
-      }
+      const planId = parsePlanId(request.params.planId);
 
       const deleted = await repository.delete(planId);
 
@@ -568,15 +561,7 @@ export function createAdminHandlers(
       request: FastifyRequest<{ Params: PlanParams }>,
       _reply: FastifyReply
     ): Promise<QuotaSuccessResponse> {
-      const { planId } = request.params;
-
-      // Validate planId
-      const validationResult = uuidSchema.safeParse(planId);
-      if (!validationResult.success) {
-        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
-          field: 'planId',
-        });
-      }
+      const planId = parsePlanId(request.params.planId);
 
       if (!quotaManager) {
         throw createGatewayError(
@@ -624,15 +609,7 @@ export function createAdminHandlers(
       request: FastifyRequest<{ Params: PlanParams }>,
       _reply: FastifyReply
     ): Promise<QuotaSuccessResponse> {
-      const { planId } = request.params;
-
-      // Validate planId
-      const validationResult = uuidSchema.safeParse(planId);
-      if (!validationResult.success) {
-        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
-          field: 'planId',
-        });
-      }
+      const planId = parsePlanId(request.params.planId);
 
       if (!quotaManager) {
         throw createGatewayError(
@@ -721,16 +698,8 @@ export function createAdminHandlers(
       request: FastifyRequest<{ Params: PlanParams; Querystring: PlanUsageQuery }>,
       _reply: FastifyReply
     ): Promise<PlanUsageResponse> {
-      const { planId } = request.params;
+      const planId = parsePlanId(request.params.planId);
       const { from, to } = request.query;
-
-      // Validate planId
-      const validationResult = uuidSchema.safeParse(planId);
-      if (!validationResult.success) {
-        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
-          field: 'planId',
-        });
-      }
 
       const plan = await repository.findById(planId);
       if (!plan) {
@@ -810,15 +779,7 @@ export function createAdminHandlers(
       request: FastifyRequest<{ Params: PlanParams; Body: z.infer<typeof usageAdjustmentRequestSchema> }>,
       _reply: FastifyReply
     ): Promise<UsageAdjustmentResponse> {
-      const { planId } = request.params;
-
-      // Validate planId
-      const validationResult = uuidSchema.safeParse(planId);
-      if (!validationResult.success) {
-        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
-          field: 'planId',
-        });
-      }
+      const planId = parsePlanId(request.params.planId);
 
       // Validate request body
       const bodyValidation = usageAdjustmentRequestSchema.safeParse(request.body);
@@ -888,16 +849,8 @@ export function createAdminHandlers(
       request: FastifyRequest<{ Params: PlanParams; Querystring: HistoryQuery }>,
       _reply: FastifyReply
     ): Promise<AdjustmentHistoryResponse> {
-      const { planId } = request.params;
+      const planId = parsePlanId(request.params.planId);
       const { limit = 20 } = request.query;
-
-      // Validate planId
-      const validationResult = uuidSchema.safeParse(planId);
-      if (!validationResult.success) {
-        throw createGatewayError('INVALID_REQUEST', 'Invalid plan ID format', {
-          field: 'planId',
-        });
-      }
 
       const plan = await repository.findById(planId);
       if (!plan) {

@@ -9,8 +9,8 @@ import { z } from 'zod';
  * Daily usage record for a specific plan.
  */
 export interface PlanUsageRecord {
-  /** Reference to the coding plan (UUID) */
-  planId: string;
+  /** Reference to the coding plan (integer ID) */
+  planId: number;
   /** Date of usage in YYYY-MM-DD format */
   date: string;
   /** Number of requests made on this date */
@@ -33,8 +33,8 @@ export interface DailyPlanUsage {
  * Aggregated usage report for a plan over a date range.
  */
 export interface PlanUsageReport {
-  /** Reference to the coding plan (UUID) */
-  planId: string;
+  /** Reference to the coding plan (integer ID) */
+  planId: number;
   /** Plan name for display (from CodingPlan config) */
   planName: string;
   /** Total requests in the date range */
@@ -64,8 +64,8 @@ export interface PlanUsageReport {
 export interface UsageAdjustmentHistory {
   /** Unique identifier for this adjustment record (UUID) */
   id: string;
-  /** Reference to the coding plan (UUID) */
-  planId: string;
+  /** Reference to the coding plan (integer ID) */
+  planId: number;
   /** When the adjustment was made */
   timestamp: Date;
   /** Usage value before adjustment */
@@ -110,7 +110,7 @@ export interface AdjustmentHistoryStorage {
  */
 export interface AdjustmentRecordData {
   id: string;
-  planId: string;
+  planId: number;
   timestamp: string;
   oldValue: number;
   newValue: number;
@@ -122,8 +122,8 @@ export interface AdjustmentRecordData {
  * Plan usage summary for list display.
  */
 export interface PlanUsageSummary {
-  /** Reference to the coding plan (UUID) */
-  planId: string;
+  /** Reference to the coding plan (integer ID) */
+  planId: number;
   /** Plan name for display */
   planName: string;
   /** Quota limit from plan configuration */
@@ -144,7 +144,7 @@ export interface PlanUsageSummary {
  * Zod schema for plan usage record validation.
  */
 export const planUsageRecordSchema = z.object({
-  planId: z.string().uuid(),
+  planId: z.number().int().positive(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   requestCount: z.number().int().nonnegative(),
   lastUpdated: z.coerce.date(),
@@ -180,7 +180,7 @@ export const planUsageDataStorageSchema = z.object({
  */
 export const adjustmentRecordDataSchema = z.object({
   id: z.string().uuid(),
-  planId: z.string().uuid(),
+  planId: z.number().int().positive(),
   timestamp: z.string(),
   oldValue: z.number().int().nonnegative(),
   newValue: z.number().int().nonnegative(),

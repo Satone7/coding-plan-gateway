@@ -6,7 +6,6 @@
 import { readFile, writeFile, access, rename } from 'fs/promises';
 import { constants } from 'fs';
 import { resolve, extname } from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import type {
   CodingPlan,
@@ -21,6 +20,7 @@ import {
 } from '@/config/encryption';
 import { logger } from '@/utils/logger';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from '@/config/defaults';
+import type { PlanIdCounter } from './plan-id-counter';
 
 /**
  * Repository interface for coding plan storage.
@@ -28,7 +28,7 @@ import { DEFAULT_REQUEST_TIMEOUT_MS } from '@/config/defaults';
  */
 export interface IPlanRepository {
   /** Find a plan by its ID */
-  findById(id: string): Promise<CodingPlan | null>;
+  findById(id: number): Promise<CodingPlan | null>;
 
   /** Find all plans */
   findAll(): Promise<CodingPlan[]>;
@@ -43,19 +43,22 @@ export interface IPlanRepository {
   save(plan: CreateCodingPlanInput): Promise<CodingPlan>;
 
   /** Update an existing plan */
-  update(id: string, updates: UpdateCodingPlanInput): Promise<CodingPlan>;
+  update(id: number, updates: UpdateCodingPlanInput): Promise<CodingPlan>;
 
   /** Delete a plan by ID */
-  delete(id: string): Promise<boolean>;
+  delete(id: number): Promise<boolean>;
 
   /** Check if a plan exists */
-  exists(id: string): Promise<boolean>;
+  exists(id: number): Promise<boolean>;
 
   /** Get decrypted API key for a plan */
-  getDecryptedApiKey(id: string): Promise<string | null>;
+  getDecryptedApiKey(id: number): Promise<string | null>;
 
   /** Reload plans from storage */
   reload(): Promise<void>;
+
+  /** Set the plan ID counter for ID generation */
+  setPlanIdCounter(counter: PlanIdCounter): void;
 }
 
 /**
@@ -65,8 +68,9 @@ export interface IPlanRepository {
 export class FilePlanRepository implements IPlanRepository {
   private readonly filePath: string;
   private readonly encryptionKey: string | undefined;
-  private plans: Map<string, CodingPlan> = new Map();
+  private plans: Map<number, CodingPlan> = new Map();
   private loaded: boolean = false;
+  private planIdCounter: PlanIdCounter | null = null;
 
   /**
    * Create a new FilePlanRepository.
@@ -80,9 +84,18 @@ export class FilePlanRepository implements IPlanRepository {
   }
 
   /**
+   * Set the plan ID counter for ID generation.
+   *
+   * @param counter - The PlanIdCounter instance
+   */
+  setPlanIdCounter(counter: PlanIdCounter): void {
+    this.planIdCounter = counter;
+  }
+
+  /**
    * Find a plan by its ID.
    */
-  async findById(id: string): Promise<CodingPlan | null> {
+  async findById(id: number): Promise<CodingPlan | null> {
     await this.ensureLoaded();
     const plan = this.plans.get(id);
     return plan ? this.toPlainObject(plan) : null;
@@ -125,7 +138,17 @@ export class FilePlanRepository implements IPlanRepository {
   async save(input: CreateCodingPlanInput): Promise<CodingPlan> {
     await this.ensureLoaded();
 
-    const id = uuidv4();
+    // Generate ID using PlanIdCounter
+    let id: number;
+    if (this.planIdCounter) {
+      id = await this.planIdCounter.getNextId();
+    } else {
+      // Fallback: find max ID and increment
+      const maxId = Math.max(0, ...Array.from(this.plans.keys()));
+      id = maxId + 1;
+      logger.warn('PlanIdCounter not set, using fallback ID generation', { id });
+    }
+
     const now = new Date();
 
     // Encrypt API key if encryption key is available
@@ -156,7 +179,7 @@ export class FilePlanRepository implements IPlanRepository {
   /**
    * Update an existing plan.
    */
-  async update(id: string, updates: UpdateCodingPlanInput): Promise<CodingPlan> {
+  async update(id: number, updates: UpdateCodingPlanInput): Promise<CodingPlan> {
     await this.ensureLoaded();
 
     const existing = this.plans.get(id);
@@ -198,7 +221,7 @@ export class FilePlanRepository implements IPlanRepository {
   /**
    * Delete a plan by ID.
    */
-  async delete(id: string): Promise<boolean> {
+  async delete(id: number): Promise<boolean> {
     await this.ensureLoaded();
 
     const existed = this.plans.delete(id);
@@ -212,7 +235,7 @@ export class FilePlanRepository implements IPlanRepository {
   /**
    * Check if a plan exists.
    */
-  async exists(id: string): Promise<boolean> {
+  async exists(id: number): Promise<boolean> {
     await this.ensureLoaded();
     return this.plans.has(id);
   }
@@ -228,7 +251,7 @@ export class FilePlanRepository implements IPlanRepository {
   /**
    * Get the decrypted API key for a plan.
    */
-  async getDecryptedApiKey(id: string): Promise<string | null> {
+  async getDecryptedApiKey(id: number): Promise<string | null> {
     await this.ensureLoaded();
     const plan = this.plans.get(id);
     if (!plan) {
@@ -362,11 +385,28 @@ export class FilePlanRepository implements IPlanRepository {
 
   /**
    * Convert a PlanConfig to a CodingPlan.
+   * Handles both integer and UUID IDs for migration compatibility.
    */
   private configToPlan(config: PlanConfig): CodingPlan {
     const now = new Date();
+
+    // Handle ID: prefer integer, generate if missing or if UUID (legacy)
+    let id: number;
+    if (typeof config.id === 'number') {
+      id = config.id;
+    } else if (typeof config.id === 'string') {
+      // Legacy UUID - this should only happen during migration
+      // For now, throw an error - migration should convert these
+      throw new Error(
+        `Legacy UUID ID detected: ${config.id}. Run migration first.`
+      );
+    } else {
+      // No ID provided - should not happen in normal operation
+      throw new Error('Plan ID is required');
+    }
+
     return {
-      id: config.id ?? uuidv4(),
+      id,
       name: config.name,
       baseUrl: config.baseUrl,
       apiKeyEncrypted: config.apiKey,

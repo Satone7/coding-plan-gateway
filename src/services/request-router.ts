@@ -158,7 +158,7 @@ export class RequestRouter {
     }
 
     // Select the best plan based on load balancing strategy
-    const quotaStates = this.quotaManager?.getAllQuotaStates() ?? new Map<string, QuotaState>();
+    const quotaStates = this.quotaManager?.getAllQuotaStates() ?? new Map<number, QuotaState>();
     const context: SelectionContext = {
       model,
       plans: plansWithQuota,
@@ -246,7 +246,7 @@ export class RequestRouter {
   /**
    * Mark a plan as successful (close circuit).
    */
-  markPlanSuccess(planId: string): void {
+  markPlanSuccess(planId: number): void {
     this.circuitBreaker.recordSuccess(planId);
     logger.debug('Plan marked as successful', { planId });
   }
@@ -254,7 +254,7 @@ export class RequestRouter {
   /**
    * Mark a plan as failed (potentially open circuit).
    */
-  markPlanFailed(planId: string): void {
+  markPlanFailed(planId: number): void {
     this.circuitBreaker.recordFailure(planId);
     logger.warn('Plan marked as failed', {
       planId,
@@ -265,7 +265,7 @@ export class RequestRouter {
   /**
    * Refund quota for a failed request.
    */
-  refundQuota(planId: string, amount: number = 1): void {
+  refundQuota(planId: number, amount: number = 1): void {
     if (this.quotaManager) {
       this.quotaManager.refundQuota(planId, amount);
     }
@@ -286,7 +286,7 @@ export class RequestRouter {
   /**
    * Get alternative plans for failover.
    */
-  async getAlternativePlans(model: string, excludePlanId: string): Promise<CodingPlan[]> {
+  async getAlternativePlans(model: string, excludePlanId: number): Promise<CodingPlan[]> {
     const availablePlans = await this.getAvailablePlans(model);
     return availablePlans.filter((plan) => plan.id !== excludePlanId);
   }
@@ -295,14 +295,14 @@ export class RequestRouter {
    * Update quota state for a plan.
    * @deprecated Use QuotaManager directly
    */
-  updateQuotaState(_planId: string, _state: QuotaState): void {
+  updateQuotaState(_planId: number, _state: QuotaState): void {
     logger.warn('updateQuotaState is deprecated, use QuotaManager directly');
   }
 
   /**
    * Get quota state for a plan.
    */
-  getQuotaState(planId: string): QuotaState | undefined {
+  getQuotaState(planId: number): QuotaState | undefined {
     return this.quotaManager?.getQuotaState(planId);
   }
 

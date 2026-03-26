@@ -11,7 +11,7 @@ import type { CodingPlan, QuotaState } from '@/types';
 describe('PlanSelector', () => {
   let planSelector: PlanSelector;
   let mockPlans: CodingPlan[];
-  let mockQuotaStates: Map<string, QuotaState>;
+  let mockQuotaStates: Map<number, QuotaState>;
 
   beforeEach(() => {
     planSelector = createPlanSelector();
@@ -35,10 +35,10 @@ describe('PlanSelector', () => {
     });
 
     it('should select plan with highest remaining quota', () => {
-      // claude-sonnet-4-6 is supported by plan-2-claude (limit: 500, used: 200, remaining: 300)
+      // claude-sonnet-4-6 is supported by plan 2 (limit: 500, used: 200, remaining: 300)
       const result = planSelector.selectPlan('claude-sonnet-4-6', mockPlans, mockQuotaStates);
       expect(result).toBeDefined();
-      expect(result?.id).toBe('plan-2-claude');
+      expect(result?.id).toBe(2);
     });
 
     it('should skip paused plans', () => {
@@ -62,7 +62,7 @@ describe('PlanSelector', () => {
     it('should return all plans supporting the model', () => {
       const result = planSelector.findPlansByModel('claude-sonnet-4-6', mockPlans);
       expect(result.length).toBe(1);
-      expect(result[0].id).toBe('plan-2-claude');
+      expect(result[0].id).toBe(2);
     });
 
     it('should return empty array when no plans support the model', () => {
@@ -88,7 +88,7 @@ describe('PlanSelector', () => {
     it('should return only active plans', () => {
       const result = planSelector.filterActivePlans(mockPlans);
       expect(result.every((p) => p.status === 'active')).toBe(true);
-      expect(result.length).toBe(3); // plan-1-kimi, plan-2-claude, plan-3-openai
+      expect(result.length).toBe(3); // plans 1, 2, 3
     });
 
     it('should return empty array when no active plans', () => {
@@ -108,11 +108,11 @@ describe('PlanSelector', () => {
       // - Quota scores: kimi 55, claude 60, openai 25
       // Total: kimi 55, claude 56, openai 49
       // Claude wins with highest multi-factor score
-      expect(result?.id).toBe('plan-2-claude');
+      expect(result?.id).toBe(2);
     });
 
     it('should return undefined when all plans are exhausted', () => {
-      const exhaustedStates = new Map<string, QuotaState>();
+      const exhaustedStates = new Map<number, QuotaState>();
       mockPlans.forEach((plan) => {
         exhaustedStates.set(plan.id, {
           planId: plan.id,
@@ -137,7 +137,7 @@ describe('PlanSelector', () => {
       // Total = 10*0.4 + 100*0.4 + 100*0.2 = 84 for all
       // Any plan could be selected, but should return one
       expect(result).toBeDefined();
-      expect(['plan-1-kimi', 'plan-2-claude', 'plan-3-openai']).toContain(result?.id);
+      expect([1, 2, 3]).toContain(result?.id);
     });
   });
 

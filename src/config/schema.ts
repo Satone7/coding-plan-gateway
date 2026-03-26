@@ -57,9 +57,13 @@ export const quotaConfigSchema = z.object({
 
 /**
  * Plan configuration schema (from YAML/JSON).
+ * ID can be either integer (preferred) or UUID (legacy, for migration).
  */
 export const planConfigSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: z.union([
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER), // Integer ID (preferred)
+    z.string().uuid(), // UUID (legacy, for migration)
+  ]).optional(),
   name: z.string().min(1).max(100),
   baseUrl: z.string().url(),
   apiKey: z.string().min(1),

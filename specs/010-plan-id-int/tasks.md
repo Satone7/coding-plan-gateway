@@ -23,13 +23,13 @@ Goal: Prepare infrastructure for integer ID support.
 
 Goal: Create core components that all user stories depend on.
 
-- [ ] T002 Create `PlanIdCounterState` interface in `src/types/plan-id-counter.ts`
-- [ ] T003 [P] Create `PlanIdCounter` service in `src/services/plan-id-counter.ts` with atomic `getNextId()` method
-- [ ] T004 [P] Add integer ID validation schema in `src/utils/validators.ts` (z.number().int().positive().max(MAX_SAFE_INTEGER))
-- [ ] T005 Update `CodingPlan.id` type from `string` to `number` in `src/types/coding-plan.ts`
-- [ ] T006 Update `QuotaState.planId` type from `string` to `number` in `src/types/quota.ts`
-- [ ] T007 [P] Create unit tests for `PlanIdCounter` in `tests/unit/services/plan-id-counter.test.ts`
-- [ ] T008 Register `PlanIdCounter` service in app initialization in `src/app.ts`
+- [X] T002 Create `PlanIdCounterState` interface in `src/types/plan-id-counter.ts`
+- [X] T003 [P] Create `PlanIdCounter` service in `src/services/plan-id-counter.ts` with atomic `getNextId()` method
+- [X] T004 [P] Add integer ID validation schema in `src/utils/validators.ts` (z.number().int().positive().max(MAX_SAFE_INTEGER))
+- [X] T005 Update `CodingPlan.id` type from `string` to `number` in `src/types/coding-plan.ts`
+- [X] T006 Update `QuotaState.planId` type from `string` to `number` in `src/types/quota.ts`
+- [X] T007 [P] Create unit tests for `PlanIdCounter` in `tests/unit/services/plan-id-counter.test.ts`
+- [X] T008 Register `PlanIdCounter` service in app initialization in `src/routes/index.ts`
 
 ---
 
@@ -41,9 +41,9 @@ Goal: Create core components that all user stories depend on.
 
 ### Implementation
 
-- [ ] T009 [US1] Update plan creation handler to use `PlanIdCounter.getNextId()` in `src/routes/admin/handlers.ts`
-- [ ] T010 [US1] Add validation to reject manual `id` field in create request body in `src/routes/admin/handlers.ts`
-- [ ] T011 [US1] Implement MAX_SAFE_INTEGER check before ID assignment in `src/services/plan-id-counter.ts`
+- [X] T009 [US1] Update plan creation handler to use `PlanIdCounter.getNextId()` in `src/routes/admin/handlers.ts`
+- [X] T010 [US1] Add validation to reject manual `id` field in create request body in `src/routes/admin/handlers.ts`
+- [X] T011 [US1] Implement MAX_SAFE_INTEGER check before ID assignment in `src/services/plan-id-counter.ts`
 - [ ] T012 [US1] Create integration tests for plan creation with integer IDs in `tests/integration/routes/plan-id.test.ts`
 
 ---
@@ -56,14 +56,14 @@ Goal: Create core components that all user stories depend on.
 
 ### Implementation
 
-- [ ] T013 [US2] Update plan GET handler to parse integer ID from path param in `src/routes/admin/handlers.ts`
-- [ ] T014 [US2] Update plan PUT handler to parse integer ID from path param in `src/routes/admin/handlers.ts`
-- [ ] T015 [US2] Update plan DELETE handler to parse integer ID from path param in `src/routes/admin/handlers.ts`
-- [ ] T016 [US2] Update quota reset handler to parse integer planId from path param in `src/routes/admin/handlers.ts`
-- [ ] T017 [US2] Update `QuotaManager` methods to accept `number` planId in `src/services/quota-manager.ts`
-- [ ] T018 [US2] Update `RpmTracker` methods to accept `number` planId in `src/services/rpm-tracker.ts`
-- [ ] T019 [US2] Update `PlanSelector` to work with integer plan IDs in `src/services/plan-selector.ts`
-- [ ] T020 [US2] Add 404 error handling for non-existent integer IDs in `src/routes/admin/handlers.ts`
+- [X] T013 [US2] Update plan GET handler to parse integer ID from path param in `src/routes/admin/handlers.ts`
+- [X] T014 [US2] Update plan PUT handler to parse integer ID from path param in `src/routes/admin/handlers.ts`
+- [X] T015 [US2] Update plan DELETE handler to parse integer ID from path param in `src/routes/admin/handlers.ts`
+- [X] T016 [US2] Update quota reset handler to parse integer planId from path param in `src/routes/admin/handlers.ts`
+- [X] T017 [US2] Update `QuotaManager` methods to accept `number` planId in `src/services/quota-manager.ts`
+- [X] T018 [US2] Update `RpmTracker` methods to accept `number` planId in `src/services/rpm-tracker.ts`
+- [X] T019 [US2] Update `PlanSelector` to work with integer plan IDs in `src/services/plan-selector.ts`
+- [X] T020 [US2] Add 404 error handling for non-existent integer IDs in `src/routes/admin/handlers.ts`
 - [ ] T021 [US2] Create integration tests for plan retrieval by integer ID in `tests/integration/routes/plan-id.test.ts`
 
 ---
@@ -96,9 +96,9 @@ Goal: Create core components that all user stories depend on.
 
 ### Implementation
 
-- [ ] T031 [US4] Update `ProviderMetrics.planId` type to `number` in `src/middleware/request-logger.ts`
-- [ ] T032 [US4] Update log formatting to display integer plan IDs in `src/middleware/request-logger.ts`
-- [ ] T033 [US4] Update logger context types to use `number` for planId in `src/utils/logger.ts`
+- [X] T031 [US4] Update `ProviderMetrics.planId` type to `number` in `src/middleware/request-logger.ts`
+- [X] T032 [US4] Update log formatting to display integer plan IDs in `src/middleware/request-logger.ts`
+- [X] T033 [US4] Update logger context types to use `number` for planId in `src/utils/logger.ts`
 
 ---
 
@@ -106,7 +106,7 @@ Goal: Create core components that all user stories depend on.
 
 Goal: Final cleanup and verification.
 
-- [ ] T034 Run full test suite and ensure all tests pass
+- [X] T034 Run full test suite and ensure all tests pass
 - [ ] T035 Run ESLint and fix any type errors
 - [ ] T036 Update API documentation to reflect integer ID format
 

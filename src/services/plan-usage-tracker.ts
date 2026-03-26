@@ -47,7 +47,7 @@ type StorageKey = string;
  * Plan info needed for report generation.
  */
 interface PlanInfo {
-  id: string;
+  id: number;
   name: string;
   quota: {
     limit: number;
@@ -60,7 +60,7 @@ interface PlanInfo {
  */
 export interface AdjustmentResult {
   adjustmentId: string;
-  planId: string;
+  planId: number;
   oldValue: number;
   newValue: number;
   warning?: string;
@@ -131,7 +131,7 @@ export class PlanUsageTracker {
   /**
    * Create a storage key from date and planId.
    */
-  private createStorageKey(date: string, planId: string): StorageKey {
+  private createStorageKey(date: string, planId: number): StorageKey {
     return `${date}:${planId}`;
   }
 
@@ -142,7 +142,7 @@ export class PlanUsageTracker {
    * @param date - The date (YYYY-MM-DD), defaults to today
    * @returns The usage record
    */
-  private getOrCreateRecord(planId: string, date: string = this.getTodayDate()): PlanUsageRecord {
+  private getOrCreateRecord(planId: number, date: string = this.getTodayDate()): PlanUsageRecord {
     const storageKey = this.createStorageKey(date, planId);
     let record = this.usage.get(storageKey);
 
@@ -164,7 +164,7 @@ export class PlanUsageTracker {
    *
    * @param planId - The plan ID
    */
-  incrementDailyUsage(planId: string): void {
+  incrementDailyUsage(planId: number): void {
     const record = this.getOrCreateRecord(planId);
     record.requestCount += 1;
     record.lastUpdated = new Date();
@@ -181,7 +181,7 @@ export class PlanUsageTracker {
    *
    * @param planId - The plan ID
    */
-  decrementDailyUsage(planId: string): void {
+  decrementDailyUsage(planId: number): void {
     const record = this.getOrCreateRecord(planId);
     record.requestCount = Math.max(0, record.requestCount - 1);
     record.lastUpdated = new Date();
@@ -201,7 +201,7 @@ export class PlanUsageTracker {
    * @param to - Optional end date filter
    * @returns Total request count
    */
-  getTotalUsage(planId: string, from?: string, to?: string): number {
+  getTotalUsage(planId: number, from?: string, to?: string): number {
     let total = 0;
 
     for (const record of this.usage.values()) {
@@ -230,7 +230,7 @@ export class PlanUsageTracker {
    * @returns Usage report or undefined if no data
    */
   getUsageReport(
-    planId: string,
+    planId: number,
     planInfo: PlanInfo,
     from?: string,
     to?: string
@@ -328,7 +328,7 @@ export class PlanUsageTracker {
    * @returns Adjustment result
    */
   adjustUsage(
-    planId: string,
+    planId: number,
     newValue: number,
     limit: number,
     adjustmentType: 'count' | 'percent',
@@ -388,7 +388,7 @@ export class PlanUsageTracker {
    * @param limit - Maximum number of records to return
    * @returns Array of adjustment records
    */
-  getAdjustmentHistory(planId?: string, limit: number = 20): UsageAdjustmentHistory[] {
+  getAdjustmentHistory(planId?: number, limit: number = 20): UsageAdjustmentHistory[] {
     let filtered = this.adjustments;
 
     if (planId) {
@@ -576,7 +576,14 @@ export class PlanUsageTracker {
 
       // Load records into memory
       for (const [date, plansData] of Object.entries(parsed.data.records)) {
-        for (const [planId, recordData] of Object.entries(plansData)) {
+        for (const [planIdStr, recordData] of Object.entries(plansData)) {
+          // Convert planId from string key to number
+          const planId = parseInt(planIdStr, 10);
+          if (isNaN(planId)) {
+            logger.warn('Skipping invalid planId in plan usage data', { planIdStr, date });
+            continue;
+          }
+
           const storageKey = this.createStorageKey(date, planId);
           this.usage.set(storageKey, {
             planId,

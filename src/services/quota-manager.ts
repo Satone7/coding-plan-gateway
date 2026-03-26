@@ -36,7 +36,7 @@ interface QuotaStateFile {
  * Serialized quota state (dates as strings).
  */
 interface QuotaStateSerialized {
-  planId: string;
+  planId: number;
   used: number;
   limit: number;
   period: QuotaPeriod;
@@ -49,7 +49,7 @@ interface QuotaStateSerialized {
  * This interface allows both PlanConfig and CodingPlan to be used.
  */
 interface PlanQuotaInfo {
-  id?: string;
+  id?: number;
   quota: {
     limit: number;
     period: QuotaPeriod;
@@ -72,7 +72,7 @@ interface PlanQuotaInfo {
 export class QuotaManager {
   private readonly quotaStatePath: string;
   private readonly syncIntervalMs: number;
-  private readonly quotaStates: Map<string, QuotaState> = new Map();
+  private readonly quotaStates: Map<number, QuotaState> = new Map();
   private syncInterval: NodeJS.Timeout | null = null;
   private initialized: boolean = false;
   private planUsageTracker: PlanUsageTracker | null = null;
@@ -147,7 +147,7 @@ export class QuotaManager {
    * @param planId - The plan identifier
    * @returns Quota state or undefined
    */
-  getQuotaState(planId: string): QuotaState | undefined {
+  getQuotaState(planId: number): QuotaState | undefined {
     return this.quotaStates.get(planId);
   }
 
@@ -156,7 +156,7 @@ export class QuotaManager {
    *
    * @returns Map of plan ID to quota state
    */
-  getAllQuotaStates(): Map<string, QuotaState> {
+  getAllQuotaStates(): Map<number, QuotaState> {
     return new Map(this.quotaStates);
   }
 
@@ -166,7 +166,7 @@ export class QuotaManager {
    * @param planId - The plan identifier
    * @returns true if quota remains
    */
-  hasRemainingQuota(planId: string): boolean {
+  hasRemainingQuota(planId: number): boolean {
     const state = this.quotaStates.get(planId);
     if (!state) {
       return false;
@@ -180,7 +180,7 @@ export class QuotaManager {
    * @param planId - The plan identifier
    * @returns Remaining quota (0 if no state)
    */
-  getRemainingQuota(planId: string): number {
+  getRemainingQuota(planId: number): number {
     const state = this.quotaStates.get(planId);
     if (!state) {
       return 0;
@@ -195,7 +195,7 @@ export class QuotaManager {
    * @param amount - Amount to consume
    * @returns true if consumption succeeded, false if would exceed limit
    */
-  consumeQuota(planId: string, amount: number = 1): boolean {
+  consumeQuota(planId: number, amount: number = 1): boolean {
     const state = this.quotaStates.get(planId);
     if (!state) {
       return false;
@@ -236,7 +236,7 @@ export class QuotaManager {
    * @param planId - The plan identifier
    * @param amount - Amount to refund
    */
-  refundQuota(planId: string, amount: number = 1): void {
+  refundQuota(planId: number, amount: number = 1): void {
     const state = this.quotaStates.get(planId);
     if (!state) {
       return;
@@ -262,7 +262,7 @@ export class QuotaManager {
    *
    * @param planId - The plan identifier
    */
-  resetQuota(planId: string): void {
+  resetQuota(planId: number): void {
     const state = this.quotaStates.get(planId);
     if (!state) {
       return;
@@ -281,7 +281,7 @@ export class QuotaManager {
    * @param planId - The plan identifier
    * @param newLimit - New quota limit
    */
-  updatePlanQuota(planId: string, newLimit: number): void {
+  updatePlanQuota(planId: number, newLimit: number): void {
     const state = this.quotaStates.get(planId);
     if (state) {
       state.limit = newLimit;
@@ -294,7 +294,7 @@ export class QuotaManager {
    *
    * @param planId - The plan identifier
    */
-  removePlan(planId: string): void {
+  removePlan(planId: number): void {
     this.quotaStates.delete(planId);
     logger.info('Quota state removed for plan', { planId });
   }
@@ -336,7 +336,8 @@ export class QuotaManager {
     const states: Record<string, QuotaStateSerialized> = {};
 
     for (const [planId, state] of this.quotaStates) {
-      states[planId] = {
+      // Use string key for JSON serialization
+      states[String(planId)] = {
         planId: state.planId,
         used: state.used,
         limit: state.limit,
@@ -382,8 +383,8 @@ export class QuotaManager {
   /**
    * Load persisted state from file.
    */
-  private async loadPersistedState(): Promise<Map<string, QuotaState>> {
-    const states = new Map<string, QuotaState>();
+  private async loadPersistedState(): Promise<Map<number, QuotaState>> {
+    const states = new Map<number, QuotaState>();
 
     try {
       await access(this.quotaStatePath, constants.R_OK);
@@ -396,7 +397,14 @@ export class QuotaManager {
       const content = await readFile(this.quotaStatePath, 'utf-8');
       const data = JSON.parse(content) as QuotaStateFile;
 
-      for (const [planId, serialized] of Object.entries(data.states)) {
+      for (const [planIdStr, serialized] of Object.entries(data.states)) {
+        // Convert string key back to number
+        const planId = parseInt(planIdStr, 10);
+        if (isNaN(planId)) {
+          logger.warn('Skipping invalid planId in quota state', { planIdStr });
+          continue;
+        }
+
         states.set(planId, {
           planId: serialized.planId,
           used: serialized.used,

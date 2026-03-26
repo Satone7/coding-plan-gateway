@@ -22,7 +22,7 @@ export interface TokenUsage {
  * Provider metrics for request tracking.
  */
 export interface ProviderMetrics {
-  planId: string;
+  planId: number;
   planName: string;
   model: string;
   durationMs: number;

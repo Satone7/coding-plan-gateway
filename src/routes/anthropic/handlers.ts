@@ -88,7 +88,7 @@ function validateAndParse(request: FastifyRequest<{ Body: AnthropicMessageReques
 /**
  * Get decrypted API key for a plan.
  */
-async function fetchApiKey(repository: IPlanRepository, planId: string): Promise<string> {
+async function fetchApiKey(repository: IPlanRepository, planId: number): Promise<string> {
   const apiKey = await repository.getDecryptedApiKey(planId);
   if (!apiKey) {
     throw createGatewayError('INTERNAL_ERROR', 'Failed to get API key for plan', { planId });

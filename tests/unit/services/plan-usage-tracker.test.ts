@@ -57,24 +57,24 @@ describe('PlanUsageTracker', () => {
     it('should track daily usage for a plan', async () => {
       await tracker.initialize();
 
-      tracker.incrementDailyUsage('plan-1');
-      tracker.incrementDailyUsage('plan-1');
-      tracker.incrementDailyUsage('plan-1');
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
 
       expect(tracker.getRecordCount()).toBe(1);
-      expect(tracker.getTotalUsage('plan-1')).toBe(3);
+      expect(tracker.getTotalUsage(1)).toBe(3);
     });
 
     it('should track usage for multiple plans', async () => {
       await tracker.initialize();
 
-      tracker.incrementDailyUsage('plan-1');
-      tracker.incrementDailyUsage('plan-2');
-      tracker.incrementDailyUsage('plan-1');
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(2);
+      tracker.incrementDailyUsage(1);
 
       expect(tracker.getRecordCount()).toBe(2);
-      expect(tracker.getTotalUsage('plan-1')).toBe(2);
-      expect(tracker.getTotalUsage('plan-2')).toBe(1);
+      expect(tracker.getTotalUsage(1)).toBe(2);
+      expect(tracker.getTotalUsage(2)).toBe(1);
     });
   });
 
@@ -82,19 +82,19 @@ describe('PlanUsageTracker', () => {
     it('should decrement daily usage', async () => {
       await tracker.initialize();
 
-      tracker.incrementDailyUsage('plan-1');
-      tracker.incrementDailyUsage('plan-1');
-      tracker.decrementDailyUsage('plan-1');
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+      tracker.decrementDailyUsage(1);
 
-      expect(tracker.getTotalUsage('plan-1')).toBe(1);
+      expect(tracker.getTotalUsage(1)).toBe(1);
     });
 
     it('should not go below zero', async () => {
       await tracker.initialize();
 
-      tracker.decrementDailyUsage('plan-1');
+      tracker.decrementDailyUsage(1);
 
-      expect(tracker.getTotalUsage('plan-1')).toBe(0);
+      expect(tracker.getTotalUsage(1)).toBe(0);
     });
   });
 
@@ -102,19 +102,19 @@ describe('PlanUsageTracker', () => {
     it('should generate usage report for a plan', async () => {
       await tracker.initialize();
 
-      tracker.incrementDailyUsage('plan-1');
-      tracker.incrementDailyUsage('plan-1');
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
 
       const planInfo = {
-        id: 'plan-1',
+        id: 1,
         name: 'Test Plan',
         quota: { limit: 100, period: 'monthly' as const },
       };
 
-      const report = tracker.getUsageReport('plan-1', planInfo);
+      const report = tracker.getUsageReport(1, planInfo);
 
       expect(report).toBeDefined();
-      expect(report?.planId).toBe('plan-1');
+      expect(report?.planId).toBe(1);
       expect(report?.planName).toBe('Test Plan');
       expect(report?.totalRequests).toBe(2);
       expect(report?.limit).toBe(100);
@@ -126,12 +126,12 @@ describe('PlanUsageTracker', () => {
       await tracker.initialize();
 
       const planInfo = {
-        id: 'non-existent',
+        id: 999999,
         name: 'Test Plan',
         quota: { limit: 100, period: 'monthly' as const },
       };
 
-      const report = tracker.getUsageReport('non-existent', planInfo);
+      const report = tracker.getUsageReport(999999, planInfo);
 
       // Returns a report with 0 usage when no data exists
       expect(report).toBeDefined();
@@ -142,13 +142,13 @@ describe('PlanUsageTracker', () => {
       await tracker.initialize();
 
       const planInfo = {
-        id: 'plan-1',
+        id: 1,
         name: 'Test Plan',
         quota: { limit: 100, period: 'daily' as const },
       };
 
-      tracker.incrementDailyUsage('plan-1');
-      const report = tracker.getUsageReport('plan-1', planInfo);
+      tracker.incrementDailyUsage(1);
+      const report = tracker.getUsageReport(1, planInfo);
 
       expect(report?.resetAt).toBeInstanceOf(Date);
     });
@@ -157,13 +157,13 @@ describe('PlanUsageTracker', () => {
       await tracker.initialize();
 
       const planInfo = {
-        id: 'plan-1',
+        id: 1,
         name: 'Test Plan',
         quota: { limit: 100, period: 'total' as const },
       };
 
-      tracker.incrementDailyUsage('plan-1');
-      const report = tracker.getUsageReport('plan-1', planInfo);
+      tracker.incrementDailyUsage(1);
+      const report = tracker.getUsageReport(1, planInfo);
 
       expect(report?.resetAt).toBeNull();
     });
@@ -173,10 +173,10 @@ describe('PlanUsageTracker', () => {
     it('should adjust usage to new value', async () => {
       await tracker.initialize();
 
-      tracker.incrementDailyUsage('plan-1');
-      tracker.incrementDailyUsage('plan-1');
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
 
-      const result = tracker.adjustUsage('plan-1', 100, 500, 'count', 100);
+      const result = tracker.adjustUsage(1, 100, 500, 'count', 100);
 
       expect(result.oldValue).toBe(2);
       expect(result.newValue).toBe(100);
@@ -186,10 +186,10 @@ describe('PlanUsageTracker', () => {
     it('should record adjustment in history', async () => {
       await tracker.initialize();
 
-      tracker.incrementDailyUsage('plan-1');
-      tracker.adjustUsage('plan-1', 50, 100, 'count', 50);
+      tracker.incrementDailyUsage(1);
+      tracker.adjustUsage(1, 50, 100, 'count', 50);
 
-      const history = tracker.getAdjustmentHistory('plan-1');
+      const history = tracker.getAdjustmentHistory(1);
 
       expect(history).toHaveLength(1);
       expect(history[0]?.oldValue).toBe(1);
@@ -200,7 +200,7 @@ describe('PlanUsageTracker', () => {
     it('should generate warning when exceeding limit', async () => {
       await tracker.initialize();
 
-      const result = tracker.adjustUsage('plan-1', 150, 100, 'percent', 150);
+      const result = tracker.adjustUsage(1, 150, 100, 'percent', 150);
 
       expect(result.warning).toBeDefined();
       expect(result.warning).toContain('exceeds quota limit');
@@ -209,7 +209,7 @@ describe('PlanUsageTracker', () => {
     it('should not generate warning when under limit', async () => {
       await tracker.initialize();
 
-      const result = tracker.adjustUsage('plan-1', 50, 100, 'count', 50);
+      const result = tracker.adjustUsage(1, 50, 100, 'count', 50);
 
       expect(result.warning).toBeUndefined();
     });
@@ -219,11 +219,11 @@ describe('PlanUsageTracker', () => {
     it('should return adjustment history for a plan', async () => {
       await tracker.initialize();
 
-      tracker.adjustUsage('plan-1', 10, 100, 'count', 10);
-      tracker.adjustUsage('plan-1', 20, 100, 'count', 20);
-      tracker.adjustUsage('plan-2', 30, 100, 'count', 30);
+      tracker.adjustUsage(1, 10, 100, 'count', 10);
+      tracker.adjustUsage(1, 20, 100, 'count', 20);
+      tracker.adjustUsage(2, 30, 100, 'count', 30);
 
-      const history = tracker.getAdjustmentHistory('plan-1');
+      const history = tracker.getAdjustmentHistory(1);
 
       expect(history).toHaveLength(2);
     });
@@ -231,11 +231,11 @@ describe('PlanUsageTracker', () => {
     it('should limit results', async () => {
       await tracker.initialize();
 
-      tracker.adjustUsage('plan-1', 10, 100, 'count', 10);
-      tracker.adjustUsage('plan-1', 20, 100, 'count', 20);
-      tracker.adjustUsage('plan-1', 30, 100, 'count', 30);
+      tracker.adjustUsage(1, 10, 100, 'count', 10);
+      tracker.adjustUsage(1, 20, 100, 'count', 20);
+      tracker.adjustUsage(1, 30, 100, 'count', 30);
 
-      const history = tracker.getAdjustmentHistory('plan-1', 2);
+      const history = tracker.getAdjustmentHistory(1, 2);
 
       expect(history).toHaveLength(2);
     });
@@ -243,8 +243,8 @@ describe('PlanUsageTracker', () => {
     it('should return all history when planId not specified', async () => {
       await tracker.initialize();
 
-      tracker.adjustUsage('plan-1', 10, 100, 'count', 10);
-      tracker.adjustUsage('plan-2', 20, 100, 'count', 20);
+      tracker.adjustUsage(1, 10, 100, 'count', 10);
+      tracker.adjustUsage(2, 20, 100, 'count', 20);
 
       const history = tracker.getAdjustmentHistory();
 
@@ -256,9 +256,9 @@ describe('PlanUsageTracker', () => {
     it('should persist and load data', async () => {
       await tracker.initialize();
 
-      tracker.incrementDailyUsage('plan-1');
-      tracker.incrementDailyUsage('plan-1');
-      tracker.adjustUsage('plan-1', 50, 100, 'count', 50);
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+      tracker.adjustUsage(1, 50, 100, 'count', 50);
       await tracker.persist();
 
       // Create new tracker and load persisted data
@@ -311,7 +311,7 @@ describe('PlanUsageTracker', () => {
     it('should gracefully shutdown', async () => {
       await tracker.initialize();
 
-      tracker.incrementDailyUsage('plan-1');
+      tracker.incrementDailyUsage(1);
       tracker.startPeriodicSync();
 
       await tracker.shutdown();

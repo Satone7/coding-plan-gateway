@@ -9,8 +9,28 @@ import { z } from 'zod';
 
 /**
  * UUID v4 schema.
+ * @deprecated Use planIdSchema for new integer-based plan IDs
  */
 export const uuidSchema = z.string().uuid();
+
+/**
+ * Plan ID schema (integer).
+ * Validates positive integers up to MAX_SAFE_INTEGER.
+ */
+export const planIdSchema = z.number()
+  .int()
+  .positive()
+  .max(Number.MAX_SAFE_INTEGER);
+
+/**
+ * Plan ID string schema (for URL params).
+ * Parses string to integer and validates.
+ */
+export const planIdParamSchema = z.string()
+  .transform((val) => parseInt(val, 10))
+  .refine((val) => !isNaN(val) && val > 0 && val <= Number.MAX_SAFE_INTEGER, {
+    message: 'Plan ID must be a positive integer',
+  });
 
 /**
  * Non-empty string schema.
@@ -54,7 +74,7 @@ export const quotaConfigSchema = z.object({
  * Quota state schema.
  */
 export const quotaStateSchema = z.object({
-  planId: uuidSchema,
+  planId: planIdSchema,
   used: nonNegativeIntegerSchema,
   limit: positiveIntegerSchema,
   period: quotaPeriodSchema,
@@ -98,7 +118,7 @@ export const updatePlanSchema = z.object({
  * Full coding plan schema (with all fields).
  */
 export const codingPlanSchema = z.object({
-  id: uuidSchema,
+  id: planIdSchema,
   name: z.string().min(1).max(100),
   baseUrl: httpsUrlSchema,
   apiKeyEncrypted: nonEmptyStringSchema,

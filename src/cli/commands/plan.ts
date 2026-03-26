@@ -126,6 +126,15 @@ export async function handlePlanSetUsageCommand(context: CliContext): Promise<vo
     exit(CLI_EXIT_CODES.GENERAL_ERROR);
   }
 
+  // Parse planId to number
+  const planIdNum = Number(planId);
+  if (isNaN(planIdNum) || planIdNum <= 0) {
+    console.error(formatter.formatError(
+      createCliError('validation', '--id must be a valid positive number', CLI_EXIT_CODES.GENERAL_ERROR, 'Use: cpg plan set-usage --id <plan-id> --count <value>')
+    ));
+    exit(CLI_EXIT_CODES.GENERAL_ERROR);
+  }
+
   // Validate mutually exclusive flags
   if (count !== undefined && percent !== undefined) {
     console.error(formatter.formatError(
@@ -176,7 +185,7 @@ export async function handlePlanSetUsageCommand(context: CliContext): Promise<vo
   }
 
   // Find the plan
-  const plan = await repository.findById(planId);
+  const plan = await repository.findById(planIdNum);
   if (!plan) {
     console.error(formatter.formatError(
       createCliError('not_found', `Plan not found: ${planId}`, CLI_EXIT_CODES.GENERAL_ERROR)
@@ -201,7 +210,7 @@ export async function handlePlanSetUsageCommand(context: CliContext): Promise<vo
   }
 
   // Perform adjustment
-  const result = tracker.adjustUsage(planId, newValue, plan.quota.limit, adjustmentType, adjustmentValue);
+  const result = tracker.adjustUsage(planIdNum, newValue, plan.quota.limit, adjustmentType, adjustmentValue);
 
   // Persist changes
   await tracker.persist();
@@ -209,7 +218,7 @@ export async function handlePlanSetUsageCommand(context: CliContext): Promise<vo
   // Display result
   const displayResult: AdjustmentResultDisplay = {
     adjustmentId: result.adjustmentId,
-    planId: result.planId,
+    planId: planIdNum,
     planName: plan.name,
     oldValue: result.oldValue,
     newValue: result.newValue,

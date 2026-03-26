@@ -9,8 +9,10 @@ import { registerOpenAIRoutes } from './openai';
 import { registerAnthropicRoutes } from './anthropic';
 import { registerAdminRoutes } from './admin';
 import { createPlanRepository } from '@/services/plan-repository';
+import { createPlanIdCounter } from '@/services/plan-id-counter';
 import type { QuotaManager } from '@/services/quota-manager';
 import { createRequestProxy } from '@/services/request-proxy';
+import { dirname, join } from 'path';
 
 /**
  * Register all routes with the Fastify instance.
@@ -45,6 +47,16 @@ export async function registerRoutes(
   const encryptionKey = process.env.ENCRYPTION_KEY;
   const configPath = process.env.CONFIG_PATH ?? './config.yaml';
   const repository = createPlanRepository(configPath, encryptionKey);
+
+  // Create and initialize PlanIdCounter
+  const configDir = dirname(configPath);
+  const counterPath = join(configDir, 'plan-id-counter.json');
+  const planIdCounter = createPlanIdCounter({ counterPath });
+  await planIdCounter.initialize();
+
+  // Connect counter to repository
+  repository.setPlanIdCounter(planIdCounter);
+
   const proxy = createRequestProxy();
 
   // Register API routes

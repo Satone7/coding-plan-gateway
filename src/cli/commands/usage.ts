@@ -39,7 +39,15 @@ export async function handleUsageReportCommand(context: CliContext): Promise<voi
   const planId = args.options.plan as string | undefined;
 
   if (planId) {
-    return handlePlanUsageReport(context, planId);
+    // Parse planId to number
+    const planIdNum = Number(planId);
+    if (isNaN(planIdNum) || planIdNum <= 0) {
+      console.error(formatter.formatError(
+        createCliError('validation', '--plan must be a valid positive number', CLI_EXIT_CODES.GENERAL_ERROR)
+      ));
+      exit(CLI_EXIT_CODES.GENERAL_ERROR);
+    }
+    return handlePlanUsageReport(context, planIdNum);
   }
 
   // Original API key usage report
@@ -115,7 +123,7 @@ async function handleApiKeyUsageReport(context: CliContext): Promise<void> {
 /**
  * Handle plan usage report (new functionality).
  */
-async function handlePlanUsageReport(context: CliContext, planId: string): Promise<void> {
+async function handlePlanUsageReport(context: CliContext, planId: number): Promise<void> {
   const { args, formatter } = context;
 
   // Parse filter arguments
@@ -198,7 +206,7 @@ async function handlePlanUsageReport(context: CliContext, planId: string): Promi
 
   // Format and output
   const displayReport: PlanUsageReportDisplay = {
-    planId: report.planId,
+    planId,
     planName: report.planName,
     totalRequests: report.totalRequests,
     limit: report.limit,

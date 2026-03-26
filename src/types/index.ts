@@ -182,3 +182,12 @@ export type {
 } from './rpm-tracker';
 
 export { DEFAULT_RPM_TRACKER_CONFIG } from './rpm-tracker';
+
+// Plan ID Counter types
+export type {
+  PlanIdCounterState,
+  MigrationLog,
+  PlanIdCounterConfig,
+} from './plan-id-counter';
+
+export { MAX_SAFE_PLAN_ID } from './plan-id-counter';

@@ -70,7 +70,7 @@ export interface OutputFormatter {
  * Plan usage report display format.
  */
 export interface PlanUsageReportDisplay {
-  planId: string;
+  planId: number;
   planName: string;
   totalRequests: number;
   limit: number;
@@ -92,7 +92,7 @@ export interface PlanUsageReportDisplay {
  * Plan usage summary for list display.
  */
 export interface PlanUsageSummaryDisplay {
-  planId: string;
+  planId: number;
   planName: string;
   limit: number;
   used: number;
@@ -107,7 +107,7 @@ export interface PlanUsageSummaryDisplay {
  */
 export interface AdjustmentResultDisplay {
   adjustmentId: string;
-  planId: string;
+  planId: number;
   planName: string;
   oldValue: number;
   newValue: number;
