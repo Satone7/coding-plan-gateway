@@ -119,16 +119,22 @@ As a system administrator, I need the gateway to consider current request rates 
 **Expiration Configuration**
 - **FR-013**: Plans MUST support an optional `expiresOn` field specifying the day of month (1-31) when the plan's quota resets/expires.
 - **FR-014**: Plans MUST support an optional `expiresAt` field specifying an exact ISO 8601 datetime for one-time plan expiration.
-- **FR-015**: Plans MUST support an optional `weight` field for load balancing weight configuration.
-- **FR-016**: When `expiresOn` day doesn't exist in the current month (e.g., 31st in February), the system MUST use the last day of the month.
+- **FR-015**: Plans MUST support an optional `weight` field (integer, range 1-100, default 1) for load balancing weight configuration. Higher values indicate higher priority.
+- **FR-016**: When both `expiresOn` and `expiresAt` are specified, `expiresAt` MUST take precedence as the effective expiration.
+- **FR-017**: When `expiresOn` day doesn't exist in the current month (e.g., 31st in February), the system MUST use the last day of the month.
 
 **RPM Tracking**
-- **FR-017**: The gateway MUST track requests per plan using a sliding window of the last 60 seconds.
-- **FR-018**: RPM (Requests Per Minute) MUST be calculated as the count of requests in the sliding window.
+- **FR-018**: The gateway MUST track requests per plan using a sliding window of the last 60 seconds.
+- **FR-019**: RPM (Requests Per Minute) MUST be calculated as the count of requests in the sliding window.
+
+### Non-Functional Requirements
+
+**Performance**
+- **NFR-001**: Load balancing decision latency MUST be <5ms (pure in-memory operation, included within the existing 50ms routing overhead target).
 
 ### Key Entities
 
-- **Plan Configuration**: Extended to include `expiresOn` (day of month, optional), `expiresAt` (ISO datetime, optional), and `weight` (integer, optional) fields.
+- **Plan Configuration**: Extended to include `expiresOn` (day of month 1-31, optional), `expiresAt` (ISO 8601 datetime, optional, takes precedence over `expiresOn`), and `weight` (integer 1-100, optional, default 1) fields.
 - **Quota State**: Existing entity tracking used/limit quota per plan.
 - **RPM Tracker**: New entity tracking request timestamps per plan using a sliding window.
 - **Load Balancing Config**: Configuration specifying the strategy and factor weights for plan selection.
@@ -146,6 +152,15 @@ As a system administrator, I need the gateway to consider current request rates 
 - **SC-006**: Plans with lower current RPM receive higher selection priority when other factors are equal.
 - **SC-007**: All load balancing strategies (quota-priority, round-robin, weighted-round-robin, random) pass their respective test suites.
 - **SC-008**: RPM calculation accurately reflects requests in the last 60-second sliding window.
+- **SC-009**: Load balancing decision completes in <5ms (p95) for plan selection algorithm.
+
+## Clarifications
+
+### Session 2026-03-26
+
+- Q: What is the valid range for the `weight` field? → A: 1-100 (integer), default value is 1 if not specified. Higher values indicate higher priority.
+- Q: When both `expiresOn` and `expiresAt` are specified, which takes precedence? → A: `expiresAt` takes precedence as it provides a more precise expiration timestamp.
+- Q: What is the latency target for load balancing decision? → A: <5ms for the selection algorithm itself (pure in-memory operation), included within the existing 50ms routing overhead target.
 
 ## Assumptions
 
