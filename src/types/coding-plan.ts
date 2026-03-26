@@ -41,6 +41,8 @@ export interface QuotaConfig {
  *   quota: { limit: 1000, period: 'monthly' },
  *   timeout: 30000,
  *   status: 'active',
+ *   expiresOn: 28, // Expires on 28th of each month
+ *   weight: 2, // Higher priority for load balancing
  *   createdAt: new Date(),
  *   updatedAt: new Date(),
  * };
@@ -70,6 +72,15 @@ export interface CodingPlan {
 
   /** Current operational status */
   status: PlanStatus;
+
+  /** Day of month when quota resets/expires (1-31). Use last day of month if day doesn't exist. */
+  expiresOn?: number;
+
+  /** Exact ISO 8601 datetime for one-time expiration. Takes precedence over expiresOn. */
+  expiresAt?: string;
+
+  /** Load balancing weight (1-100, default 1). Higher values = higher priority. */
+  weight?: number;
 
   /** Creation timestamp */
   createdAt: Date;

@@ -160,3 +160,25 @@ export {
   adjustmentHistoryStorageSchema,
   usageAdjustmentRequestSchema,
 } from './plan-usage';
+
+// Load balancing types
+export type {
+  LoadBalanceStrategy,
+  FactorWeights,
+  LoadBalanceConfig,
+  PlanScore,
+} from './load-balancing';
+
+export {
+  DEFAULT_FACTOR_WEIGHTS,
+  DEFAULT_LOAD_BALANCE_CONFIG,
+} from './load-balancing';
+
+// RPM tracker types
+export type {
+  RpmBucket,
+  RpmTrackerState,
+  RpmTrackerConfig,
+} from './rpm-tracker';
+
+export { DEFAULT_RPM_TRACKER_CONFIG } from './rpm-tracker';

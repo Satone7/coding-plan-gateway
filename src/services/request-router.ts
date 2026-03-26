@@ -1,14 +1,17 @@
 /**
  * RequestRouter - Routes requests to appropriate coding plans.
- * Integrates PlanSelector, CircuitBreaker, QuotaManager, and failover logic.
+ * Integrates PlanSelector, CircuitBreaker, QuotaManager, RpmTracker, and failover logic.
  */
 
 import { randomUUID } from 'crypto';
 import type { IPlanRepository } from '@/services/plan-repository';
-import { PlanSelector, createPlanSelector } from '@/services/plan-selector';
+import { PlanSelector, createPlanSelector, type SelectionContext } from '@/services/plan-selector';
 import { CircuitBreaker, createCircuitBreaker } from '@/services/circuit-breaker';
 import type { QuotaManager } from '@/services/quota-manager';
+import { RpmTracker, createRpmTracker } from '@/services/rpm-tracker';
 import type { CodingPlan, QuotaState } from '@/types';
+import type { LoadBalanceConfig } from '@/types/load-balancing';
+import { DEFAULT_LOAD_BALANCE_CONFIG } from '@/types/load-balancing';
 import { createGatewayError } from '@/types';
 import { logger } from '@/utils/logger';
 
@@ -53,13 +56,21 @@ export class RequestRouter {
   private readonly planSelector: PlanSelector;
   private readonly circuitBreaker: CircuitBreaker;
   private readonly quotaManager: QuotaManager | null;
+  private readonly rpmTracker: RpmTracker;
+  private readonly loadBalanceConfig: LoadBalanceConfig;
 
   /**
    * Create a new RequestRouter.
    */
-  constructor(repository: IPlanRepository, quotaManager?: QuotaManager) {
+  constructor(
+    repository: IPlanRepository,
+    quotaManager?: QuotaManager,
+    loadBalanceConfig?: LoadBalanceConfig
+  ) {
     this.repository = repository;
-    this.planSelector = createPlanSelector();
+    this.loadBalanceConfig = loadBalanceConfig ?? DEFAULT_LOAD_BALANCE_CONFIG;
+    this.rpmTracker = createRpmTracker();
+    this.planSelector = createPlanSelector(this.loadBalanceConfig, this.rpmTracker);
     this.circuitBreaker = createCircuitBreaker();
     this.quotaManager = quotaManager ?? null;
   }
@@ -146,9 +157,16 @@ export class RequestRouter {
       return this.handleAllExhausted(model, requestId, availablePlans.length);
     }
 
-    // Select the best plan based on quota
+    // Select the best plan based on load balancing strategy
     const quotaStates = this.quotaManager?.getAllQuotaStates() ?? new Map<string, QuotaState>();
-    const selectedPlan = this.planSelector.selectBestPlan(plansWithQuota, quotaStates);
+    const context: SelectionContext = {
+      model,
+      plans: plansWithQuota,
+      quotaStates,
+      rpmTracker: this.rpmTracker,
+      config: this.loadBalanceConfig,
+    };
+    const selectedPlan = this.planSelector.selectBestPlan(context);
 
     if (!selectedPlan) {
       logger.warn('No suitable plan found after quota filtering', {
@@ -158,6 +176,9 @@ export class RequestRouter {
       });
       return emptyResult(requestId);
     }
+
+    // Record the request in RPM tracker for load balancing
+    this.rpmTracker.recordRequest(selectedPlan.id);
 
     // Get alternative plans for failover (exclude selected)
     const alternativePlans = plansWithQuota.filter(
@@ -307,6 +328,13 @@ export class RequestRouter {
   }
 
   /**
+   * Get the RPM tracker instance.
+   */
+  getRpmTracker(): RpmTracker {
+    return this.rpmTracker;
+  }
+
+  /**
    * Reset all circuits.
    */
   reset(): void {
@@ -320,7 +348,8 @@ export class RequestRouter {
  */
 export function createRequestRouter(
   repository: IPlanRepository,
-  quotaManager?: QuotaManager
+  quotaManager?: QuotaManager,
+  loadBalanceConfig?: LoadBalanceConfig
 ): RequestRouter {
-  return new RequestRouter(repository, quotaManager);
+  return new RequestRouter(repository, quotaManager, loadBalanceConfig);
 }

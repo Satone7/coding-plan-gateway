@@ -1,9 +1,19 @@
 /**
  * PlanSelector - Selects the best coding plan based on model availability and quota.
- * Implements intelligent plan selection for request routing.
+ * Implements intelligent plan selection for request routing with multiple strategies.
+ *
+ * @see research.md R2 for strategy pattern decision
  */
 
 import type { CodingPlan, QuotaState } from '@/types';
+import type { LoadBalanceConfig, FactorWeights, PlanScore } from '@/types/load-balancing';
+import { DEFAULT_LOAD_BALANCE_CONFIG, DEFAULT_FACTOR_WEIGHTS } from '@/types/load-balancing';
+import {
+  calculateEffectiveExpiration,
+  calculateExpirationScore,
+  calculateRpmScore,
+  calculateQuotaScore,
+} from '@/utils/expiration';
 import { logger } from '@/utils/logger';
 
 /**
@@ -13,6 +23,46 @@ export interface FindPlansOptions {
   /** Include inactive plans (paused, error, exhausted) */
   includeInactive?: boolean;
 }
+
+/**
+ * Context for plan selection strategies.
+ */
+export interface SelectionContext {
+  /** Model being requested */
+  model: string;
+  /** Available plans (already filtered by model and status) */
+  plans: CodingPlan[];
+  /** Current quota states */
+  quotaStates: Map<string, QuotaState>;
+  /** RPM tracker for load awareness (optional) */
+  rpmTracker?: RpmTrackerInterface;
+  /** Load balancing configuration */
+  config: LoadBalanceConfig;
+}
+
+/**
+ * Interface for RPM tracker (to avoid circular dependency).
+ */
+export interface RpmTrackerInterface {
+  getRpm(planId: string): number;
+}
+
+/**
+ * Strategy function type for plan selection.
+ */
+type StrategyFunction = (context: SelectionContext) => CodingPlan | undefined;
+
+/**
+ * Round-robin state per model.
+ * Tracks the last selected plan index for each model.
+ */
+const roundRobinState: Map<string, number> = new Map();
+
+/**
+ * Weighted round-robin state per model.
+ * Tracks the current weight counter for each plan.
+ */
+const weightedRoundRobinState: Map<string, Map<string, number>> = new Map();
 
 /**
  * PlanSelector - Handles plan selection logic for request routing.
@@ -27,6 +77,28 @@ export interface FindPlansOptions {
  * ```
  */
 export class PlanSelector {
+  private config: LoadBalanceConfig;
+  private rpmTracker?: RpmTrackerInterface;
+
+  constructor(config?: LoadBalanceConfig, rpmTracker?: RpmTrackerInterface) {
+    this.config = config ?? DEFAULT_LOAD_BALANCE_CONFIG;
+    this.rpmTracker = rpmTracker;
+  }
+
+  /**
+   * Update the load balancing configuration.
+   */
+  setConfig(config: LoadBalanceConfig): void {
+    this.config = config;
+  }
+
+  /**
+   * Set the RPM tracker for load-aware selection.
+   */
+  setRpmTracker(tracker: RpmTrackerInterface): void {
+    this.rpmTracker = tracker;
+  }
+
   /**
    * Select the best plan for a given model.
    *
@@ -56,8 +128,17 @@ export class PlanSelector {
       return undefined;
     }
 
-    // Select the best plan based on quota
-    return this.selectBestPlan(activePlans, quotaStates);
+    // Build selection context
+    const context: SelectionContext = {
+      model,
+      plans: activePlans,
+      quotaStates,
+      rpmTracker: this.rpmTracker,
+      config: this.config,
+    };
+
+    // Select using configured strategy
+    return this.selectBestPlan(context);
   }
 
   /**
@@ -98,40 +179,58 @@ export class PlanSelector {
   }
 
   /**
-   * Select the best plan from a list of candidates.
-   * Uses quota-based selection - prefers plans with highest remaining quota.
+   * Select the best plan using the configured strategy.
    *
-   * @param plans - Candidate plans (should be active)
-   * @param quotaStates - Current quota states
+   * Supports two call patterns for backward compatibility:
+   * - selectBestPlan(context: SelectionContext) - new API
+   * - selectBestPlan(plans: CodingPlan[], quotaStates: Map<string, QuotaState>) - legacy API
+   *
+   * @param contextOrPlans - Selection context or plans array
+   * @param quotaStates - Quota states (only used with legacy API)
    * @returns The best plan, or undefined if none available
    */
   selectBestPlan(
-    plans: CodingPlan[],
-    quotaStates: Map<string, QuotaState>
+    contextOrPlans: SelectionContext | CodingPlan[],
+    quotaStates?: Map<string, QuotaState>
   ): CodingPlan | undefined {
+    // Handle legacy API: selectBestPlan(plans, quotaStates)
+    let context: SelectionContext;
+    if (Array.isArray(contextOrPlans)) {
+      context = {
+        model: '',
+        plans: contextOrPlans,
+        quotaStates: quotaStates ?? new Map(),
+        config: this.config,
+        rpmTracker: this.rpmTracker,
+      };
+    } else {
+      context = contextOrPlans;
+    }
+
+    const { plans, config } = context;
+
     if (plans.length === 0) {
       return undefined;
     }
 
-    // Sort by remaining quota (descending)
-    const sortedPlans = this.sortByRemainingQuota(plans, quotaStates);
+    // Filter out exhausted plans
+    const availablePlans = plans.filter((plan) => {
+      const state = context.quotaStates.get(plan.id);
+      return !state || state.used < state.limit;
+    });
 
-    // Return the plan with highest remaining quota
-    // Skip plans that are exhausted
-    for (const plan of sortedPlans) {
-      const state = quotaStates.get(plan.id);
-      if (!state || state.used < state.limit) {
-        logger.debug('Selected best plan', {
-          planId: plan.id,
-          planName: plan.name,
-          remaining: state ? state.limit - state.used : plan.quota.limit,
-        });
-        return plan;
-      }
+    if (availablePlans.length === 0) {
+      return undefined;
     }
 
-    // All plans exhausted
-    return undefined;
+    // Single plan - return it directly
+    if (availablePlans.length === 1) {
+      return availablePlans[0];
+    }
+
+    // Get strategy function and execute
+    const strategy = getStrategy(config.strategy);
+    return strategy({ ...context, plans: availablePlans });
   }
 
   /**
@@ -206,10 +305,239 @@ export class PlanSelector {
 }
 
 /**
+ * Get the strategy function for a given strategy name.
+ */
+function getStrategy(strategy: string): StrategyFunction {
+  const strategies: Record<string, StrategyFunction> = {
+    'quota-priority': quotaPriorityStrategy,
+    'round-robin': roundRobinStrategy,
+    'weighted-round-robin': weightedRoundRobinStrategy,
+    'random': randomStrategy,
+  };
+
+  return strategies[strategy] ?? quotaPriorityStrategy;
+}
+
+/**
+ * Quota-priority strategy with multi-factor scoring.
+ * Selects the plan with the highest combined score.
+ */
+function quotaPriorityStrategy(context: SelectionContext): CodingPlan | undefined {
+  const { plans, quotaStates, rpmTracker, config } = context;
+  const weights = config.factorWeights ?? DEFAULT_FACTOR_WEIGHTS;
+
+  // Calculate scores for all plans
+  const scores = plans.map((plan) => calculatePlanScore(plan, quotaStates, rpmTracker, weights));
+
+  // Sort by total score descending
+  scores.sort((a, b) => b.totalScore - a.totalScore);
+
+  // Return the highest scoring plan
+  const best = scores[0];
+  if (!best) {
+    return undefined;
+  }
+
+  const selectedPlan = plans.find((p) => p.id === best.planId);
+  if (selectedPlan) {
+    logger.debug('Selected plan with multi-factor score', {
+      planId: selectedPlan.id,
+      planName: selectedPlan.name,
+      totalScore: best.totalScore,
+      components: best.components,
+    });
+  }
+
+  return selectedPlan;
+}
+
+/**
+ * Round-robin strategy.
+ * Cycles through plans in order for fair distribution.
+ */
+function roundRobinStrategy(context: SelectionContext): CodingPlan | undefined {
+  const { model, plans } = context;
+
+  if (plans.length === 0) {
+    return undefined;
+  }
+
+  // Get current index for this model
+  const currentIndex = roundRobinState.get(model) ?? 0;
+  const nextIndex = currentIndex % plans.length;
+
+  // Update state for next call
+  roundRobinState.set(model, nextIndex + 1);
+
+  const selectedPlan = plans[nextIndex];
+  if (!selectedPlan) {
+    return undefined;
+  }
+
+  logger.debug('Selected plan via round-robin', {
+    model,
+    planId: selectedPlan.id,
+    planName: selectedPlan.name,
+    index: nextIndex,
+  });
+
+  return selectedPlan;
+}
+
+/**
+ * Weighted round-robin strategy.
+ * Distributes requests proportionally to plan weights.
+ */
+function weightedRoundRobinStrategy(context: SelectionContext): CodingPlan | undefined {
+  const { model, plans } = context;
+
+  if (plans.length === 0) {
+    return undefined;
+  }
+
+  // Get or initialize weight state for this model
+  let modelState = weightedRoundRobinState.get(model);
+  if (!modelState) {
+    modelState = new Map();
+    weightedRoundRobinState.set(model, modelState);
+  }
+
+  // Initialize counters for new plans
+  for (const plan of plans) {
+    if (!modelState.has(plan.id)) {
+      modelState.set(plan.id, plan.weight ?? 1);
+    }
+  }
+
+  // Find plan with highest counter
+  let selectedPlan: CodingPlan | undefined;
+  let highestCounter = -1;
+
+  for (const plan of plans) {
+    const counter = modelState.get(plan.id) ?? 0;
+    if (counter > highestCounter) {
+      highestCounter = counter;
+      selectedPlan = plan;
+    }
+  }
+
+  if (!selectedPlan) {
+    return plans[0];
+  }
+
+  // Decrement counter for selected plan
+  const weight = selectedPlan.weight ?? 1;
+  const currentCounter = modelState.get(selectedPlan.id) ?? weight;
+  const newCounter = currentCounter - 1;
+
+  if (newCounter <= 0) {
+    // Reset to weight when counter reaches 0
+    modelState.set(selectedPlan.id, weight);
+  } else {
+    modelState.set(selectedPlan.id, newCounter);
+  }
+
+  logger.debug('Selected plan via weighted-round-robin', {
+    model,
+    planId: selectedPlan.id,
+    planName: selectedPlan.name,
+    weight,
+    previousCounter: highestCounter,
+  });
+
+  return selectedPlan;
+}
+
+/**
+ * Random strategy.
+ * Selects a plan uniformly at random.
+ */
+function randomStrategy(context: SelectionContext): CodingPlan | undefined {
+  const { plans } = context;
+
+  if (plans.length === 0) {
+    return undefined;
+  }
+
+  const randomIndex = Math.floor(Math.random() * plans.length);
+  const selectedPlan = plans[randomIndex];
+
+  if (!selectedPlan) {
+    return undefined;
+  }
+
+  logger.debug('Selected plan via random', {
+    planId: selectedPlan.id,
+    planName: selectedPlan.name,
+    index: randomIndex,
+  });
+
+  return selectedPlan;
+}
+
+/**
+ * Calculate multi-factor score for a plan.
+ */
+function calculatePlanScore(
+  plan: CodingPlan,
+  quotaStates: Map<string, QuotaState>,
+  rpmTracker?: RpmTrackerInterface,
+  weights: FactorWeights = DEFAULT_FACTOR_WEIGHTS
+): PlanScore {
+  // Calculate expiration score
+  const expiresAt = calculateEffectiveExpiration(plan);
+  const expirationScore = calculateExpirationScore(expiresAt);
+
+  // Calculate RPM score
+  let rpmScore = 100; // Default to highest if no tracker
+  if (rpmTracker) {
+    const currentRpm = rpmTracker.getRpm(plan.id);
+    // Use a reasonable max RPM for normalization (e.g., 60 requests/min)
+    const maxRpm = 60;
+    rpmScore = calculateRpmScore(currentRpm, maxRpm);
+  }
+
+  // Calculate quota score
+  const quotaState = quotaStates.get(plan.id);
+  const quotaScore = quotaState
+    ? calculateQuotaScore(quotaState.used, quotaState.limit)
+    : calculateQuotaScore(0, plan.quota.limit);
+
+  // Calculate weighted total
+  const totalScore =
+    expirationScore * weights.expiration +
+    rpmScore * weights.rpm +
+    quotaScore * weights.quota;
+
+  return {
+    planId: plan.id,
+    totalScore: Math.round(totalScore * 100) / 100, // Round to 2 decimal places
+    components: {
+      expiration: expirationScore,
+      rpm: rpmScore,
+      quota: quotaScore,
+    },
+  };
+}
+
+/**
+ * Reset all strategy state (useful for testing).
+ */
+export function resetStrategyState(): void {
+  roundRobinState.clear();
+  weightedRoundRobinState.clear();
+}
+
+/**
  * Create a new PlanSelector instance.
  *
+ * @param config - Optional load balancing configuration
+ * @param rpmTracker - Optional RPM tracker for load-aware selection
  * @returns A new PlanSelector instance
  */
-export function createPlanSelector(): PlanSelector {
-  return new PlanSelector();
+export function createPlanSelector(
+  config?: LoadBalanceConfig,
+  rpmTracker?: RpmTrackerInterface
+): PlanSelector {
+  return new PlanSelector(config, rpmTracker);
 }

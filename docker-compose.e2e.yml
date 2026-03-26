@@ -1,5 +1,6 @@
 # Docker Compose for E2E Testing Environment
-# Orchestrates the gateway and Claude Code test container
+# Uses production config.yaml but isolated data volumes for testing
+# This ensures tests use real configuration while keeping test data separate from production
 
 services:
   gateway:
@@ -8,17 +9,20 @@ services:
       context: .
       dockerfile: Dockerfile
       target: production
-    container_name: gateway
+    container_name: gateway-e2e
     ports:
-      - "8080:8080"
+      - "8081:8080"  # Different port to avoid conflict with production
     environment:
       - ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       - LOG_LEVEL=debug
       - GATEWAY_URL=http://localhost:8080
       - AUTH_EXEMPT_PATHS=/health,/ready,/internal/*
     volumes:
-      - ./e2e/test-config.yaml:/app/config.yaml:ro
-      - ./logs/gateway:/app/logs
+      # Use production config (read-only)
+      - ./config.yaml:/app/config.yaml:ro
+      # Isolated data volumes for testing (won't pollute production)
+      - e2e-api-keys:/app/data
+      - e2e-logs:/app/logs
     networks:
       - e2e-network
     healthcheck:
@@ -33,13 +37,13 @@ services:
     build:
       context: ./e2e
       dockerfile: Dockerfile
-    container_name: claude-code
+    container_name: claude-code-e2e
     environment:
-      - ANTHROPIC_BASE_URL=http://gateway:8080
+      - ANTHROPIC_BASE_URL=http://gateway-e2e:8080
       - ANTHROPIC_MODEL=kimi-k2.5
       - ANTHROPIC_API_KEY=cpg_Qnhp8ZikLlKutijYis0R78n8HP0roxgk
     volumes:
-      - ./logs/claude-code:/home/claude/.claude/logs
+      - e2e-claude-logs:/home/claude/.claude/logs
       - ./e2e/workspace:/workspace
     networks:
       - e2e-network
@@ -53,3 +57,9 @@ services:
 networks:
   e2e-network:
     driver: bridge
+
+volumes:
+  # Named volumes for test data isolation
+  e2e-api-keys:
+  e2e-logs:
+  e2e-claude-logs:
