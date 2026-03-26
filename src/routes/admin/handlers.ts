@@ -202,6 +202,8 @@ interface AdminHandlers {
   getQuotaStatus: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSuccessResponse>;
   /** POST /api/quota/:planId/reset - Reset quota for a plan */
   resetQuota: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSuccessResponse>;
+  /** POST /api/quota/:planId/sync - Sync quota state with PlanUsageTracker */
+  syncQuota: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSyncResponse>;
   /** POST /api/reload - Reload configuration */
   reloadConfig: (request: FastifyRequest, reply: FastifyReply) => Promise<ReloadResponse>;
   /** GET /api/plans/:planId/usage - Get plan usage report */
@@ -221,6 +223,15 @@ interface ReloadResponse {
   success: boolean;
   planCount?: number;
   error?: string;
+}
+
+/**
+ * Quota sync response.
+ */
+interface QuotaSyncResponse {
+  planId: number;
+  usage: number;
+  synced: boolean;
 }
 
 /**
@@ -649,6 +660,55 @@ export function createAdminHandlers(
       };
 
       return response;
+    },
+
+    /**
+     * POST /api/quota/:planId/sync - Sync quota state with PlanUsageTracker.
+     * Called by CLI after set-usage to update running server's QuotaManager.
+     */
+    async syncQuota(
+      request: FastifyRequest<{ Params: PlanParams }>,
+      _reply: FastifyReply
+    ): Promise<QuotaSyncResponse> {
+      const planId = parsePlanId(request.params.planId);
+
+      if (!quotaManager) {
+        throw createGatewayError(
+          'INTERNAL_ERROR',
+          'Quota management is not enabled'
+        );
+      }
+
+      if (!planUsageTracker) {
+        throw createGatewayError(
+          'INTERNAL_ERROR',
+          'Plan usage tracking is not enabled'
+        );
+      }
+
+      const plan = await repository.findById(planId);
+      if (!plan) {
+        throw createGatewayError('PLAN_NOT_FOUND', `Plan not found: ${planId}`);
+      }
+
+      // Get current usage from PlanUsageTracker
+      const usageData = planUsageTracker.getUsageForQuotaManager(planId);
+      const usage = usageData?.used ?? 0;
+
+      // Sync QuotaManager with PlanUsageTracker's usage
+      quotaManager.setUsedQuota(planId, usage);
+
+      logger.info('Quota synced via API', {
+        requestId: request.id,
+        planId,
+        usage,
+      });
+
+      return {
+        planId,
+        usage,
+        synced: true,
+      };
     },
 
     /**

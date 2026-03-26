@@ -549,6 +549,14 @@ export class PlanUsageTracker {
     const dir = dirname(this.planUsageDataPath);
     await mkdir(dir, { recursive: true });
 
+    // Ensure file exists for locking (proper-lockfile requires file to exist)
+    try {
+      await access(this.planUsageDataPath, constants.F_OK);
+    } catch {
+      // File doesn't exist, create empty file
+      await writeFile(this.planUsageDataPath, '{}', 'utf-8');
+    }
+
     // Use file locking to prevent concurrent writes
     const release = await lockfile.lock(this.planUsageDataPath, {
       retries: {
@@ -600,6 +608,14 @@ export class PlanUsageTracker {
     // Ensure directory exists
     const dir = dirname(this.adjustmentHistoryPath);
     await mkdir(dir, { recursive: true });
+
+    // Ensure file exists for locking (proper-lockfile requires file to exist)
+    try {
+      await access(this.adjustmentHistoryPath, constants.F_OK);
+    } catch {
+      // File doesn't exist, create empty file
+      await writeFile(this.adjustmentHistoryPath, '{}', 'utf-8');
+    }
 
     // Use file locking to prevent concurrent writes
     const release = await lockfile.lock(this.adjustmentHistoryPath, {

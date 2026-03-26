@@ -75,13 +75,13 @@
 
 ### Tests for User Story 2
 
-- [ ] T014 [P] [US2] Add unit tests for QuotaManager.setUsedQuota() method in `tests/unit/services/quota-manager.test.ts`
-- [ ] T015 [P] [US2] Add unit tests for quota sync endpoint handler in `tests/unit/routes/admin/handlers.test.ts`
+- [x] T014 [P] [US2] Add unit tests for QuotaManager.setUsedQuota() method in `tests/unit/services/quota-manager.test.ts`
+- [x] T015 [P] [US2] Add unit tests for quota sync endpoint handler in `tests/unit/routes/admin/handlers.test.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T016 [US2] Add setUsedQuota(planId, value) method to QuotaManager in `src/services/quota-manager.ts`
-- [ ] T017 [US2] Create POST /api/admin/quota/:planId/sync endpoint in `src/routes/admin/handlers.ts`
+- [x] T016 [US2] Add setUsedQuota(planId, value) method to QuotaManager in `src/services/quota-manager.ts`
+- [x] T017 [US2] Create POST /api/admin/quota/:planId/sync endpoint in `src/routes/admin/handlers.ts`
 - [ ] T018 [US2] Modify set-usage CLI command to call sync endpoint when server is running in `src/cli/commands/plan.ts`
 - [ ] T019 [US2] Add server running detection to set-usage command in `src/cli/commands/plan.ts`
 - [ ] T020 [US2] Add integration test for set-usage sync with running server in `tests/integration/cli/plan-usage-sync.test.ts`

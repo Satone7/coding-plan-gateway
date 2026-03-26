@@ -63,6 +63,12 @@ export async function registerAdminRoutes(
         fastify.post('/quota/:planId/reset', handlers.resetQuota);
       }
 
+      // Quota sync endpoint (requires both quotaManager and planUsageTracker)
+      if (quotaManager && planUsageTracker) {
+        // POST /api/quota/:planId/sync - Sync quota state with PlanUsageTracker
+        fastify.post('/quota/:planId/sync', handlers.syncQuota);
+      }
+
       // Plan usage tracking endpoints (only if planUsageTracker is provided)
       if (planUsageTracker) {
         // GET /api/plans/usage/summary - Get usage summary for all plans

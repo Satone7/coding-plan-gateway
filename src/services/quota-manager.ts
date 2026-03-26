@@ -189,6 +189,48 @@ export class QuotaManager {
   }
 
   /**
+   * Get current used quota for a plan.
+   *
+   * @param planId - The plan identifier
+   * @returns Used quota (0 if no state)
+   */
+  getUsedQuota(planId: number): number {
+    const state = this.quotaStates.get(planId);
+    if (!state) {
+      return 0;
+    }
+    return state.used;
+  }
+
+  /**
+   * Set used quota to a specific value.
+   * Used for syncing usage from PlanUsageTracker after manual adjustments.
+   *
+   * @param planId - The plan identifier
+   * @param value - The new usage value
+   * @returns true if successful, false if plan not found
+   */
+  setUsedQuota(planId: number, value: number): boolean {
+    const state = this.quotaStates.get(planId);
+    if (!state) {
+      return false;
+    }
+
+    // Clamp to non-negative
+    state.used = Math.max(0, value);
+    state.lastUpdated = new Date();
+
+    logger.info('Quota manually set', {
+      planId,
+      newValue: state.used,
+      limit: state.limit,
+      remaining: state.limit - state.used,
+    });
+
+    return true;
+  }
+
+  /**
    * Consume quota for a plan.
    *
    * @param planId - The plan identifier

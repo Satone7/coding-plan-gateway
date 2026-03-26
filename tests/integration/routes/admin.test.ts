@@ -10,6 +10,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { FilePlanRepository } from '@/services/plan-repository';
 import { QuotaManager, createQuotaManager } from '@/services/quota-manager';
+import { PlanUsageTracker, createPlanUsageTracker } from '@/services/plan-usage-tracker';
 import { PlanIdCounter, createPlanIdCounter } from '@/services/plan-id-counter';
 import { registerAdminRoutes } from '@/routes/admin';
 import { registerErrorHandler } from '@/middleware/error-handler';
@@ -26,6 +27,8 @@ describe('Admin Routes', () => {
   let repository: FilePlanRepository;
   let quotaManager: QuotaManager;
   let quotaPath: string;
+  let planUsageTracker: PlanUsageTracker;
+  let usageDataPath: string;
   let planIdCounter: PlanIdCounter;
   let counterPath: string;
 
@@ -35,6 +38,7 @@ describe('Admin Routes', () => {
     await mkdir(tempDir, { recursive: true });
     configPath = join(tempDir, 'plans.yaml');
     quotaPath = join(tempDir, 'quota-state.json');
+    usageDataPath = join(tempDir, 'plan-usage-data.json');
     counterPath = join(tempDir, 'plan-id-counter.json');
 
     // Create repository
@@ -48,6 +52,13 @@ describe('Admin Routes', () => {
     // Create quota manager
     quotaManager = createQuotaManager({ quotaStatePath: quotaPath });
 
+    // Create plan usage tracker
+    planUsageTracker = createPlanUsageTracker({
+      planUsageDataPath: usageDataPath,
+      adjustmentHistoryPath: join(tempDir, 'adjustment-history.json'),
+    });
+    await planUsageTracker.initialize();
+
     // Create raw Fastify instance (not using createApp to avoid route conflicts)
     app = Fastify({
       logger: false,
@@ -57,7 +68,7 @@ describe('Admin Routes', () => {
     registerErrorHandler(app);
 
     // Register admin routes
-    await registerAdminRoutes(app, { repository, quotaManager });
+    await registerAdminRoutes(app, { repository, quotaManager, planUsageTracker });
 
     // Wait for app to be ready
     await app.ready();
@@ -65,6 +76,7 @@ describe('Admin Routes', () => {
 
   afterEach(async () => {
     quotaManager.stopPeriodicSync();
+    planUsageTracker.stopPeriodicSync();
     await app.close();
     await rm(tempDir, { recursive: true, force: true });
   });
@@ -572,6 +584,73 @@ describe('Admin Routes', () => {
       });
 
       expect(response.statusCode).toBe(400);
+    });
+  });
+
+  describe('POST /api/quota/:planId/sync', () => {
+    it('should sync quota state with PlanUsageTracker', async () => {
+      const plan = await repository.save(createMockPlanInput());
+      await quotaManager.initialize([plan]);
+
+      // Set usage via PlanUsageTracker (the source of truth)
+      planUsageTracker.adjustUsage(plan.id, 100, plan.quota.limit, 'count', 100);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/quota/${plan.id}/sync`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        planId: plan.id,
+        usage: 100,
+        synced: true,
+      });
+
+      // Verify QuotaManager was updated
+      expect(quotaManager.getUsedQuota(plan.id)).toBe(100);
+    });
+
+    it('should return 404 for non-existent plan', async () => {
+      await quotaManager.initialize([]);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/quota/999999/sync',
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+
+    it('should return 400 for invalid plan ID', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/quota/not-an-integer/sync',
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('should sync updated usage from PlanUsageTracker', async () => {
+      const plan = await repository.save(createMockPlanInput());
+      await quotaManager.initialize([plan]);
+
+      // Initial state
+      expect(quotaManager.getUsedQuota(plan.id)).toBe(0);
+
+      // Set usage via PlanUsageTracker (the source of truth)
+      planUsageTracker.adjustUsage(plan.id, 250, plan.quota.limit, 'count', 250);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/quota/${plan.id}/sync`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().usage).toBe(250);
+
+      // Verify QuotaManager was updated
+      expect(quotaManager.getUsedQuota(plan.id)).toBe(250);
     });
   });
 });
