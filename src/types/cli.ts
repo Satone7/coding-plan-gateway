@@ -112,6 +112,8 @@ export interface AdjustmentResultDisplay {
   oldValue: number;
   newValue: number;
   warning?: string;
+  /** Sync status with running gateway */
+  syncStatus?: 'synced' | 'not_running' | 'failed';
 }
 
 /**

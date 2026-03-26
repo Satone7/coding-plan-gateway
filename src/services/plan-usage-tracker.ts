@@ -819,6 +819,26 @@ export class PlanUsageTracker {
   }
 
   /**
+   * Reload usage data from disk.
+   * This is useful when an external process (like CLI) has modified the data file.
+   */
+  async reload(): Promise<void> {
+    // Clear existing data
+    this.usage.clear();
+    this.adjustments = [];
+
+    // Reload from disk
+    await this.loadUsageData();
+    await this.loadAdjustmentHistory();
+
+    logger.debug('PlanUsageTracker reloaded from disk', {
+      recordCount: this.usage.size,
+      adjustmentCount: this.adjustments.length,
+      storagePath: this.planUsageDataPath,
+    });
+  }
+
+  /**
    * Get the total number of stored records.
    */
   getRecordCount(): number {

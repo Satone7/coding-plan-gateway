@@ -691,6 +691,9 @@ export function createAdminHandlers(
         throw createGatewayError('PLAN_NOT_FOUND', `Plan not found: ${planId}`);
       }
 
+      // Reload PlanUsageTracker from disk to get latest data from CLI
+      await planUsageTracker.reload();
+
       // Get current usage from PlanUsageTracker
       const usageData = planUsageTracker.getUsageForQuotaManager(planId);
       const usage = usageData?.used ?? 0;

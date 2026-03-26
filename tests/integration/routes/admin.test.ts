@@ -594,6 +594,7 @@ describe('Admin Routes', () => {
 
       // Set usage via PlanUsageTracker (the source of truth)
       planUsageTracker.adjustUsage(plan.id, 100, plan.quota.limit, 'count', 100);
+      await planUsageTracker.persist(); // Persist so sync can reload from file
 
       const response = await app.inject({
         method: 'POST',
@@ -640,6 +641,7 @@ describe('Admin Routes', () => {
 
       // Set usage via PlanUsageTracker (the source of truth)
       planUsageTracker.adjustUsage(plan.id, 250, plan.quota.limit, 'count', 250);
+      await planUsageTracker.persist(); // Persist so sync can reload from file
 
       const response = await app.inject({
         method: 'POST',

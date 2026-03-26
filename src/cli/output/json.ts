@@ -251,6 +251,13 @@ export class JsonFormatter implements OutputFormatter {
       output.warning = result.warning;
     }
 
+    if (result.syncStatus) {
+      output.sync = {
+        status: result.syncStatus,
+        gatewaySynced: result.syncStatus === 'synced',
+      };
+    }
+
     return JSON.stringify(output, null, 2);
   }
 }
