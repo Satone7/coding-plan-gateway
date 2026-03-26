@@ -60,8 +60,8 @@
 
 ### Implementation for User Story 2
 
-- [ ] T007 [US2] Verify `.passthrough()` is applied to messagesSchema in `src/routes/anthropic/handlers.ts` (add if missing)
-- [ ] T008 [US2] Add documentation comment in both handler files explaining the transparent proxy behavior and passthrough design decision
+- [x] T007 [US2] Verify `.passthrough()` is applied to messagesSchema in `src/routes/anthropic/handlers.ts` (add if missing)
+- [x] T008 [US2] Add documentation comment in both handler files explaining the transparent proxy behavior and passthrough design decision
 
 **Checkpoint**: Both endpoints now have consistent passthrough behavior
 

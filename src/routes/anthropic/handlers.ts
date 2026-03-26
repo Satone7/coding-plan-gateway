@@ -32,6 +32,9 @@ const systemBlockSchema = z.object({
 
 /**
  * Anthropic message request schema.
+ * Uses passthrough to preserve unknown fields for transparent proxy behavior.
+ * This allows custom parameters to pass through to upstream providers without
+ * being stripped by Zod validation, matching OpenAI endpoint behavior.
  */
 const messageRequestSchema = z.object({
   model: z.string().min(1),
