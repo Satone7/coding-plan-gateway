@@ -65,6 +65,15 @@ As a system administrator, I want a single authoritative source for usage data, 
 - What happens if both `expiresOn` and `expiresAt` are configured? `expiresAt` takes precedence as specified in existing behavior.
 - What happens when `set-usage` is called while the server is not running? The CLI should update the persistent store directly, and the server should load the updated value on startup.
 
+## Clarifications
+
+### Session 2026-03-26
+
+- Q: When the `expiresOn` date passes, what should happen to the usage count? → A: Automatically reset to 0 at midnight on the expiration date
+- Q: How should concurrent access to usage data be handled when CLI and server both access it? → A: File locking to prevent concurrent writes (CLI waits if server is writing)
+- Q: Which timezone should be used for the expiration reset? → A: Server's local timezone (matches user's local calendar)
+- Q: How should usage adjustments be recorded in daily history? → A: Add/subtract the delta to/from today's daily record
+
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
@@ -79,6 +88,10 @@ As a system administrator, I want a single authoritative source for usage data, 
 - **FR-008**: The `expiresOn` field MUST be respected in both CLI usage reports and API usage reports.
 - **FR-009**: Usage adjustments MUST persist across server restarts.
 - **FR-010**: When the server is running, `set-usage` MUST immediately affect routing decisions without requiring a server restart.
+- **FR-011**: When the configured `expiresOn` date passes, the system MUST automatically reset the usage count to 0 at midnight.
+- **FR-012**: Concurrent access to usage data files MUST be protected by file locking to prevent data corruption.
+- **FR-013**: Expiration resets MUST occur at midnight in the server's local timezone.
+- **FR-014**: Usage adjustments via `set-usage` MUST be recorded by adding/subtracting the delta to/from the current day's daily record.
 
 ### Key Entities
 
