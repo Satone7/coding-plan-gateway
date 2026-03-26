@@ -12,6 +12,7 @@ import {
 } from './context';
 import { handleKeyCommand } from './commands/key';
 import { handleUsageReportCommand } from './commands/usage';
+import { handlePlanCommand } from './commands/plan';
 import { CLI_EXIT_CODES, CLI_VERSION } from '@/types/cli';
 import type { CliContext } from '@/types/cli';
 
@@ -60,6 +61,10 @@ export async function runCli(argv: string[]): Promise<void> {
 
       case 'usage-report':
         await handleUsageReportCommand(context);
+        break;
+
+      case 'plan':
+        await handlePlanCommand(context, subcommand);
         break;
 
       case '':

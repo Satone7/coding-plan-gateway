@@ -11,6 +11,9 @@ import type {
   CliError,
   EnrichedUsageReport,
   UsageTotals,
+  PlanUsageReportDisplay,
+  PlanUsageSummaryDisplay,
+  AdjustmentResultDisplay,
 } from '@/types/cli';
 import type { CreateKeyResult } from '@/services/api-key-manager';
 
@@ -170,12 +173,18 @@ export class JsonFormatter implements OutputFormatter {
       ];
     } else if (command === 'usage-report') {
       helpData.commands = [
-        { name: 'usage-report', description: 'View usage reports', options: ['--key-id', '--from', '--to', '--json'] },
+        { name: 'usage-report', description: 'View usage reports', options: ['--key-id', '--plan', '--from', '--to', '--json'] },
+      ];
+    } else if (command === 'plan') {
+      helpData.commands = [
+        { name: 'list', description: 'List all plans with usage summary', options: ['--json'] },
+        { name: 'set-usage', description: 'Manually set usage for a plan', options: ['--id', '--count', '--percent', '--json'] },
       ];
     } else {
       helpData.commands = [
         { name: 'key', description: 'Manage API keys' },
         { name: 'usage-report', description: 'View usage reports' },
+        { name: 'plan', description: 'Manage plans and view plan usage' },
       ];
       helpData.globalOptions = ['--help', '--version', '--json', '--gateway-url'];
     }
@@ -185,6 +194,64 @@ export class JsonFormatter implements OutputFormatter {
 
   formatVersion(version: string): string {
     return JSON.stringify({ version }, null, 2);
+  }
+
+  formatPlanUsageReport(report: PlanUsageReportDisplay): string {
+    return JSON.stringify(
+      {
+        planId: report.planId,
+        planName: report.planName,
+        totalRequests: report.totalRequests,
+        limit: report.limit,
+        remaining: report.remaining,
+        percentage: report.percentage,
+        dateRange: report.dateRange,
+        dailyBreakdown: report.dailyBreakdown,
+        quotaPeriod: report.quotaPeriod,
+        resetAt: report.resetAt?.toISOString() ?? null,
+      },
+      null,
+      2
+    );
+  }
+
+  formatPlanList(plans: PlanUsageSummaryDisplay[]): string {
+    return JSON.stringify(
+      {
+        plans: plans.map((plan) => ({
+          planId: plan.planId,
+          planName: plan.planName,
+          limit: plan.limit,
+          used: plan.used,
+          remaining: plan.remaining,
+          percentage: plan.percentage,
+          quotaPeriod: plan.quotaPeriod,
+          resetAt: plan.resetAt?.toISOString() ?? null,
+        })),
+        total: plans.length,
+      },
+      null,
+      2
+    );
+  }
+
+  formatPlanUsageAdjustment(result: AdjustmentResultDisplay): string {
+    const output: Record<string, unknown> = {
+      success: true,
+      adjustment: {
+        id: result.adjustmentId,
+        planId: result.planId,
+        planName: result.planName,
+        oldValue: result.oldValue,
+        newValue: result.newValue,
+      },
+    };
+
+    if (result.warning) {
+      output.warning = result.warning;
+    }
+
+    return JSON.stringify(output, null, 2);
   }
 }
 

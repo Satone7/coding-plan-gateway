@@ -21,6 +21,7 @@ services:
       - AUTH_EXEMPT_PATHS=${AUTH_EXEMPT_PATHS:-/health,/ready,/internal/*}
       - USAGE_SYNC_INTERVAL=${USAGE_SYNC_INTERVAL:-60000}
       - ENABLE_AUTH=${ENABLE_AUTH:-true}
+      - PLAN_USAGE_DATA_PATH=/app/data/plan-usage-data.json
     volumes:
       # Persist configuration - mount config.yaml to container root
       - ./config.yaml:/app/config.yaml:ro

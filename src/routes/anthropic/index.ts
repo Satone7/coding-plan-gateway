@@ -7,6 +7,7 @@ import { FastifyInstance } from 'fastify';
 import { createAnthropicHandlers } from './handlers';
 import { IPlanRepository } from '@/services/plan-repository';
 import { RequestProxy } from '@/services/request-proxy';
+import { QuotaManager } from '@/services/quota-manager';
 
 /**
  * Options for Anthropic routes.
@@ -16,6 +17,8 @@ export interface AnthropicRoutesOptions {
   repository: IPlanRepository;
   /** Request proxy instance */
   proxy: RequestProxy;
+  /** Quota manager instance */
+  quotaManager?: QuotaManager;
   /** API prefix (default: '/v1') */
   prefix?: string;
 }
@@ -30,8 +33,8 @@ export async function registerAnthropicRoutes(
   app: FastifyInstance,
   options: AnthropicRoutesOptions
 ): Promise<void> {
-  const { repository, proxy, prefix = '/v1' } = options;
-  const handlers = createAnthropicHandlers(repository, proxy);
+  const { repository, proxy, quotaManager, prefix = '/v1' } = options;
+  const handlers = createAnthropicHandlers(repository, proxy, quotaManager);
 
   await app.register(
     (fastify, _options, done) => {

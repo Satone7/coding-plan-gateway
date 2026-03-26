@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { IPlanRepository } from '@/services/plan-repository';
 import { RequestRouter, createRequestRouter } from '@/services/request-router';
 import { RequestProxy } from '@/services/request-proxy';
+import { QuotaManager } from '@/services/quota-manager';
 import { logger } from '@/utils/logger';
 import { createGatewayError } from '@/types';
 import {
@@ -162,9 +163,10 @@ async function attemptFailover(
 // eslint-disable-next-line max-lines-per-function
 export function createAnthropicHandlers(
   repository: IPlanRepository,
-  proxy: RequestProxy
+  proxy: RequestProxy,
+  quotaManager?: QuotaManager
 ): AnthropicHandlers {
-  const router = createRequestRouter(repository);
+  const router = createRequestRouter(repository, quotaManager);
   const services: HandlerServices = { repository, proxy, router };
 
   return {
@@ -188,6 +190,19 @@ export function createAnthropicHandlers(
       }
 
       const plan = routingResult.selectedPlan;
+
+      // Consume quota after selecting the plan
+      if (quotaManager) {
+        const consumed = quotaManager.consumeQuota(plan.id);
+        if (!consumed) {
+          throw createGatewayError(
+            'QUOTA_EXHAUSTED',
+            `Quota exhausted for plan '${plan.name}'`,
+            { planId: plan.id, requestId }
+          );
+        }
+      }
+
       const apiKey = await fetchApiKey(repository, plan.id);
 
       logger.debug('Selected plan for request', {
@@ -197,17 +212,26 @@ export function createAnthropicHandlers(
 
       // Handle streaming
       if (body.stream) {
-        await proxy.forwardAnthropicStream(
-          body,
-          { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
-          (_chunk, done) => {
-            if (done) {
-              router.markPlanSuccess(plan.id);
-              logger.debug('Stream completed', { requestId });
-            }
-          },
-          reply
-        );
+        try {
+          await proxy.forwardAnthropicStream(
+            body,
+            { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
+            (_chunk, done) => {
+              if (done) {
+                router.markPlanSuccess(plan.id);
+                logger.debug('Stream completed', { requestId });
+              }
+            },
+            reply
+          );
+        } catch (streamError) {
+          router.markPlanFailed(plan.id);
+          // Refund quota on stream failure
+          if (quotaManager) {
+            quotaManager.refundQuota(plan.id);
+          }
+          throw streamError;
+        }
         return;
       }
 
@@ -221,6 +245,11 @@ export function createAnthropicHandlers(
         return response.data as AnthropicMessageResponse;
       } catch (error) {
         router.markPlanFailed(plan.id);
+
+        // Refund quota on failure
+        if (quotaManager) {
+          quotaManager.refundQuota(plan.id);
+        }
 
         for (const altPlan of routingResult.alternativePlans) {
           if (!router.getCircuitBreaker().canExecute(altPlan.id)) {

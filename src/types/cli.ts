@@ -52,12 +52,66 @@ export interface OutputFormatter {
   formatKeyDelete(key: ApiKey): string;
   /** Format usage report */
   formatUsageReport(reports: EnrichedUsageReport[], totals: UsageTotals): string;
+  /** Format plan usage report */
+  formatPlanUsageReport(report: PlanUsageReportDisplay): string;
+  /** Format plan list with usage */
+  formatPlanList(plans: PlanUsageSummaryDisplay[]): string;
+  /** Format usage adjustment result */
+  formatPlanUsageAdjustment(result: AdjustmentResultDisplay): string;
   /** Format error message */
   formatError(error: CliError): string;
   /** Format help message */
   formatHelp(command?: string): string;
   /** Format version info */
   formatVersion(version: string): string;
+}
+
+/**
+ * Plan usage report display format.
+ */
+export interface PlanUsageReportDisplay {
+  planId: string;
+  planName: string;
+  totalRequests: number;
+  limit: number;
+  remaining: number;
+  percentage: number;
+  dateRange: {
+    start: string;
+    end: string;
+  };
+  dailyBreakdown: Array<{
+    date: string;
+    requestCount: number;
+  }>;
+  quotaPeriod: 'daily' | 'monthly' | 'total';
+  resetAt: Date | null;
+}
+
+/**
+ * Plan usage summary for list display.
+ */
+export interface PlanUsageSummaryDisplay {
+  planId: string;
+  planName: string;
+  limit: number;
+  used: number;
+  remaining: number;
+  percentage: number;
+  quotaPeriod: 'daily' | 'monthly' | 'total';
+  resetAt: Date | null;
+}
+
+/**
+ * Adjustment result display format.
+ */
+export interface AdjustmentResultDisplay {
+  adjustmentId: string;
+  planId: string;
+  planName: string;
+  oldValue: number;
+  newValue: number;
+  warning?: string;
 }
 
 /**

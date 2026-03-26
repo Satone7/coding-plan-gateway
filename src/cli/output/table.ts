@@ -11,6 +11,9 @@ import type {
   CliError,
   EnrichedUsageReport,
   UsageTotals,
+  PlanUsageReportDisplay,
+  PlanUsageSummaryDisplay,
+  AdjustmentResultDisplay,
 } from '@/types/cli';
 import type { CreateKeyResult } from '@/services/api-key-manager';
 
@@ -174,11 +177,11 @@ export class TableFormatter implements OutputFormatter {
     );
 
     for (const report of reports) {
-      const keyIdShort = report.keyId.slice(0, 8) + '...';
+      const keyIdShort = (report.keyId.slice(0, 8) + '...').padEnd(12);
       const name = truncate(report.keyName, 20).padEnd(20);
       const requests = report.totalRequests.toString().padStart(8);
       const tokens = report.totalTokens.toString().padStart(10);
-      lines.push(`  ${keyIdShort}                                ${name} ${requests}   ${tokens}`);
+      lines.push(`  ${keyIdShort}  ${name} ${requests}   ${tokens}`);
     }
 
     lines.push(
@@ -243,6 +246,10 @@ export class TableFormatter implements OutputFormatter {
       return this.formatUsageReportHelp();
     }
 
+    if (command === 'plan') {
+      return this.formatPlanHelp();
+    }
+
     return this.formatMainHelp();
   }
 
@@ -256,6 +263,7 @@ Usage:
 Commands:
   key           Manage API keys
   usage-report  View usage reports
+  plan          Manage plans and view plan usage
 
 Global Options:
   --help, -h     Show this help message
@@ -268,8 +276,38 @@ Examples:
   cpg key list
   cpg key test cpg_xxxx...
   cpg usage-report
+  cpg usage-report --plan <plan-id>
+  cpg plan list
 
 Run "cpg key --help" for more information on key commands.
+Run "cpg plan --help" for more information on plan commands.
+`;
+  }
+
+  private formatPlanHelp(): string {
+    return `
+CPG CLI - Plan Management Commands
+
+Usage:
+  cpg plan <subcommand> [options]
+
+Subcommands:
+  list        List all plans with usage summary
+  set-usage   Manually set usage for a plan
+
+Options for list:
+  --json      Output in JSON format
+
+Options for set-usage:
+  --id <uuid>    Plan ID (required)
+  --count <n>    Set usage to exact count
+  --percent <n>  Set usage as percentage of limit (0-100)
+  --json         Output in JSON format
+
+Examples:
+  cpg plan list
+  cpg plan set-usage --id 550e8400-e29b-41d4-a716-446655440000 --count 100
+  cpg plan set-usage --id 550e8400-e29b-41d4-a716-446655440000 --percent 75
 `;
   }
 
@@ -310,20 +348,126 @@ Usage:
   cpg usage-report [options]
 
 Options:
-  --key-id <uuid>  Filter by key ID
+  --key-id <uuid>  Filter by API key ID
+  --plan <uuid>    View plan usage report (instead of API key usage)
   --from <date>    Start date (YYYY-MM-DD)
   --to <date>      End date (YYYY-MM-DD)
   --json           Output in JSON format
 
 Examples:
+  # API key usage report
   cpg usage-report
   cpg usage-report --key-id 550e8400-e29b-41d4-a716-446655440000
   cpg usage-report --from 2026-03-01 --to 2026-03-31
+
+  # Plan usage report
+  cpg usage-report --plan 550e8400-e29b-41d4-a716-446655440000
+  cpg usage-report --plan 550e8400-e29b-41d4-a716-446655440000 --from 2026-03-01 --to 2026-03-25
 `;
   }
 
   formatVersion(version: string): string {
     return `cpg version ${version}\n`;
+  }
+
+  formatPlanUsageReport(report: PlanUsageReportDisplay): string {
+    const lines: string[] = [
+      '',
+      `Plan Usage Report: ${report.planName}`,
+      '================================',
+      '',
+    ];
+
+    // Summary
+    lines.push('Summary:');
+    lines.push(`  Plan ID:     ${report.planId}`);
+    lines.push(`  Quota Limit: ${report.limit.toLocaleString()}`);
+    lines.push(`  Used:        ${report.totalRequests.toLocaleString()}`);
+    lines.push(`  Remaining:   ${report.remaining.toLocaleString()}`);
+    lines.push(`  Percentage:  ${report.percentage}%`);
+    lines.push(`  Period:      ${report.quotaPeriod}`);
+    if (report.resetAt) {
+      lines.push(`  Resets:      ${formatDateTime(report.resetAt)}`);
+    }
+    lines.push('');
+
+    // Date range
+    lines.push(`Date Range: ${report.dateRange.start} to ${report.dateRange.end}`);
+    lines.push('');
+
+    // Daily breakdown
+    if (report.dailyBreakdown.length > 0) {
+      lines.push('Daily Breakdown:');
+      lines.push('──────────────────────────────────────');
+      lines.push('  Date         Requests');
+      lines.push('──────────────────────────────────────');
+
+      for (const day of report.dailyBreakdown) {
+        lines.push(`  ${day.date}   ${day.requestCount.toString().padStart(8)}`);
+      }
+      lines.push('──────────────────────────────────────');
+    } else {
+      lines.push('No daily breakdown available.');
+    }
+
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  formatPlanList(plans: PlanUsageSummaryDisplay[]): string {
+    if (plans.length === 0) {
+      return [
+        '',
+        'No plans found.',
+        '',
+      ].join('\n');
+    }
+
+    const lines: string[] = ['', 'Plans with Usage Summary:', ''];
+
+    const header = '  Name                 Limit        Used     Remaining  %     Period    Reset';
+    const separator = '  -------------------- ---------- -------- ---------- ----- --------- -------------------';
+
+    lines.push(header);
+    lines.push(separator);
+
+    for (const plan of plans) {
+      const name = truncate(plan.planName, 20).padEnd(20);
+      const limit = plan.limit.toLocaleString().padStart(10);
+      const used = plan.used.toLocaleString().padStart(8);
+      const remaining = plan.remaining.toLocaleString().padStart(10);
+      const percentage = plan.percentage.toString().padStart(3);
+      const period = plan.quotaPeriod.padEnd(9);
+      const reset = plan.resetAt ? formatDateTime(plan.resetAt) : 'N/A';
+
+      lines.push(`  ${name} ${limit} ${used} ${remaining} ${percentage}%  ${period} ${reset}`);
+    }
+
+    lines.push(separator);
+    lines.push('', `  Total: ${plans.length} plan(s)`, '');
+    return lines.join('\n');
+  }
+
+  formatPlanUsageAdjustment(result: AdjustmentResultDisplay): string {
+    const lines: string[] = [
+      '',
+      'Usage Adjustment Complete',
+      '=========================',
+      '',
+      `  Plan:         ${result.planName}`,
+      `  Plan ID:      ${result.planId}`,
+      `  Adjustment ID: ${result.adjustmentId}`,
+      '',
+      `  Previous:     ${result.oldValue.toLocaleString()}`,
+      `  New:          ${result.newValue.toLocaleString()}`,
+    ];
+
+    if (result.warning) {
+      lines.push('', `  ⚠ Warning: ${result.warning}`);
+    }
+
+    lines.push('');
+    return lines.join('\n');
   }
 }
 
