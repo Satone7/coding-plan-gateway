@@ -33,7 +33,7 @@ export interface SelectionContext {
   /** Available plans (already filtered by model and status) */
   plans: CodingPlan[];
   /** Current quota states */
-  quotaStates: Map<string, QuotaState>;
+  quotaStates: Map<number, QuotaState>;
   /** RPM tracker for load awareness (optional) */
   rpmTracker?: RpmTrackerInterface;
   /** Load balancing configuration */
@@ -44,7 +44,7 @@ export interface SelectionContext {
  * Interface for RPM tracker (to avoid circular dependency).
  */
 export interface RpmTrackerInterface {
-  getRpm(planId: string): number;
+  getRpm(planId: number): number;
 }
 
 /**
@@ -62,7 +62,7 @@ const roundRobinState: Map<string, number> = new Map();
  * Weighted round-robin state per model.
  * Tracks the current weight counter for each plan.
  */
-const weightedRoundRobinState: Map<string, Map<string, number>> = new Map();
+const weightedRoundRobinState: Map<string, Map<number, number>> = new Map();
 
 /**
  * PlanSelector - Handles plan selection logic for request routing.
@@ -110,7 +110,7 @@ export class PlanSelector {
   selectPlan(
     model: string,
     plans: CodingPlan[],
-    quotaStates: Map<string, QuotaState>
+    quotaStates: Map<number, QuotaState>
   ): CodingPlan | undefined {
     // Find all plans that support this model
     const candidatePlans = this.findPlansByModel(model, plans);
@@ -183,7 +183,7 @@ export class PlanSelector {
    *
    * Supports two call patterns for backward compatibility:
    * - selectBestPlan(context: SelectionContext) - new API
-   * - selectBestPlan(plans: CodingPlan[], quotaStates: Map<string, QuotaState>) - legacy API
+   * - selectBestPlan(plans: CodingPlan[], quotaStates: Map<number, QuotaState>) - legacy API
    *
    * @param contextOrPlans - Selection context or plans array
    * @param quotaStates - Quota states (only used with legacy API)
@@ -191,7 +191,7 @@ export class PlanSelector {
    */
   selectBestPlan(
     contextOrPlans: SelectionContext | CodingPlan[],
-    quotaStates?: Map<string, QuotaState>
+    quotaStates?: Map<number, QuotaState>
   ): CodingPlan | undefined {
     // Handle legacy API: selectBestPlan(plans, quotaStates)
     let context: SelectionContext;
@@ -242,7 +242,7 @@ export class PlanSelector {
    */
   sortByRemainingQuota(
     plans: CodingPlan[],
-    quotaStates: Map<string, QuotaState>
+    quotaStates: Map<number, QuotaState>
   ): CodingPlan[] {
     return [...plans].sort((a, b) => {
       const stateA = quotaStates.get(a.id);
@@ -480,7 +480,7 @@ function randomStrategy(context: SelectionContext): CodingPlan | undefined {
  */
 function calculatePlanScore(
   plan: CodingPlan,
-  quotaStates: Map<string, QuotaState>,
+  quotaStates: Map<number, QuotaState>,
   rpmTracker?: RpmTrackerInterface,
   weights: FactorWeights = DEFAULT_FACTOR_WEIGHTS
 ): PlanScore {

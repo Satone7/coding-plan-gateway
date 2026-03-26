@@ -65,7 +65,7 @@ export interface LoadBalanceConfig {
  */
 export interface PlanScore {
   /** Plan identifier */
-  planId: string;
+  planId: number;
   /** Total computed score (0-100) */
   totalScore: number;
   /** Individual factor scores */

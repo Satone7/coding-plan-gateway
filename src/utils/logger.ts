@@ -29,7 +29,7 @@ export interface LogContext {
   /** Request ID for tracing */
   requestId?: string;
   /** Plan ID being processed */
-  planId?: string;
+  planId?: number;
   /** Model being used */
   model?: string;
   /** Additional context */

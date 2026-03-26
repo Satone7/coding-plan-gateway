@@ -52,19 +52,19 @@ export interface CircuitBreakerStats {
  * ```typescript
  * const breaker = createCircuitBreaker();
  *
- * if (breaker.canExecute('plan-1')) {
+ * if (breaker.canExecute(1)) {
  *   try {
  *     await executeRequest();
- *     breaker.recordSuccess('plan-1');
+ *     breaker.recordSuccess(1);
  *   } catch (error) {
- *     breaker.recordFailure('plan-1');
+ *     breaker.recordFailure(1);
  *   }
  * }
  * ```
  */
 export class CircuitBreaker {
   private readonly config: CircuitBreakerConfig;
-  private readonly circuits: Map<string, CircuitBreakerStats> = new Map();
+  private readonly circuits: Map<number, CircuitBreakerStats> = new Map();
 
   /**
    * Create a new CircuitBreaker instance.
@@ -85,7 +85,7 @@ export class CircuitBreaker {
    * @param planId - The plan identifier
    * @returns true if the request can proceed, false if the circuit is open
    */
-  canExecute(planId: string): boolean {
+  canExecute(planId: number): boolean {
     const stats = this.getOrCreateStats(planId);
     const now = new Date();
 
@@ -118,7 +118,7 @@ export class CircuitBreaker {
    *
    * @param planId - The plan identifier
    */
-  recordSuccess(planId: string): void {
+  recordSuccess(planId: number): void {
     const stats = this.getOrCreateStats(planId);
     stats.failureCount = 0;
     stats.successCount += 1;
@@ -140,7 +140,7 @@ export class CircuitBreaker {
    *
    * @param planId - The plan identifier
    */
-  recordFailure(planId: string): void {
+  recordFailure(planId: number): void {
     const stats = this.getOrCreateStats(planId);
     const now = new Date();
 
@@ -170,7 +170,7 @@ export class CircuitBreaker {
    * @param planId - The plan identifier
    * @returns The current circuit state
    */
-  getState(planId: string): CircuitState {
+  getState(planId: number): CircuitState {
     const stats = this.getOrCreateStats(planId);
 
     // Check for automatic state transition
@@ -190,7 +190,7 @@ export class CircuitBreaker {
    * @param planId - The plan identifier
    * @returns Circuit breaker statistics
    */
-  getStats(planId: string): CircuitBreakerStats {
+  getStats(planId: number): CircuitBreakerStats {
     return this.getOrCreateStats(planId);
   }
 
@@ -199,7 +199,7 @@ export class CircuitBreaker {
    *
    * @param planId - The plan identifier
    */
-  reset(planId: string): void {
+  reset(planId: number): void {
     const stats = this.getOrCreateStats(planId);
     stats.state = 'closed';
     stats.failureCount = 0;
@@ -225,7 +225,7 @@ export class CircuitBreaker {
    * @param planId - The plan identifier
    * @returns true if the circuit is open (requests should be blocked)
    */
-  isOpen(planId: string): boolean {
+  isOpen(planId: number): boolean {
     return !this.canExecute(planId);
   }
 
@@ -247,7 +247,7 @@ export class CircuitBreaker {
   /**
    * Get or create stats for a plan.
    */
-  private getOrCreateStats(planId: string): CircuitBreakerStats {
+  private getOrCreateStats(planId: number): CircuitBreakerStats {
     if (!this.circuits.has(planId)) {
       const now = new Date();
       const stats: CircuitBreakerStats = {
@@ -267,7 +267,7 @@ export class CircuitBreaker {
   /**
    * Transition the circuit to a new state.
    */
-  private transitionTo(planId: string, newState: CircuitState): void {
+  private transitionTo(planId: number, newState: CircuitState): void {
     const stats = this.getOrCreateStats(planId);
     const oldState = stats.state;
 

@@ -42,7 +42,11 @@ async function main(): Promise<void> {
         ? parseInt(process.env.QUOTA_SYNC_INTERVAL, 10)
         : undefined,
     });
-    await quotaManager.initialize(config.plans);
+    // Filter plans to only include those with numeric IDs (UUID IDs need migration first)
+    const plansWithNumericIds = config.plans.filter(
+      (plan): plan is typeof plan & { id: number } => typeof plan.id === 'number'
+    );
+    await quotaManager.initialize(plansWithNumericIds);
     quotaManager.startPeriodicSync();
 
     // Create and initialize plan usage tracker

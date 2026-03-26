@@ -33,7 +33,7 @@ export interface QuotaConfig {
  * @example
  * ```typescript
  * const plan: CodingPlan = {
- *   id: '550e8400-e29b-41d4-a716-446655440000',
+ *   id: 1,
  *   name: 'Kimi K2.5 Plan',
  *   baseUrl: 'https://api.moonshot.cn/v1',
  *   apiKeyEncrypted: 'enc:...',
@@ -49,8 +49,8 @@ export interface QuotaConfig {
  * ```
  */
 export interface CodingPlan {
-  /** Unique identifier (UUID v4) */
-  id: string;
+  /** Unique identifier (auto-incremented integer) */
+  id: number;
 
   /** Human-readable name for the plan */
   name: string;

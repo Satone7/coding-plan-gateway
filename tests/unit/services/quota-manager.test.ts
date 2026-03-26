@@ -77,7 +77,7 @@ describe('QuotaManager', () => {
 
   describe('getQuotaState', () => {
     it('should return undefined for unknown plan', () => {
-      expect(quotaManager.getQuotaState('unknown-plan')).toBeUndefined();
+      expect(quotaManager.getQuotaState(999999)).toBeUndefined();
     });
 
     it('should return quota state for known plan', async () => {
@@ -120,7 +120,7 @@ describe('QuotaManager', () => {
     });
 
     it('should return false for unknown plan', async () => {
-      const consumed = await quotaManager.consumeQuota('unknown-plan', 1);
+      const consumed = await quotaManager.consumeQuota(999999, 1);
       expect(consumed).toBe(false);
     });
   });
@@ -159,7 +159,7 @@ describe('QuotaManager', () => {
     });
 
     it('should return 0 for unknown plan', () => {
-      expect(quotaManager.getRemainingQuota('unknown-plan')).toBe(0);
+      expect(quotaManager.getRemainingQuota(999999)).toBe(0);
     });
   });
 

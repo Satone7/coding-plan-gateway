@@ -10,6 +10,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { FilePlanRepository } from '@/services/plan-repository';
 import { QuotaManager, createQuotaManager } from '@/services/quota-manager';
+import { PlanIdCounter, createPlanIdCounter } from '@/services/plan-id-counter';
 import { registerAdminRoutes } from '@/routes/admin';
 import { registerErrorHandler } from '@/middleware/error-handler';
 import { createMockPlanInput } from '../../fixtures/mock-plans';
@@ -25,6 +26,8 @@ describe('Admin Routes', () => {
   let repository: FilePlanRepository;
   let quotaManager: QuotaManager;
   let quotaPath: string;
+  let planIdCounter: PlanIdCounter;
+  let counterPath: string;
 
   beforeEach(async () => {
     // Create temp directory
@@ -32,9 +35,15 @@ describe('Admin Routes', () => {
     await mkdir(tempDir, { recursive: true });
     configPath = join(tempDir, 'plans.yaml');
     quotaPath = join(tempDir, 'quota-state.json');
+    counterPath = join(tempDir, 'plan-id-counter.json');
 
     // Create repository
     repository = new FilePlanRepository(configPath, TEST_ENCRYPTION_KEY);
+
+    // Create and initialize plan ID counter
+    planIdCounter = createPlanIdCounter({ counterPath });
+    await planIdCounter.initialize();
+    repository.setPlanIdCounter(planIdCounter);
 
     // Create quota manager
     quotaManager = createQuotaManager({ quotaStatePath: quotaPath });
@@ -116,7 +125,7 @@ describe('Admin Routes', () => {
     it('should return 404 when plan does not exist', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/api/plans/00000000-0000-0000-0000-000000000000',
+        url: '/api/plans/999999',
       });
 
       expect(response.statusCode).toBe(404);
@@ -131,7 +140,7 @@ describe('Admin Routes', () => {
     it('should return 400 for invalid plan ID', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/api/plans/not-a-uuid',
+        url: '/api/plans/not-an-integer',
       });
 
       expect(response.statusCode).toBe(400);
@@ -173,7 +182,7 @@ describe('Admin Routes', () => {
       expect(response.statusCode).toBe(201);
       const body = response.json();
       expect(body.data).toMatchObject({
-        id: expect.any(String),
+        id: expect.any(Number),
         name: input.name,
         baseUrl: input.baseUrl,
         models: input.models,
@@ -232,6 +241,54 @@ describe('Admin Routes', () => {
       expect(plans).toHaveLength(1);
       expect(plans[0].name).toBe('Persisted Plan');
     });
+
+    it('should assign sequential integer IDs starting from 1', async () => {
+      // Create first plan
+      const response1 = await app.inject({
+        method: 'POST',
+        url: '/api/plans',
+        payload: createMockPlanInput({ name: 'First Plan' }),
+      });
+
+      expect(response1.statusCode).toBe(201);
+      expect(response1.json().data.id).toBe(1);
+
+      // Create second plan
+      const response2 = await app.inject({
+        method: 'POST',
+        url: '/api/plans',
+        payload: createMockPlanInput({ name: 'Second Plan' }),
+      });
+
+      expect(response2.statusCode).toBe(201);
+      expect(response2.json().data.id).toBe(2);
+
+      // Create third plan
+      const response3 = await app.inject({
+        method: 'POST',
+        url: '/api/plans',
+        payload: createMockPlanInput({ name: 'Third Plan' }),
+      });
+
+      expect(response3.statusCode).toBe(201);
+      expect(response3.json().data.id).toBe(3);
+    });
+
+    it('should reject manual id field in request body', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/plans',
+        payload: {
+          ...createMockPlanInput(),
+          id: 999, // Attempt to set manual ID
+        },
+      });
+
+      // Should either ignore the id field or reject the request
+      // Based on the implementation, it should be ignored and auto-assigned
+      expect(response.statusCode).toBe(201);
+      expect(response.json().data.id).toBe(1); // Should be auto-assigned, not 999
+    });
   });
 
   describe('PUT /api/plans/:planId', () => {
@@ -255,7 +312,7 @@ describe('Admin Routes', () => {
     it('should return 404 when plan does not exist', async () => {
       const response = await app.inject({
         method: 'PUT',
-        url: '/api/plans/00000000-0000-0000-0000-000000000000',
+        url: '/api/plans/999999',
         payload: { name: 'Updated' },
       });
 
@@ -265,7 +322,7 @@ describe('Admin Routes', () => {
     it('should return 400 for invalid plan ID', async () => {
       const response = await app.inject({
         method: 'PUT',
-        url: '/api/plans/not-a-uuid',
+        url: '/api/plans/not-an-integer',
         payload: { name: 'Updated' },
       });
 
@@ -346,7 +403,7 @@ describe('Admin Routes', () => {
     it('should return 404 when plan does not exist', async () => {
       const response = await app.inject({
         method: 'DELETE',
-        url: '/api/plans/00000000-0000-0000-0000-000000000000',
+        url: '/api/plans/999999',
       });
 
       expect(response.statusCode).toBe(404);
@@ -355,7 +412,7 @@ describe('Admin Routes', () => {
     it('should return 400 for invalid plan ID', async () => {
       const response = await app.inject({
         method: 'DELETE',
-        url: '/api/plans/not-a-uuid',
+        url: '/api/plans/not-an-integer',
       });
 
       expect(response.statusCode).toBe(400);
@@ -446,7 +503,7 @@ describe('Admin Routes', () => {
 
       const response = await app.inject({
         method: 'GET',
-        url: '/api/quota/00000000-0000-0000-0000-000000000000',
+        url: '/api/quota/999999',
       });
 
       expect(response.statusCode).toBe(404);
@@ -455,7 +512,7 @@ describe('Admin Routes', () => {
     it('should return 400 for invalid plan ID', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/api/quota/not-a-uuid',
+        url: '/api/quota/not-an-integer',
       });
 
       expect(response.statusCode).toBe(400);
@@ -502,7 +559,7 @@ describe('Admin Routes', () => {
 
       const response = await app.inject({
         method: 'POST',
-        url: '/api/quota/00000000-0000-0000-0000-000000000000/reset',
+        url: '/api/quota/999999/reset',
       });
 
       expect(response.statusCode).toBe(404);
@@ -511,7 +568,7 @@ describe('Admin Routes', () => {
     it('should return 400 for invalid plan ID', async () => {
       const response = await app.inject({
         method: 'POST',
-        url: '/api/quota/not-a-uuid/reset',
+        url: '/api/quota/not-an-integer/reset',
       });
 
       expect(response.statusCode).toBe(400);

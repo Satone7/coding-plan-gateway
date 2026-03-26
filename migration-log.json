@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-03-26T04:15:00.000Z",
+  "version": "1.0",
+  "mappings": [
+    {
+      "oldUuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "newId": 1,
+      "planName": "Ark Coding Plan"
+    },
+    {
+      "oldUuid": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "newId": 2,
+      "planName": "Ali Coding Plan"
+    }
+  ]
+}

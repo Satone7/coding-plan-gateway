@@ -14,7 +14,7 @@ import type { QuotaPeriod } from './coding-plan';
  * @example
  * ```typescript
  * const quotaState: QuotaState = {
- *   planId: '550e8400-e29b-41d4-a716-446655440000',
+ *   planId: 1,
  *   used: 450,
  *   limit: 1000,
  *   period: 'monthly',
@@ -24,8 +24,8 @@ import type { QuotaPeriod } from './coding-plan';
  * ```
  */
 export interface QuotaState {
-  /** Reference to the coding plan */
-  planId: string;
+  /** Reference to the coding plan (integer ID) */
+  planId: number;
 
   /** Current usage count */
   used: number;
@@ -47,8 +47,8 @@ export interface QuotaState {
  * QuotaUpdate - Represents a delta change to quota usage.
  */
 export interface QuotaUpdate {
-  /** Reference to the coding plan */
-  planId: string;
+  /** Reference to the coding plan (integer ID) */
+  planId: number;
 
   /** Usage delta (positive = consume, negative = refund) */
   delta: number;
@@ -61,8 +61,8 @@ export interface QuotaUpdate {
  * QuotaStatusResponse - API response for quota status.
  */
 export interface QuotaStatusResponse {
-  /** Plan identifier */
-  planId: string;
+  /** Plan identifier (integer ID) */
+  planId: number;
 
   /** Current usage count */
   used: number;
@@ -101,7 +101,7 @@ export function isQuotaExhausted(state: QuotaState): boolean {
  * Create initial quota state for a plan.
  */
 export function createInitialQuotaState(
-  planId: string,
+  planId: number,
   limit: number,
   period: QuotaPeriod
 ): QuotaState {

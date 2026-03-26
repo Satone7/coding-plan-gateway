@@ -117,9 +117,8 @@ describe('PlanRepository', () => {
       const result = await repository.save(input);
 
       expect(result.id).toBeDefined();
-      expect(result.id).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      );
+      expect(typeof result.id).toBe('number');
+      expect(result.id).toBeGreaterThan(0);
       expect(result.name).toBe(input.name);
       expect(result.baseUrl).toBe(input.baseUrl);
       expect(result.models).toEqual(input.models);
@@ -253,7 +252,7 @@ describe('PlanRepository', () => {
       const content = yaml.stringify({
         plans: [
           {
-            id: '550e8400-e29b-41d4-a716-446655440001',
+            id: 100,
             name: 'Manual Plan',
             baseUrl: 'https://manual.example.com',
             apiKey: 'manual-key',
