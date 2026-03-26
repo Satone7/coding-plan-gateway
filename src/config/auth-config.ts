@@ -109,6 +109,12 @@ export function isExemptPath(path: string, exemptPaths: string[]): boolean {
       return path.startsWith(prefix);
     }
 
+    // Suffix match for paths starting with * (e.g., "*/sync" matches "/api/quota/1/sync")
+    if (exemptPath.startsWith('*')) {
+      const suffix = exemptPath.slice(1);
+      return path.endsWith(suffix);
+    }
+
     return false;
   });
 }
