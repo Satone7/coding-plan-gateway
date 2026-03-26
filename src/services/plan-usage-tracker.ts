@@ -827,7 +827,7 @@ export class PlanUsageTracker {
   async reload(): Promise<void> {
     // Clear existing data
     this.usage.clear();
-    this.adjustments = [];
+    this.adjustments.length = 0;
 
     // Reload from disk
     await this.loadUsageData();
