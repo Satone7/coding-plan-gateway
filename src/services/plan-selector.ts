@@ -181,11 +181,33 @@ export class PlanSelector {
   /**
    * Select the best plan using the configured strategy.
    *
-   * @param context - Selection context with plans, states, and config
+   * Supports two call patterns for backward compatibility:
+   * - selectBestPlan(context: SelectionContext) - new API
+   * - selectBestPlan(plans: CodingPlan[], quotaStates: Map<string, QuotaState>) - legacy API
+   *
+   * @param contextOrPlans - Selection context or plans array
+   * @param quotaStates - Quota states (only used with legacy API)
    * @returns The best plan, or undefined if none available
    */
-  selectBestPlan(context: SelectionContext): CodingPlan | undefined {
-    const { plans, quotaStates, config } = context;
+  selectBestPlan(
+    contextOrPlans: SelectionContext | CodingPlan[],
+    quotaStates?: Map<string, QuotaState>
+  ): CodingPlan | undefined {
+    // Handle legacy API: selectBestPlan(plans, quotaStates)
+    let context: SelectionContext;
+    if (Array.isArray(contextOrPlans)) {
+      context = {
+        model: '',
+        plans: contextOrPlans,
+        quotaStates: quotaStates ?? new Map(),
+        config: this.config,
+        rpmTracker: this.rpmTracker,
+      };
+    } else {
+      context = contextOrPlans;
+    }
+
+    const { plans, config } = context;
 
     if (plans.length === 0) {
       return undefined;
@@ -193,7 +215,7 @@ export class PlanSelector {
 
     // Filter out exhausted plans
     const availablePlans = plans.filter((plan) => {
-      const state = quotaStates.get(plan.id);
+      const state = context.quotaStates.get(plan.id);
       return !state || state.used < state.limit;
     });
 
@@ -209,6 +231,29 @@ export class PlanSelector {
     // Get strategy function and execute
     const strategy = getStrategy(config.strategy);
     return strategy({ ...context, plans: availablePlans });
+  }
+
+  /**
+   * Sort plans by remaining quota in descending order.
+   *
+   * @param plans - Plans to sort
+   * @param quotaStates - Current quota states
+   * @returns Sorted plans (highest remaining first)
+   */
+  sortByRemainingQuota(
+    plans: CodingPlan[],
+    quotaStates: Map<string, QuotaState>
+  ): CodingPlan[] {
+    return [...plans].sort((a, b) => {
+      const stateA = quotaStates.get(a.id);
+      const stateB = quotaStates.get(b.id);
+
+      const remainingA = stateA ? stateA.limit - stateA.used : a.quota.limit;
+      const remainingB = stateB ? stateB.limit - stateB.used : b.quota.limit;
+
+      // Sort descending (highest remaining first)
+      return remainingB - remainingA;
+    });
   }
 
   /**
@@ -325,6 +370,10 @@ function roundRobinStrategy(context: SelectionContext): CodingPlan | undefined {
   roundRobinState.set(model, nextIndex + 1);
 
   const selectedPlan = plans[nextIndex];
+  if (!selectedPlan) {
+    return undefined;
+  }
+
   logger.debug('Selected plan via round-robin', {
     model,
     planId: selectedPlan.id,
@@ -412,6 +461,10 @@ function randomStrategy(context: SelectionContext): CodingPlan | undefined {
 
   const randomIndex = Math.floor(Math.random() * plans.length);
   const selectedPlan = plans[randomIndex];
+
+  if (!selectedPlan) {
+    return undefined;
+  }
 
   logger.debug('Selected plan via random', {
     planId: selectedPlan.id,

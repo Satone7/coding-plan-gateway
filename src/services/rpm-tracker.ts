@@ -88,13 +88,16 @@ export class RpmTracker {
     }
 
     // Increment the count
-    buckets[bucketIndex].count++;
+    const bucket = buckets[bucketIndex];
+    if (bucket) {
+      bucket.count++;
+    }
 
     logger.debug('RPM request recorded', {
       planId,
       bucketIndex,
       timestamp: currentTimestamp,
-      count: buckets[bucketIndex].count,
+      count: bucket?.count ?? 0,
     });
   }
 
@@ -103,11 +106,12 @@ export class RpmTracker {
    */
   private findOldestBucketIndex(timestamps: number[]): number {
     let oldestIndex = 0;
-    let oldestTimestamp = timestamps[0];
+    let oldestTimestamp = timestamps[0] ?? 0;
 
     for (let i = 1; i < timestamps.length; i++) {
-      if (timestamps[i] < oldestTimestamp) {
-        oldestTimestamp = timestamps[i];
+      const currentTimestamp = timestamps[i];
+      if (currentTimestamp !== undefined && currentTimestamp < oldestTimestamp) {
+        oldestTimestamp = currentTimestamp;
         oldestIndex = i;
       }
     }

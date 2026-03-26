@@ -99,13 +99,16 @@ describe('PlanSelector', () => {
   });
 
   describe('selectBestPlan', () => {
-    it('should select plan with highest remaining quota', () => {
+    it('should select plan with highest multi-factor score', () => {
       const activePlans = mockPlans.filter((p) => p.status === 'active');
       const result = planSelector.selectBestPlan(activePlans, mockQuotaStates);
-      // plan-3-openai has 500 remaining (2000-1500), plan-1-kimi has 550 remaining (1000-450)
-      // plan-2-claude has 300 remaining (500-200)
-      // So plan-1-kimi should be selected
-      expect(result?.id).toBe('plan-1-kimi');
+      // With multi-factor scoring (expiration 40%, RPM 40%, quota 20%):
+      // - No expiration = score 10 for all
+      // - No RPM tracker = score 100 for all
+      // - Quota scores: kimi 55, claude 60, openai 25
+      // Total: kimi 55, claude 56, openai 49
+      // Claude wins with highest multi-factor score
+      expect(result?.id).toBe('plan-2-claude');
     });
 
     it('should return undefined when all plans are exhausted', () => {
@@ -126,12 +129,15 @@ describe('PlanSelector', () => {
       expect(result).toBeUndefined();
     });
 
-    it('should return plan with highest limit when no quota states provided', () => {
+    it('should return a plan when no quota states provided (uses plan limits)', () => {
       const activePlans = mockPlans.filter((p) => p.status === 'active');
       const result = planSelector.selectBestPlan(activePlans, new Map());
-      // When no quota states, the plan with highest limit is selected
-      // plan-3-openai has limit 2000, plan-1-kimi has 1000, plan-2-claude has 500
-      expect(result?.id).toBe('plan-3-openai');
+      // With no quota states, all plans have 100% quota remaining
+      // Quota score = 100 for all
+      // Total = 10*0.4 + 100*0.4 + 100*0.2 = 84 for all
+      // Any plan could be selected, but should return one
+      expect(result).toBeDefined();
+      expect(['plan-1-kimi', 'plan-2-claude', 'plan-3-openai']).toContain(result?.id);
     });
   });
 
