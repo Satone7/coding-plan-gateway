@@ -75,13 +75,13 @@
 
 ### Implementation for User Story 3
 
-- [ ] T009 [P] [US3] Implement expiration score calculation utility in `src/utils/expiration.ts` with calculateExpirationScore function per research.md R4 tiered scoring
-- [ ] T010 [P] [US3] Implement strategy selector function in `src/services/plan-selector.ts` to select strategy implementation based on LoadBalanceConfig
-- [ ] T011 [P] [US3] Implement round-robin strategy in `src/services/plan-selector.ts` with plan cycling per model
-- [ ] T012 [P] [US3] Implement weighted-round-robin strategy in `src/services/plan-selector.ts` with proportional distribution based on plan weight
-- [ ] T013 [P] [US3] Implement random strategy in `src/services/plan-selector.ts` with uniform random selection
-- [ ] T014 [US3] Refactor selectBestPlan function in `src/services/plan-selector.ts` to use strategy pattern, maintaining backward compatibility with quota-priority as default
-- [ ] T015 [US3] Update request-router in `src/services/request-router.ts` to pass loadBalancing config to plan-selector
+- [x] T009 [P] [US3] Implement expiration score calculation utility in `src/utils/expiration.ts` with calculateExpirationScore function per research.md R4 tiered scoring
+- [x] T010 [P] [US3] Implement strategy selector function in `src/services/plan-selector.ts` to select strategy implementation based on LoadBalanceConfig
+- [x] T011 [P] [US3] Implement round-robin strategy in `src/services/plan-selector.ts` with plan cycling per model
+- [x] T012 [P] [US3] Implement weighted-round-robin strategy in `src/services/plan-selector.ts` with proportional distribution based on plan weight
+- [x] T013 [P] [US3] Implement random strategy in `src/services/plan-selector.ts` with uniform random selection
+- [x] T014 [US3] Refactor selectBestPlan function in `src/services/plan-selector.ts` to use strategy pattern, maintaining backward compatibility with quota-priority as default
+- [x] T015 [US3] Update request-router in `src/services/request-router.ts` to pass loadBalancing config to plan-selector
 
 **Checkpoint**: All load balancing strategies implemented and selectable via configuration
 

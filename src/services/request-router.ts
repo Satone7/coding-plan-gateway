@@ -5,10 +5,12 @@
 
 import { randomUUID } from 'crypto';
 import type { IPlanRepository } from '@/services/plan-repository';
-import { PlanSelector, createPlanSelector } from '@/services/plan-selector';
+import { PlanSelector, createPlanSelector, type SelectionContext } from '@/services/plan-selector';
 import { CircuitBreaker, createCircuitBreaker } from '@/services/circuit-breaker';
 import type { QuotaManager } from '@/services/quota-manager';
 import type { CodingPlan, QuotaState } from '@/types';
+import type { LoadBalanceConfig } from '@/types/load-balancing';
+import { DEFAULT_LOAD_BALANCE_CONFIG } from '@/types/load-balancing';
 import { createGatewayError } from '@/types';
 import { logger } from '@/utils/logger';
 
@@ -53,13 +55,19 @@ export class RequestRouter {
   private readonly planSelector: PlanSelector;
   private readonly circuitBreaker: CircuitBreaker;
   private readonly quotaManager: QuotaManager | null;
+  private readonly loadBalanceConfig: LoadBalanceConfig;
 
   /**
    * Create a new RequestRouter.
    */
-  constructor(repository: IPlanRepository, quotaManager?: QuotaManager) {
+  constructor(
+    repository: IPlanRepository,
+    quotaManager?: QuotaManager,
+    loadBalanceConfig?: LoadBalanceConfig
+  ) {
     this.repository = repository;
-    this.planSelector = createPlanSelector();
+    this.loadBalanceConfig = loadBalanceConfig ?? DEFAULT_LOAD_BALANCE_CONFIG;
+    this.planSelector = createPlanSelector(this.loadBalanceConfig);
     this.circuitBreaker = createCircuitBreaker();
     this.quotaManager = quotaManager ?? null;
   }
@@ -146,9 +154,15 @@ export class RequestRouter {
       return this.handleAllExhausted(model, requestId, availablePlans.length);
     }
 
-    // Select the best plan based on quota
+    // Select the best plan based on load balancing strategy
     const quotaStates = this.quotaManager?.getAllQuotaStates() ?? new Map<string, QuotaState>();
-    const selectedPlan = this.planSelector.selectBestPlan(plansWithQuota, quotaStates);
+    const context: SelectionContext = {
+      model,
+      plans: plansWithQuota,
+      quotaStates,
+      config: this.loadBalanceConfig,
+    };
+    const selectedPlan = this.planSelector.selectBestPlan(context);
 
     if (!selectedPlan) {
       logger.warn('No suitable plan found after quota filtering', {
@@ -320,7 +334,8 @@ export class RequestRouter {
  */
 export function createRequestRouter(
   repository: IPlanRepository,
-  quotaManager?: QuotaManager
+  quotaManager?: QuotaManager,
+  loadBalanceConfig?: LoadBalanceConfig
 ): RequestRouter {
-  return new RequestRouter(repository, quotaManager);
+  return new RequestRouter(repository, quotaManager, loadBalanceConfig);
 }
