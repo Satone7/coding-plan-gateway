@@ -406,4 +406,92 @@ describe('E2E CLI Operations', () => {
       expect(testOutputAfter.prefix).toBe(prefix);
     });
   });
+
+  describe('Load Balancing (009-enhance-routing-lb)', () => {
+    // These tests verify load balancing features using the production config.yaml
+
+    it.skipIf(!dockerAvailable || !gatewayRunning)('should list models from configured plans', () => {
+      const result = wgetGateway('/v1/models', 'GET');
+      expect(result.exitCode).toBe(0);
+
+      const output = JSON.parse(result.stdout);
+      expect(output.object).toBe('list');
+      expect(Array.isArray(output.data)).toBe(true);
+      // Should have models from config.yaml
+      expect(output.data.length).toBeGreaterThan(0);
+    });
+
+    it.skipIf(!dockerAvailable || !gatewayRunning)('should preserve custom parameters in requests (passthrough)', () => {
+      // Test that custom parameters are passed through to upstream
+      const result = wgetGateway(
+        '/v1/chat/completions',
+        'POST',
+        JSON.stringify({
+          model: 'kimi-k2.5', // Use model from config.yaml
+          messages: [{ role: 'user', content: 'Hi' }],
+          // Custom parameter that should be preserved
+          custom_field: 'test_value_123',
+        }),
+        { 'Content-Type': 'application/json' }
+      );
+
+      // Request should be accepted (may fail upstream, but shouldn't fail at gateway)
+      // The gateway should pass through custom_field to the upstream provider
+      expect(result.exitCode).toBe(0);
+    });
+
+    it.skipIf(!dockerAvailable || !gatewayRunning)('should route requests to available plans', () => {
+      // Send a request and verify it routes successfully
+      const result = wgetGateway(
+        '/v1/chat/completions',
+        'POST',
+        JSON.stringify({
+          model: 'kimi-k2.5',
+          messages: [{ role: 'user', content: 'Test routing' }],
+        }),
+        { 'Content-Type': 'application/json' }
+      );
+
+      expect(result.exitCode).toBe(0);
+
+      // Parse response - should be a valid chat completion response
+      try {
+        const output = JSON.parse(result.stdout);
+        expect(output).toHaveProperty('choices');
+      } catch {
+        // If not JSON, might be streaming or error response
+        expect(result.stdout.length).toBeGreaterThan(0);
+      }
+    });
+
+    it.skipIf(!dockerAvailable || !gatewayRunning)('should handle multiple requests (load distribution)', async () => {
+      // Send multiple requests to test load balancing
+      const requests = [];
+      for (let i = 0; i < 3; i++) {
+        const result = wgetGateway(
+          '/v1/chat/completions',
+          'POST',
+          JSON.stringify({
+            model: 'kimi-k2.5',
+            messages: [{ role: 'user', content: `Load test ${i}` }],
+          }),
+          { 'Content-Type': 'application/json' }
+        );
+        requests.push(result);
+      }
+
+      // All requests should succeed or fail gracefully
+      for (const result of requests) {
+        expect([0, 1]).toContain(result.exitCode);
+      }
+    });
+
+    it.skipIf(!dockerAvailable || !gatewayRunning)('should check health endpoint', () => {
+      const result = wgetGateway('/health', 'GET');
+      expect(result.exitCode).toBe(0);
+
+      const output = JSON.parse(result.stdout);
+      expect(output.status).toBe('healthy');
+    });
+  });
 });

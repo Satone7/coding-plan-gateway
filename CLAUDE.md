@@ -106,6 +106,10 @@ git merge <branch-name> --no-ff -m "merge: branch <branch-name> into master"
 - Encrypt API keys at rest (AES-256)
 - Never log or commit secrets
 - Use environment variables for sensitive config
+- **CRITICAL: NEVER commit API keys or secrets to git**
+  - `config.yaml` is in `.gitignore` for this reason
+  - Always use placeholder values like `YOUR_API_KEY_HERE` in example files
+  - If API keys are accidentally committed, rotate them immediately and use `git filter-repo` or BFG to remove from history
 
 ## Testing Requirements
 
