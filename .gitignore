@@ -38,7 +38,8 @@ quota-state.json
 secrets.enc
 api-keys.json
 usage-data.json
+plan-usage-data.json
+usage-adjustment-history.json
 
-# E2E testing
-e2e/test-config.yaml
+# Logs
 logs/

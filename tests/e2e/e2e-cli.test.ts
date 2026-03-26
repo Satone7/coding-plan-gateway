@@ -26,8 +26,8 @@ function isDockerAvailable(): boolean {
 // Check if the gateway container is running
 function isGatewayRunning(): boolean {
   try {
-    // Check for either coding-plan-gateway (production) or gateway (E2E environment)
-    const result = execSync('docker ps --filter "name=gateway" --filter "status=running" -q', {
+    // Check for gateway-e2e container (E2E environment)
+    const result = execSync('docker ps --filter "name=gateway-e2e" --filter "status=running" -q', {
       encoding: 'utf-8',
     });
     return result.trim().length > 0;
@@ -39,8 +39,8 @@ function isGatewayRunning(): boolean {
 // Execute command in the gateway container
 function execInGateway(command: string): { stdout: string; stderr: string; exitCode: number } {
   try {
-    // Use coding-plan-gateway container name for production, gateway for E2E environment
-    const containerName = process.env.E2E_CONTAINER_NAME || 'coding-plan-gateway';
+    // Use gateway-e2e container name for E2E environment
+    const containerName = process.env.E2E_CONTAINER_NAME || 'gateway-e2e';
     const stdout = execSync(`docker exec ${containerName} ${command}`, {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -123,8 +123,8 @@ function wgetGateway(path: string, method: string = 'GET', body?: string, header
   stdout: string;
   exitCode: number;
 } {
-  // Use coding-plan-gateway container name for production, gateway for E2E environment
-  const containerName = process.env.E2E_CONTAINER_NAME || 'coding-plan-gateway';
+  // Use gateway-e2e container name for E2E environment
+  const containerName = process.env.E2E_CONTAINER_NAME || 'gateway-e2e';
 
   const args: string[] = ['wget', '-qO-'];
 
@@ -358,9 +358,9 @@ describe('E2E CLI Operations', () => {
 
       // Restart the container using docker compose
       // Note: This will temporarily disrupt the gateway
-      const containerName = process.env.E2E_CONTAINER_NAME || 'coding-plan-gateway';
-      execSync('docker compose down', { stdio: 'inherit' });
-      execSync('docker compose up -d', { stdio: 'inherit' });
+      const containerName = process.env.E2E_CONTAINER_NAME || 'gateway-e2e';
+      execSync('docker compose -f docker-compose.e2e.yml down', { stdio: 'inherit' });
+      execSync('docker compose -f docker-compose.e2e.yml up -d', { stdio: 'inherit' });
 
       // Wait for the container to be ready (from host)
       let ready = false;
@@ -369,7 +369,8 @@ describe('E2E CLI Operations', () => {
       while (!ready && attempts < maxAttempts) {
         try {
           // Check health from host (more reliable than from inside container)
-          const healthCheck = execSync('curl -s http://localhost:8080/health', {
+          // E2E gateway runs on port 8081
+          const healthCheck = execSync('curl -s http://localhost:8081/health', {
             encoding: 'utf-8',
             stdio: ['pipe', 'pipe', 'pipe'],
           });
