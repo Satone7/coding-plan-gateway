@@ -12,7 +12,9 @@ import { loadConfig } from './config';
 import { createQuotaManager } from './services/quota-manager';
 import { createApiKeyManager } from './services/api-key-manager';
 import { createUsageTracker } from './services/usage-tracker';
+import { createPlanUsageTracker } from './services/plan-usage-tracker';
 import { loadAuthConfig } from './config/auth-config';
+import { loadPlanUsageConfig } from './config/defaults';
 
 /**
  * Main entry point.
@@ -42,6 +44,18 @@ async function main(): Promise<void> {
     });
     await quotaManager.initialize(config.plans);
     quotaManager.startPeriodicSync();
+
+    // Create and initialize plan usage tracker
+    const planUsageConfig = loadPlanUsageConfig();
+    const planUsageTracker = createPlanUsageTracker({
+      planUsageDataPath: planUsageConfig.planUsageDataPath,
+      adjustmentHistoryPath: planUsageConfig.adjustmentHistoryPath,
+    });
+    await planUsageTracker.initialize();
+    planUsageTracker.startPeriodicSync();
+
+    // Connect plan usage tracker to quota manager
+    quotaManager.setPlanUsageTracker(planUsageTracker);
 
     // Create and initialize API key manager
     const authConfig = loadAuthConfig();

@@ -9,15 +9,19 @@ import { registerOpenAIRoutes } from './openai';
 import { registerAnthropicRoutes } from './anthropic';
 import { registerAdminRoutes } from './admin';
 import { createPlanRepository } from '@/services/plan-repository';
-import { createQuotaManager } from '@/services/quota-manager';
+import type { QuotaManager } from '@/services/quota-manager';
 import { createRequestProxy } from '@/services/request-proxy';
 
 /**
  * Register all routes with the Fastify instance.
  *
  * @param app - The Fastify instance
+ * @param quotaManager - Optional quota manager instance (must be initialized by caller)
  */
-export async function registerRoutes(app: FastifyInstance): Promise<void> {
+export async function registerRoutes(
+  app: FastifyInstance,
+  quotaManager?: QuotaManager
+): Promise<void> {
   logger.info('Registering routes...');
 
   // Register health endpoints
@@ -43,19 +47,18 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   const repository = createPlanRepository(configPath, encryptionKey);
   const proxy = createRequestProxy();
 
-  // Create quota manager if encryption key is available
-  const quotaManager = encryptionKey ? createQuotaManager() : undefined;
-
   // Register API routes
   await registerOpenAIRoutes(app, {
     repository,
     proxy,
+    quotaManager,
     prefix: '/v1',
   });
 
   await registerAnthropicRoutes(app, {
     repository,
     proxy,
+    quotaManager,
     prefix: '/v1',
   });
 

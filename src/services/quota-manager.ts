@@ -214,11 +214,9 @@ export class QuotaManager {
     state.used += amount;
     state.lastUpdated = new Date();
 
-    // Track daily usage if tracker is attached
+    // Track daily usage if tracker is attached (track as request count, not token count)
     if (this.planUsageTracker) {
-      for (let i = 0; i < amount; i++) {
-        this.planUsageTracker.incrementDailyUsage(planId);
-      }
+      this.planUsageTracker.incrementDailyUsage(planId);
     }
 
     logger.debug('Quota consumed', {
@@ -247,11 +245,9 @@ export class QuotaManager {
     state.used = Math.max(0, state.used - amount);
     state.lastUpdated = new Date();
 
-    // Track daily usage refund if tracker is attached
+    // Track daily usage refund if tracker is attached (track as request count, not token count)
     if (this.planUsageTracker) {
-      for (let i = 0; i < amount; i++) {
-        this.planUsageTracker.decrementDailyUsage(planId);
-      }
+      this.planUsageTracker.decrementDailyUsage(planId);
     }
 
     logger.debug('Quota refunded', {
