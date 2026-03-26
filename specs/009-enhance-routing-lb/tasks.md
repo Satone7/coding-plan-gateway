@@ -95,10 +95,10 @@
 
 ### Implementation for User Story 4
 
-- [ ] T016 [US4] Implement calculateEffectiveExpiration function in `src/utils/expiration.ts` to compute expiration from expiresOn or expiresAt with month boundary handling
-- [ ] T017 [US4] Extend plan-selector in `src/services/plan-selector.ts` to calculate expiration score using calculateExpirationScore utility
-- [ ] T018 [US4] Implement multi-factor scoring in `src/services/plan-selector.ts` combining expiration (40%), RPM (40%), quota (20%) scores with configurable weights
-- [ ] T019 [US4] Integrate multi-factor scoring into quota-priority strategy as the default selection method
+- [x] T016 [US4] Implement calculateEffectiveExpiration function in `src/utils/expiration.ts` to compute expiration from expiresOn or expiresAt with month boundary handling
+- [x] T017 [US4] Extend plan-selector in `src/services/plan-selector.ts` to calculate expiration score using calculateExpirationScore utility
+- [x] T018 [US4] Implement multi-factor scoring in `src/services/plan-selector.ts` combining expiration (40%), RPM (40%), quota (20%) scores with configurable weights
+- [x] T019 [US4] Integrate multi-factor scoring into quota-priority strategy as the default selection method
 
 **Checkpoint**: Plans expiring soon receive higher selection priority
 
