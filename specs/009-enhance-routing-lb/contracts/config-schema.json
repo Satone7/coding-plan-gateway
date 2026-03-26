@@ -1,0 +1,154 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Coding Plan Gateway Configuration",
+  "description": "Configuration schema for the gateway with load balancing enhancements",
+  "type": "object",
+  "properties": {
+    "plans": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/CodingPlan"
+      },
+      "minItems": 1
+    },
+    "loadBalancing": {
+      "$ref": "#/definitions/LoadBalanceConfig"
+    }
+  },
+  "required": ["plans"],
+  "definitions": {
+    "CodingPlan": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique identifier for the plan"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Human-readable name for the plan"
+        },
+        "baseUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "Base URL for the upstream API"
+        },
+        "apiKey": {
+          "type": "string",
+          "minLength": 1,
+          "description": "API key for authentication (stored encrypted)"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "List of model identifiers supported by this plan"
+        },
+        "quota": {
+          "$ref": "#/definitions/QuotaConfig"
+        },
+        "timeout": {
+          "type": "number",
+          "minimum": 1000,
+          "maximum": 300000,
+          "default": 30000,
+          "description": "Request timeout in milliseconds"
+        },
+        "isActive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the plan is active"
+        },
+        "expiresOn": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31,
+          "description": "Day of month when quota resets/expires (1-31)"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Exact ISO 8601 datetime for one-time expiration (takes precedence over expiresOn)"
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 1,
+          "description": "Load balancing weight (1-100), higher values = higher priority"
+        }
+      },
+      "required": ["id", "name", "baseUrl", "apiKey", "models", "quota"]
+    },
+    "QuotaConfig": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Maximum quota allowed"
+        },
+        "used": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "Currently used quota"
+        },
+        "period": {
+          "type": "string",
+          "enum": ["daily", "monthly", "total"],
+          "description": "Quota reset period"
+        }
+      },
+      "required": ["limit", "period"]
+    },
+    "LoadBalanceConfig": {
+      "type": "object",
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["quota-priority", "round-robin", "weighted-round-robin", "random"],
+          "default": "quota-priority",
+          "description": "Load balancing strategy"
+        },
+        "factorWeights": {
+          "$ref": "#/definitions/FactorWeights"
+        }
+      },
+      "description": "Load balancing configuration"
+    },
+    "FactorWeights": {
+      "type": "object",
+      "properties": {
+        "expiration": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.4,
+          "description": "Weight for expiration factor"
+        },
+        "rpm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.4,
+          "description": "Weight for RPM factor"
+        },
+        "quota": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.2,
+          "description": "Weight for quota factor"
+        }
+      },
+      "required": ["expiration", "rpm", "quota"],
+      "description": "Weights for multi-factor scoring (must sum to 1.0)"
+    }
+  }
+}

@@ -131,6 +131,7 @@ git merge <branch-name> --no-ff -m "merge: branch <branch-name> into master"
 - JSON files (`api-keys.json`, `usage-data.json`) in Docker named volume (007-fix-cli-reload)
 - TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Zod (validation), Commander.js (CLI), Vitest (testing) (008-plan-usage-stats)
 - JSON files (plan-usage-data.json, usage-adjustment-history.json) (008-plan-usage-stats)
+- YAML/JSON files (configuration), in-memory (RPM tracking, quota state) (009-enhance-routing-lb)
 
 ## Recent Changes
 - 007-fix-cli-reload: Fixed CLI reload endpoint registration, authentication exemption for internal routes, x-api-key header support
