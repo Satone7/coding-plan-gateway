@@ -162,11 +162,24 @@ export class QuotaManager {
 
   /**
    * Check if a plan has remaining quota.
+   * If PlanUsageTracker is attached, uses it as the source of truth.
    *
    * @param planId - The plan identifier
    * @returns true if quota remains
    */
   hasRemainingQuota(planId: number): boolean {
+    // Use tracker as source of truth if attached
+    if (this.planUsageTracker) {
+      const usageData = this.planUsageTracker.getUsageForQuotaManager(planId);
+      const used = usageData?.used ?? 0;
+      const state = this.quotaStates.get(planId);
+      if (!state) {
+        return false;
+      }
+      return used < state.limit;
+    }
+
+    // Fall back to local state
     const state = this.quotaStates.get(planId);
     if (!state) {
       return false;
@@ -190,11 +203,20 @@ export class QuotaManager {
 
   /**
    * Get current used quota for a plan.
+   * If PlanUsageTracker is attached, queries it as the single source of truth.
+   * Otherwise, falls back to local quota state.
    *
    * @param planId - The plan identifier
    * @returns Used quota (0 if no state)
    */
   getUsedQuota(planId: number): number {
+    // Prefer PlanUsageTracker as the single source of truth
+    if (this.planUsageTracker) {
+      const usageData = this.planUsageTracker.getUsageForQuotaManager(planId);
+      return usageData?.used ?? 0;
+    }
+
+    // Fall back to local state if no tracker attached
     const state = this.quotaStates.get(planId);
     if (!state) {
       return 0;
@@ -256,9 +278,9 @@ export class QuotaManager {
     state.used += amount;
     state.lastUpdated = new Date();
 
-    // Track daily usage if tracker is attached (track as request count, not token count)
+    // Track daily usage if tracker is attached
     if (this.planUsageTracker) {
-      this.planUsageTracker.incrementDailyUsage(planId);
+      this.planUsageTracker.incrementDailyUsage(planId, amount);
     }
 
     logger.debug('Quota consumed', {
@@ -287,9 +309,9 @@ export class QuotaManager {
     state.used = Math.max(0, state.used - amount);
     state.lastUpdated = new Date();
 
-    // Track daily usage refund if tracker is attached (track as request count, not token count)
+    // Track daily usage refund if tracker is attached
     if (this.planUsageTracker) {
-      this.planUsageTracker.decrementDailyUsage(planId);
+      this.planUsageTracker.decrementDailyUsage(planId, amount);
     }
 
     logger.debug('Quota refunded', {

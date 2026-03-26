@@ -3,7 +3,7 @@
  * Tests quota tracking, persistence, and management.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { QuotaManager, createQuotaManager } from '@/services/quota-manager';
 import type { QuotaState } from '@/types';
 import { createMockPlans, createMockQuotaStates } from '../../fixtures/mock-plans';
@@ -368,6 +368,35 @@ describe('QuotaManager', () => {
 
       const used = quotaManager.getUsedQuota(plans[0].id);
       expect(used).toBe(250);
+    });
+
+    it('should query PlanUsageTracker when attached', async () => {
+      const plans = createMockPlans();
+      await quotaManager.initialize(plans);
+
+      // Create and attach a mock PlanUsageTracker
+      const mockTracker = {
+        getUsageForQuotaManager: vi.fn().mockReturnValue({ used: 42, lastUpdated: new Date() }),
+      };
+      quotaManager.setPlanUsageTracker(mockTracker as unknown as import('@/services/plan-usage-tracker').PlanUsageTracker);
+
+      const used = quotaManager.getUsedQuota(plans[0].id);
+      expect(used).toBe(42);
+      expect(mockTracker.getUsageForQuotaManager).toHaveBeenCalledWith(plans[0].id);
+    });
+
+    it('should return 0 when PlanUsageTracker returns undefined', async () => {
+      const plans = createMockPlans();
+      await quotaManager.initialize(plans);
+
+      // Create and attach a mock PlanUsageTracker that returns undefined
+      const mockTracker = {
+        getUsageForQuotaManager: vi.fn().mockReturnValue(undefined),
+      };
+      quotaManager.setPlanUsageTracker(mockTracker as unknown as import('@/services/plan-usage-tracker').PlanUsageTracker);
+
+      const used = quotaManager.getUsedQuota(999999);
+      expect(used).toBe(0);
     });
   });
 });

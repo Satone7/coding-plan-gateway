@@ -98,13 +98,13 @@
 
 ### Tests for User Story 3
 
-- [ ] T021 [P] [US3] Add unit tests for QuotaManager querying PlanUsageTracker in `tests/unit/services/quota-manager.test.ts`
-- [ ] T022 [P] [US3] Add regression tests ensuring all usage sources return same value in `tests/unit/services/usage-consistency.test.ts`
+- [x] T021 [P] [US3] Add unit tests for QuotaManager querying PlanUsageTracker in `tests/unit/services/quota-manager.test.ts`
+- [x] T022 [P] [US3] Add regression tests ensuring all usage sources return same value in `tests/unit/services/usage-consistency.test.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] Modify QuotaManager.getUsedQuota() to query PlanUsageTracker.getUsageForQuotaManager() in `src/services/quota-manager.ts`
-- [ ] T024 [US3] Update QuotaManager.incrementUsage() to also update PlanUsageTracker in `src/services/quota-manager.ts`
+- [x] T023 [US3] Modify QuotaManager.getUsedQuota() to query PlanUsageTracker.getUsageForQuotaManager() in `src/services/quota-manager.ts`
+- [x] T024 [US3] Update QuotaManager.incrementUsage() to also update PlanUsageTracker in `src/services/quota-manager.ts`
 - [ ] T025 [US3] Add automatic usage reset on expiresOn date at midnight in `src/services/plan-usage-tracker.ts`
 - [ ] T026 [US3] Add scheduler for expiration reset check in `src/server.ts` or dedicated scheduler module
 - [ ] T027 [US3] Add integration test for unified usage across CLI and API in `tests/integration/usage-unified-source.test.ts`

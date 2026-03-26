@@ -154,10 +154,11 @@ export class PlanUsageTracker {
    * Increment the request count for a plan on the current day.
    *
    * @param planId - The plan ID
+   * @param amount - The amount to increment (default: 1)
    */
-  incrementDailyUsage(planId: number): void {
+  incrementDailyUsage(planId: number, amount: number = 1): void {
     const record = this.getOrCreateRecord(planId);
-    record.requestCount += 1;
+    record.requestCount += amount;
     record.lastUpdated = new Date();
 
     logger.debug('Plan daily usage incremented', {
@@ -171,10 +172,11 @@ export class PlanUsageTracker {
    * Decrement the request count for a plan on the current day.
    *
    * @param planId - The plan ID
+   * @param amount - The amount to decrement (default: 1)
    */
-  decrementDailyUsage(planId: number): void {
+  decrementDailyUsage(planId: number, amount: number = 1): void {
     const record = this.getOrCreateRecord(planId);
-    record.requestCount = Math.max(0, record.requestCount - 1);
+    record.requestCount = Math.max(0, record.requestCount - amount);
     record.lastUpdated = new Date();
 
     logger.debug('Plan daily usage decremented', {
