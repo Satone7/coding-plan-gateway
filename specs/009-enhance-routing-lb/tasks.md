@@ -46,7 +46,7 @@
 
 ### Implementation for User Story 1
 
-- [ ] T006 [US1] Add `.passthrough()` method to chatCompletionSchema in `src/routes/openai/handlers.ts` to preserve unknown fields
+- [x] T006 [US1] Add `.passthrough()` method to chatCompletionSchema in `src/routes/openai/handlers.ts` to preserve unknown fields
 
 **Checkpoint**: OpenAI endpoint now preserves all request fields
 

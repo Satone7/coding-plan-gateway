@@ -22,6 +22,9 @@ import type { CodingPlan } from '@/types';
 
 /**
  * OpenAI chat completion request schema.
+ * Uses passthrough to preserve unknown fields for transparent proxy behavior.
+ * This allows custom parameters (e.g., logprobs, top_logprobs) to pass through
+ * to upstream providers without being stripped by Zod validation.
  */
 const chatCompletionSchema = z.object({
   model: z.string().min(1),
@@ -38,7 +41,7 @@ const chatCompletionSchema = z.object({
   presence_penalty: z.number().min(-2).max(2).optional(),
   frequency_penalty: z.number().min(-2).max(2).optional(),
   user: z.string().optional(),
-});
+}).passthrough();
 
 type ValidatedChatCompletion = z.infer<typeof chatCompletionSchema>;
 
