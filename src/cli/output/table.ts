@@ -299,15 +299,15 @@ Options for list:
   --json      Output in JSON format
 
 Options for set-usage:
-  --id <uuid>    Plan ID (required)
+  --id <id>      Plan ID - integer (required)
   --count <n>    Set usage to exact count
   --percent <n>  Set usage as percentage of limit (0-100)
   --json         Output in JSON format
 
 Examples:
   cpg plan list
-  cpg plan set-usage --id 550e8400-e29b-41d4-a716-446655440000 --count 100
-  cpg plan set-usage --id 550e8400-e29b-41d4-a716-446655440000 --percent 75
+  cpg plan set-usage --id 1 --count 100
+  cpg plan set-usage --id 2 --percent 75
 `;
   }
 
