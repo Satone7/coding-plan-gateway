@@ -112,12 +112,12 @@
 
 ### Implementation for User Story 5
 
-- [ ] T020 [US5] Implement RpmTracker service in `src/services/rpm-tracker.ts` with 6-bucket sliding window (10-second granularity) per research.md R3
-- [ ] T021 [US5] Implement recordRequest method in RpmTracker to update current bucket count
-- [ ] T022 [US5] Implement getRpm method in RpmTracker to sum all non-expired buckets
-- [ ] T023 [US5] Integrate RpmTracker with request-router in `src/services/request-router.ts` to record requests per plan
-- [ ] T024 [US5] Implement RPM score calculation in `src/services/plan-selector.ts` (inverse scoring: lower RPM = higher score)
-- [ ] T025 [US5] Complete multi-factor scoring integration in plan-selector with all three factors: expiration, RPM, and quota
+- [x] T020 [US5] Implement RpmTracker service in `src/services/rpm-tracker.ts` with 6-bucket sliding window (10-second granularity) per research.md R3
+- [x] T021 [US5] Implement recordRequest method in RpmTracker to update current bucket count
+- [x] T022 [US5] Implement getRpm method in RpmTracker to sum all non-expired buckets
+- [x] T023 [US5] Integrate RpmTracker with request-router in `src/services/request-router.ts` to record requests per plan
+- [x] T024 [US5] Implement RPM score calculation in `src/services/plan-selector.ts` (inverse scoring: lower RPM = higher score)
+- [x] T025 [US5] Complete multi-factor scoring integration in plan-selector with all three factors: expiration, RPM, and quota
 
 **Checkpoint**: Full multi-factor load balancing operational with RPM awareness
 

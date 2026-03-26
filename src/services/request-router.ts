@@ -1,6 +1,6 @@
 /**
  * RequestRouter - Routes requests to appropriate coding plans.
- * Integrates PlanSelector, CircuitBreaker, QuotaManager, and failover logic.
+ * Integrates PlanSelector, CircuitBreaker, QuotaManager, RpmTracker, and failover logic.
  */
 
 import { randomUUID } from 'crypto';
@@ -8,6 +8,7 @@ import type { IPlanRepository } from '@/services/plan-repository';
 import { PlanSelector, createPlanSelector, type SelectionContext } from '@/services/plan-selector';
 import { CircuitBreaker, createCircuitBreaker } from '@/services/circuit-breaker';
 import type { QuotaManager } from '@/services/quota-manager';
+import { RpmTracker, createRpmTracker } from '@/services/rpm-tracker';
 import type { CodingPlan, QuotaState } from '@/types';
 import type { LoadBalanceConfig } from '@/types/load-balancing';
 import { DEFAULT_LOAD_BALANCE_CONFIG } from '@/types/load-balancing';
@@ -55,6 +56,7 @@ export class RequestRouter {
   private readonly planSelector: PlanSelector;
   private readonly circuitBreaker: CircuitBreaker;
   private readonly quotaManager: QuotaManager | null;
+  private readonly rpmTracker: RpmTracker;
   private readonly loadBalanceConfig: LoadBalanceConfig;
 
   /**
@@ -67,7 +69,8 @@ export class RequestRouter {
   ) {
     this.repository = repository;
     this.loadBalanceConfig = loadBalanceConfig ?? DEFAULT_LOAD_BALANCE_CONFIG;
-    this.planSelector = createPlanSelector(this.loadBalanceConfig);
+    this.rpmTracker = createRpmTracker();
+    this.planSelector = createPlanSelector(this.loadBalanceConfig, this.rpmTracker);
     this.circuitBreaker = createCircuitBreaker();
     this.quotaManager = quotaManager ?? null;
   }
@@ -160,6 +163,7 @@ export class RequestRouter {
       model,
       plans: plansWithQuota,
       quotaStates,
+      rpmTracker: this.rpmTracker,
       config: this.loadBalanceConfig,
     };
     const selectedPlan = this.planSelector.selectBestPlan(context);
@@ -172,6 +176,9 @@ export class RequestRouter {
       });
       return emptyResult(requestId);
     }
+
+    // Record the request in RPM tracker for load balancing
+    this.rpmTracker.recordRequest(selectedPlan.id);
 
     // Get alternative plans for failover (exclude selected)
     const alternativePlans = plansWithQuota.filter(
@@ -318,6 +325,13 @@ export class RequestRouter {
    */
   getQuotaManager(): QuotaManager | null {
     return this.quotaManager;
+  }
+
+  /**
+   * Get the RPM tracker instance.
+   */
+  getRpmTracker(): RpmTracker {
+    return this.rpmTracker;
   }
 
   /**
