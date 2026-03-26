@@ -39,7 +39,7 @@ services:
       dockerfile: Dockerfile
     container_name: claude-code-e2e
     environment:
-      - ANTHROPIC_BASE_URL=http://gateway:8080
+      - ANTHROPIC_BASE_URL=http://gateway-e2e:8080
       - ANTHROPIC_MODEL=kimi-k2.5
       - ANTHROPIC_API_KEY=cpg_Qnhp8ZikLlKutijYis0R78n8HP0roxgk
     volumes:
