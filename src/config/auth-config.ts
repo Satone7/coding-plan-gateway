@@ -90,6 +90,20 @@ export function parseExemptPaths(exemptPaths: string): string[] {
 }
 
 /**
+ * Converts a wildcard pattern to a regex string.
+ * Supports `*` as a wildcard that matches any characters.
+ *
+ * @param pattern - The wildcard pattern (e.g., "path with asterisks as wildcards")
+ * @returns A regex pattern string
+ */
+function wildcardToRegex(pattern: string): string {
+  // Escape special regex characters except *
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  // Replace * with .* (match any characters)
+  return `^${escaped.replace(/\*/g, '.*')}$`;
+}
+
+/**
  * Checks if a given path is exempt from authentication.
  *
  * @param path - The request path to check
@@ -98,24 +112,15 @@ export function parseExemptPaths(exemptPaths: string): string[] {
  */
 export function isExemptPath(path: string, exemptPaths: string[]): boolean {
   return exemptPaths.some((exemptPath) => {
-    // Exact match
-    if (path === exemptPath) {
-      return true;
+    // Check if pattern contains wildcards
+    if (exemptPath.includes('*')) {
+      // Use regex matching for patterns with wildcards
+      const regex = new RegExp(wildcardToRegex(exemptPath));
+      return regex.test(path);
     }
 
-    // Prefix match for paths ending with *
-    if (exemptPath.endsWith('*')) {
-      const prefix = exemptPath.slice(0, -1);
-      return path.startsWith(prefix);
-    }
-
-    // Suffix match for paths starting with * (e.g., "*/sync" matches "/api/quota/1/sync")
-    if (exemptPath.startsWith('*')) {
-      const suffix = exemptPath.slice(1);
-      return path.endsWith(suffix);
-    }
-
-    return false;
+    // Exact match for patterns without wildcards
+    return path === exemptPath;
   });
 }
 
