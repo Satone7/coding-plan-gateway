@@ -853,6 +853,107 @@ export class PlanUsageTracker {
   getAdjustmentCount(): number {
     return this.adjustments.length;
   }
+
+  /**
+   * Reset all usage records for a plan.
+   * This is called when a plan's quota expires (on expiresOn date).
+   *
+   * @param planId - The plan ID to reset
+   * @returns The number of records that were reset
+   */
+  resetPlanUsage(planId: number): number {
+    let resetCount = 0;
+    const keysToDelete: StorageKey[] = [];
+
+    // Find all records for this plan
+    for (const [key, record] of this.usage) {
+      if (record.planId === planId) {
+        keysToDelete.push(key);
+        resetCount++;
+      }
+    }
+
+    // Delete the records
+    for (const key of keysToDelete) {
+      this.usage.delete(key);
+    }
+
+    if (resetCount > 0) {
+      logger.info('Plan usage reset', {
+        planId,
+        resetCount,
+      });
+    }
+
+    return resetCount;
+  }
+
+  /**
+   * Check and reset expired plans.
+   * This method is called by the scheduler to reset plans whose expiration date has passed.
+   *
+   * @param plans - Array of plans with their expiration configuration
+   * @returns Array of plan IDs that were reset
+   */
+  checkAndResetExpiredPlans(
+    plans: Array<{
+      id: number;
+      quota: { period: 'daily' | 'monthly' | 'total'; expiresOn?: number; expiresAt?: string };
+    }>
+  ): number[] {
+    const now = new Date();
+    const resetPlanIds: number[] = [];
+
+    for (const plan of plans) {
+      // Skip 'total' period plans - they never reset
+      if (plan.quota.period === 'total') {
+        continue;
+      }
+
+      // Check if the plan has expiration configured
+      const expiration = calculateEffectiveExpiration({
+        expiresOn: plan.quota.expiresOn,
+        expiresAt: plan.quota.expiresAt,
+      });
+
+      if (!expiration) {
+        // No expiration configured, use default behavior
+        // For 'daily' period, reset every day at midnight
+        // For 'monthly' period without expiresOn, reset on the 1st of each month
+        if (plan.quota.period === 'daily') {
+          // Check if we've passed midnight today (already handled by daily record creation)
+          continue;
+        } else if (plan.quota.period === 'monthly') {
+          // Check if it's the 1st of the month at midnight
+          if (now.getDate() === 1 && now.getHours() === 0 && now.getMinutes() === 0) {
+            const resetCount = this.resetPlanUsage(plan.id);
+            if (resetCount > 0) {
+              resetPlanIds.push(plan.id);
+            }
+          }
+        }
+        continue;
+      }
+
+      // Check if the expiration time has passed
+      // We compare against midnight of the expiration day
+      const expirationMidnight = new Date(
+        expiration.getFullYear(),
+        expiration.getMonth(),
+        expiration.getDate(),
+        0, 0, 0, 0
+      );
+
+      if (now >= expirationMidnight) {
+        const resetCount = this.resetPlanUsage(plan.id);
+        if (resetCount > 0) {
+          resetPlanIds.push(plan.id);
+        }
+      }
+    }
+
+    return resetPlanIds;
+  }
 }
 
 /**
