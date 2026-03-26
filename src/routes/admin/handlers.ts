@@ -713,28 +713,29 @@ export function createAdminHandlers(
         );
       }
 
-      // Get usage report
+      // Get usage report with expiresOn/expiresAt support
       const report = planUsageTracker.getUsageReport(
         planId,
-        { id: plan.id, name: plan.name, quota: plan.quota },
+        {
+          id: plan.id,
+          name: plan.name,
+          quota: {
+            limit: plan.quota.limit,
+            period: plan.quota.period,
+            expiresOn: plan.expiresOn,
+            expiresAt: plan.expiresAt,
+          },
+        },
         from,
         to
       );
 
-      // Calculate reset date
-      let resetAt: Date | null = null;
-      if (plan.quota.period === 'daily') {
-        const tomorrow = new Date();
-        tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-        tomorrow.setUTCHours(0, 0, 0, 0);
-        resetAt = tomorrow;
-      } else if (plan.quota.period === 'monthly') {
-        const nextMonth = new Date();
-        nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-        nextMonth.setUTCDate(1);
-        nextMonth.setUTCHours(0, 0, 0, 0);
-        resetAt = nextMonth;
-      }
+      // Calculate reset date using the tracker's method that respects expiresOn/expiresAt
+      const resetAt = planUsageTracker.calculateResetAt(
+        plan.quota.period,
+        plan.expiresOn,
+        plan.expiresAt
+      );
 
       const responseData: PlanUsageReportData = report ? {
         planId: report.planId,
@@ -907,20 +908,12 @@ export function createAdminHandlers(
         const remaining = plan.quota.limit - used;
         const percentage = plan.quota.limit > 0 ? Math.round((used / plan.quota.limit) * 100) : 0;
 
-        // Calculate reset date
-        let resetAt: Date | null = null;
-        if (plan.quota.period === 'daily') {
-          const tomorrow = new Date();
-          tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-          tomorrow.setUTCHours(0, 0, 0, 0);
-          resetAt = tomorrow;
-        } else if (plan.quota.period === 'monthly') {
-          const nextMonth = new Date();
-          nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-          nextMonth.setUTCDate(1);
-          nextMonth.setUTCHours(0, 0, 0, 0);
-          resetAt = nextMonth;
-        }
+        // Calculate reset date using the tracker's method that respects expiresOn/expiresAt
+        const resetAt = planUsageTracker.calculateResetAt(
+          plan.quota.period,
+          plan.expiresOn,
+          plan.expiresAt
+        );
 
         return {
           planId: plan.id,

@@ -53,15 +53,15 @@
 
 ### Tests for User Story 1
 
-- [ ] T008 [P] [US1] Add unit tests for calculateResetDate with expiresOn in `tests/unit/services/plan-usage-tracker.test.ts`
-- [ ] T009 [P] [US1] Add unit tests for month boundary edge cases (e.g., Feb 31) in `tests/unit/services/plan-usage-tracker.test.ts`
+- [x] T008 [P] [US1] Add unit tests for calculateResetDate with expiresOn in `tests/unit/services/plan-usage-tracker.test.ts`
+- [x] T009 [P] [US1] Add unit tests for month boundary edge cases (e.g., Feb 31) in `tests/unit/services/plan-usage-tracker.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Modify CLI usage report command to pass expiresOn to report generation in `src/cli/commands/usage.ts`
-- [ ] T011 [US1] Modify generateUsageReport to use calculateResetDate for resetAt field in `src/services/plan-usage-tracker.ts`
-- [ ] T012 [US1] Modify GET /api/admin/plans/:planId/usage endpoint to include expiresOn in response in `src/routes/admin/handlers.ts`
-- [ ] T013 [US1] Add integration test for usage report with expiresOn in `tests/integration/usage-report-expireson.test.ts`
+- [x] T010 [US1] Modify CLI usage report command to pass expiresOn to report generation in `src/cli/commands/usage.ts`
+- [x] T011 [US1] Modify generateUsageReport to use calculateResetDate for resetAt field in `src/services/plan-usage-tracker.ts`
+- [x] T012 [US1] Modify GET /api/admin/plans/:planId/usage endpoint to include expiresOn in response in `src/routes/admin/handlers.ts`
+- [x] T013 [US1] Add integration test for usage report with expiresOn in `tests/integration/usage-report-expireson.test.ts`
 
 **Checkpoint**: User Story 1 complete - usage reports now show correct reset dates
 
