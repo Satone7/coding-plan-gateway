@@ -2,6 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-03-26
+**Updated**: 2026-03-26 (after clarifications)
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
@@ -29,9 +30,17 @@
 - [x] Feature meets measurable outcomes defined in Success Criteria
 - [x] No implementation details leak into specification
 
+## Clarifications (Session 2026-03-26)
+
+| Question | Answer | Status |
+|----------|--------|--------|
+| Weight field valid range | 1-100 (integer), default 1 | ✅ Resolved |
+| expiresOn vs expiresAt precedence | expiresAt takes precedence | ✅ Resolved |
+| LB decision latency target | <5ms (p95) | ✅ Resolved |
+
 ## Notes
 
 - All items pass validation
-- Specification is ready for `/rainbow.clarify` or `/rainbow.design`
-- No clarifications needed - all requirements are clear from the issues.md context
-- Success criteria are measurable and technology-agnostic
+- Specification is ready for `/rainbow.design`
+- 3 clarifications resolved with recommended options
+- No outstanding ambiguities remaining
