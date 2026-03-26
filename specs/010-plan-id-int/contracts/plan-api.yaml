@@ -1,0 +1,403 @@
+openapi: 3.0.3
+info:
+  title: Coding Plan Gateway - Plan API
+  description: API for managing coding plans with integer IDs
+  version: 1.1.0
+
+paths:
+  /api/plans:
+    get:
+      summary: List all plans
+      operationId: listPlans
+      tags:
+        - Plans
+      responses:
+        '200':
+          description: List of plans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Plan'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+
+    post:
+      summary: Create a new plan
+      description: |
+        Creates a new plan with an auto-assigned integer ID.
+        The ID is assigned automatically and cannot be specified.
+      operationId: createPlan
+      tags:
+        - Plans
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePlanRequest'
+      responses:
+        '201':
+          description: Plan created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Plan'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: ID specified in request body (not allowed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/plans/{planId}:
+    parameters:
+      - name: planId
+        in: path
+        required: true
+        description: Plan ID (integer)
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991  # MAX_SAFE_INTEGER
+          example: 1
+
+    get:
+      summary: Get a plan by ID
+      operationId: getPlan
+      tags:
+        - Plans
+      responses:
+        '200':
+          description: Plan details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Plan'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '404':
+          description: Plan not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      summary: Update a plan
+      operationId: updatePlan
+      tags:
+        - Plans
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlanRequest'
+      responses:
+        '200':
+          description: Plan updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Plan'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '404':
+          description: Plan not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Delete a plan
+      description: |
+        Deletes a plan. The ID is retired and will not be reused.
+      operationId: deletePlan
+      tags:
+        - Plans
+      responses:
+        '204':
+          description: Plan deleted successfully
+        '404':
+          description: Plan not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/quota/{planId}/reset:
+    parameters:
+      - name: planId
+        in: path
+        required: true
+        description: Plan ID (integer)
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+
+    post:
+      summary: Reset quota for a plan
+      operationId: resetQuota
+      tags:
+        - Quota
+      responses:
+        '200':
+          description: Quota reset successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/QuotaState'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '404':
+          description: Plan not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Plan:
+      type: object
+      required:
+        - id
+        - name
+        - baseUrl
+        - apiKeyEncrypted
+        - models
+        - quota
+        - timeout
+        - status
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          description: Auto-assigned integer ID
+          example: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Claude Pro"
+        baseUrl:
+          type: string
+          format: uri
+          example: "https://api.anthropic.com"
+        apiKeyEncrypted:
+          type: string
+          description: AES-256-GCM encrypted API key
+        models:
+          type: array
+          items:
+            type: string
+          minItems: 1
+          example: ["claude-sonnet-4-6", "claude-opus-4-6"]
+        quota:
+          $ref: '#/components/schemas/QuotaConfig'
+        timeout:
+          type: integer
+          minimum: 1000
+          maximum: 300000
+          default: 30000
+          description: Request timeout in milliseconds
+        status:
+          type: string
+          enum: [active, inactive, error]
+          default: active
+        expiresOn:
+          type: integer
+          minimum: 1
+          maximum: 31
+          description: Day of month for quota reset
+        expiresAt:
+          type: string
+          format: date-time
+          description: Exact expiration datetime
+
+    CreatePlanRequest:
+      type: object
+      required:
+        - name
+        - baseUrl
+        - apiKey
+        - models
+        - quota
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        baseUrl:
+          type: string
+          format: uri
+        apiKey:
+          type: string
+          minLength: 1
+          description: Plain text API key (will be encrypted)
+        models:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        quota:
+          $ref: '#/components/schemas/QuotaConfig'
+        timeout:
+          type: integer
+          minimum: 1000
+          maximum: 300000
+          default: 30000
+        expiresOn:
+          type: integer
+          minimum: 1
+          maximum: 31
+        expiresAt:
+          type: string
+          format: date-time
+      # Note: 'id' field is NOT allowed in request
+
+    UpdatePlanRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        baseUrl:
+          type: string
+          format: uri
+        apiKey:
+          type: string
+          minLength: 1
+          description: Plain text API key (will be encrypted)
+        models:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        quota:
+          $ref: '#/components/schemas/QuotaConfig'
+        timeout:
+          type: integer
+          minimum: 1000
+          maximum: 300000
+        status:
+          type: string
+          enum: [active, inactive, error]
+        expiresOn:
+          type: integer
+          minimum: 1
+          maximum: 31
+        expiresAt:
+          type: string
+          format: date-time
+      # Note: 'id' field is NOT allowed in request
+
+    QuotaConfig:
+      type: object
+      required:
+        - limit
+        - period
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          description: Maximum requests allowed
+        period:
+          type: string
+          enum: [daily, monthly, total]
+          description: Quota reset period
+        used:
+          type: integer
+          minimum: 0
+          description: Current usage (optional in create request)
+
+    QuotaState:
+      type: object
+      required:
+        - planId
+        - used
+        - limit
+        - period
+        - periodStartDate
+      properties:
+        planId:
+          type: integer
+          description: Integer plan ID
+        used:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+        period:
+          type: string
+          enum: [daily, monthly, total]
+        lastResetAt:
+          type: string
+          format: date-time
+        periodStartDate:
+          type: string
+          format: date-time
+
+    Meta:
+      type: object
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+            - code
+          properties:
+            message:
+              type: string
+              description: Human-readable error message
+            type:
+              type: string
+              description: Error type
+            code:
+              type: string
+              description: Error code
+            details:
+              type: object
+              description: Additional error context
