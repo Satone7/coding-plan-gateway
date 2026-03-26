@@ -149,6 +149,7 @@ export type {
   AdjustmentHistoryStorage,
   AdjustmentRecordData,
   PlanUsageSummary,
+  PlanInfo,
 } from './plan-usage';
 
 export {

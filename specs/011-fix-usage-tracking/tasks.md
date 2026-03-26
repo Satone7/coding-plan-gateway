@@ -24,8 +24,8 @@
 
 **Purpose**: Add new dependencies and project configuration
 
-- [ ] T001 Install proper-lockfile dependency for file locking with `npm install proper-lockfile`
-- [ ] T002 [P] Add TypeScript type declarations for proper-lockfile with `npm install -D @types/proper-lockfile`
+- [x] T001 Install proper-lockfile dependency for file locking with `npm install proper-lockfile`
+- [x] T002 [P] Add TypeScript type declarations for proper-lockfile with `npm install -D @types/proper-lockfile`
 
 ---
 
@@ -35,11 +35,11 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T003 Extend PlanInfo interface to include expiresOn and expiresAt in `src/types/plan-usage.ts`
-- [ ] T004 Add file locking to PlanUsageTracker.persist() method in `src/services/plan-usage-tracker.ts`
-- [ ] T005 Add file locking to PlanUsageTracker.load() method in `src/services/plan-usage-tracker.ts`
-- [ ] T006 Implement calculateResetDate() method in PlanUsageTracker using calculateEffectiveExpiration in `src/services/plan-usage-tracker.ts`
-- [ ] T007 Add getUsageForQuotaManager() method to PlanUsageTracker for single source of truth in `src/services/plan-usage-tracker.ts`
+- [x] T003 Extend PlanInfo interface to include expiresOn and expiresAt in `src/types/plan-usage.ts`
+- [x] T004 Add file locking to PlanUsageTracker.persist() method in `src/services/plan-usage-tracker.ts`
+- [x] T005 Add file locking to PlanUsageTracker.load() method in `src/services/plan-usage-tracker.ts`
+- [x] T006 Implement calculateResetDate() method in PlanUsageTracker using calculateEffectiveExpiration in `src/services/plan-usage-tracker.ts`
+- [x] T007 Add getUsageForQuotaManager() method to PlanUsageTracker for single source of truth in `src/services/plan-usage-tracker.ts`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 

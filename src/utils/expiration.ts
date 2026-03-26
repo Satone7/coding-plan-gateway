@@ -6,39 +6,47 @@
 import type { CodingPlan } from '@/types/coding-plan';
 
 /**
- * Calculate effective expiration date from a coding plan.
+ * Minimal type for expiration calculation.
+ * Only includes the fields needed to calculate expiration.
+ */
+export interface ExpirationInfo {
+  /** Day of month when quota resets/expires (1-31) */
+  expiresOn?: number;
+  /** Exact ISO 8601 datetime for one-time expiration */
+  expiresAt?: string;
+}
+
+/**
+ * Calculate effective expiration date from expiration info.
  * Handles both expiresAt (ISO 8601) and expiresOn (day of month) fields.
  *
- * @param plan - The coding plan to calculate expiration for
+ * @param info - The expiration info (can be a CodingPlan or just { expiresOn, expiresAt })
  * @returns The expiration Date, or null if no expiration configured
  *
  * @example
  * ```typescript
  * // From ISO 8601 string
- * const plan1 = { expiresAt: '2024-12-31T23:59:59Z', ... };
- * const exp1 = calculateEffectiveExpiration(plan1); // Date object
+ * const exp1 = calculateEffectiveExpiration({ expiresAt: '2024-12-31T23:59:59Z' });
  *
  * // From day of month
- * const plan2 = { expiresOn: 28, ... };
- * const exp2 = calculateEffectiveExpiration(plan2); // Next 28th of month
+ * const exp2 = calculateEffectiveExpiration({ expiresOn: 28 });
  *
  * // No expiration
- * const plan3 = { ... };
- * const exp3 = calculateEffectiveExpiration(plan3); // null
+ * const exp3 = calculateEffectiveExpiration({});
  * ```
  */
-export function calculateEffectiveExpiration(plan: CodingPlan): Date | null {
+export function calculateEffectiveExpiration(info: ExpirationInfo): Date | null {
   // expiresAt takes precedence (per spec clarification)
-  if (plan.expiresAt) {
-    const date = new Date(plan.expiresAt);
+  if (info.expiresAt) {
+    const date = new Date(info.expiresAt);
     if (!isNaN(date.getTime())) {
       return date;
     }
   }
 
   // expiresOn is day of month (1-31)
-  if (plan.expiresOn !== undefined && plan.expiresOn >= 1 && plan.expiresOn <= 31) {
-    return calculateNextExpirationDate(plan.expiresOn);
+  if (info.expiresOn !== undefined && info.expiresOn >= 1 && info.expiresOn <= 31) {
+    return calculateNextExpirationDate(info.expiresOn);
   }
 
   return null;

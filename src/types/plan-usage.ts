@@ -207,3 +207,25 @@ export const usageAdjustmentRequestSchema = z.object({
   (data) => (data.count !== undefined) !== (data.percent !== undefined),
   'Exactly one of count or percent must be provided'
 );
+
+/**
+ * Plan info needed for usage report generation with expiresOn support.
+ * Extended to support quota reset date calculations based on plan expiration.
+ */
+export interface PlanInfo {
+  /** Plan identifier (integer) */
+  id: number;
+  /** Plan display name */
+  name: string;
+  /** Quota configuration including expiration settings */
+  quota: {
+    /** Maximum allowed usage */
+    limit: number;
+    /** Quota reset period */
+    period: 'daily' | 'monthly' | 'total';
+    /** Optional day of month for reset (1-31). Used for monthly quotas with custom reset dates. */
+    expiresOn?: number;
+    /** Optional ISO 8601 datetime for absolute expiration. Takes precedence over expiresOn. */
+    expiresAt?: string;
+  };
+}
