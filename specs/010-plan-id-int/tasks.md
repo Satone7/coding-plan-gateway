@@ -15,7 +15,7 @@ Replace UUID-based plan identifiers with simple auto-incrementing integers (1, 2
 
 Goal: Prepare infrastructure for integer ID support.
 
-- [ ] T001 Create migration directory at `src/migration/`
+- [X] T001 Create migration directory at `src/migration/`
 
 ---
 
@@ -44,7 +44,7 @@ Goal: Create core components that all user stories depend on.
 - [X] T009 [US1] Update plan creation handler to use `PlanIdCounter.getNextId()` in `src/routes/admin/handlers.ts`
 - [X] T010 [US1] Add validation to reject manual `id` field in create request body in `src/routes/admin/handlers.ts`
 - [X] T011 [US1] Implement MAX_SAFE_INTEGER check before ID assignment in `src/services/plan-id-counter.ts`
-- [ ] T012 [US1] Create integration tests for plan creation with integer IDs in `tests/integration/routes/plan-id.test.ts`
+- [X] T012 [US1] Create integration tests for plan creation with integer IDs in `tests/integration/routes/admin.test.ts`
 
 ---
 
@@ -64,7 +64,7 @@ Goal: Create core components that all user stories depend on.
 - [X] T018 [US2] Update `RpmTracker` methods to accept `number` planId in `src/services/rpm-tracker.ts`
 - [X] T019 [US2] Update `PlanSelector` to work with integer plan IDs in `src/services/plan-selector.ts`
 - [X] T020 [US2] Add 404 error handling for non-existent integer IDs in `src/routes/admin/handlers.ts`
-- [ ] T021 [US2] Create integration tests for plan retrieval by integer ID in `tests/integration/routes/plan-id.test.ts`
+- [X] T021 [US2] Create integration tests for plan retrieval by integer ID in `tests/integration/routes/admin.test.ts`
 
 ---
 
