@@ -348,8 +348,8 @@ Usage:
   cpg usage-report [options]
 
 Options:
-  --key-id <uuid>  Filter by API key ID
-  --plan <uuid>    View plan usage report (instead of API key usage)
+  --key-id <id>    Filter by API key ID
+  --plan <id>      View plan usage report (integer plan ID)
   --from <date>    Start date (YYYY-MM-DD)
   --to <date>      End date (YYYY-MM-DD)
   --json           Output in JSON format
@@ -360,9 +360,9 @@ Examples:
   cpg usage-report --key-id 550e8400-e29b-41d4-a716-446655440000
   cpg usage-report --from 2026-03-01 --to 2026-03-31
 
-  # Plan usage report
-  cpg usage-report --plan 550e8400-e29b-41d4-a716-446655440000
-  cpg usage-report --plan 550e8400-e29b-41d4-a716-446655440000 --from 2026-03-01 --to 2026-03-25
+  # Plan usage report (use integer plan ID)
+  cpg usage-report --plan 1
+  cpg usage-report --plan 2 --from 2026-03-01 --to 2026-03-25
 `;
   }
 
