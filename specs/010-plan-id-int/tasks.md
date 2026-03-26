@@ -108,7 +108,7 @@ Goal: Final cleanup and verification.
 
 - [X] T034 Run full test suite and ensure all tests pass
 - [X] T035 Run ESLint and fix any type errors
-- [ ] T036 Update API documentation to reflect integer ID format
+- [X] T036 Update API documentation to reflect integer ID format
 
 ---
 
