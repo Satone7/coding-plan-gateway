@@ -60,6 +60,30 @@ Follow Conventional Commits: `type(scope): description`
 
 Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
 
+### Git Merge Rules
+
+**ALWAYS use `--no-ff` (no fast-forward) for merging feature branches.**
+
+```bash
+git checkout master
+git merge <branch-name> --no-ff -m "merge: branch <branch-name> into master"
+```
+
+**Why `--no-ff`:**
+
+| Aspect | `--no-ff` (Required) | `--squash` (Avoid) |
+|--------|---------------------|-------------------|
+| Commit type | Merge commit (2 parents) | Regular commit (1 parent) |
+| Branch history | Preserved in git graph | Lost |
+| Revertability | Easy to revert entire feature | Difficult |
+| Traceability | Clear feature boundaries | No feature context |
+
+**Benefits of `--no-ff`:**
+- Branch appears as separate line in git graph
+- All feature commits remain grouped
+- Easy to identify which commits belong to which feature
+- Can revert entire feature with one command: `git revert -m 1 <merge-commit>`
+
 ## Documentation References
 
 - **Standards**: `docs/standards.md` - Complete coding standards
