@@ -117,11 +117,11 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T028 [P] Update CLAUDE.md with feature 011 in Active Technologies section
-- [ ] T029 [P] Add warning when set-usage exceeds quota limit in `src/cli/commands/plan.ts`
-- [ ] T030 [P] Add logging for usage adjustments and syncs in `src/services/plan-usage-tracker.ts`
-- [ ] T031 Run all existing tests to ensure no regressions with `npm test`
-- [ ] T032 Run quickstart.md validation scenarios
+- [x] T028 [P] Update CLAUDE.md with feature 011 in Active Technologies section
+- [x] T029 [P] Add warning when set-usage exceeds quota limit in `src/cli/commands/plan.ts`
+- [x] T030 [P] Add logging for usage adjustments and syncs in `src/services/plan-usage-tracker.ts`
+- [x] T031 Run all existing tests to ensure no regressions with `npm test`
+- [x] T032 Run quickstart.md validation scenarios
 
 ---
 
