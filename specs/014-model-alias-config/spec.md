@@ -94,3 +94,14 @@ As a system administrator, I want to view all configured model aliases through t
 - Depends on the existing model-resolver service (src/services/model-resolver.ts)
 - Depends on the existing config loading mechanism (src/config/index.ts)
 - Depends on the existing hot-reload functionality
+
+---
+
+## Clarifications
+
+### Session 2026-03-27
+
+- Q: How should configured aliases relate to hardcoded aliases? → A: Config completely replaces hardcoded (config is the sole source of truth)
+- Q: How should circular aliases be handled? → A: Validate at startup and reject - fail with error message
+- Q: Should default examples be provided? → A: Provide example config - include common aliases as examples in default config.yaml
+- Q: Should alias resolution logging be enhanced? → A: Keep existing logging behavior - use existing debug level
