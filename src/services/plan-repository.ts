@@ -156,6 +156,11 @@ export class FilePlanRepository implements IPlanRepository {
       ? encryptApiKey(input.apiKey, this.encryptionKey)
       : input.apiKey;
 
+    // Extract expiresOn/expiresAt from quota if provided
+    const { expiresOn, expiresAt, ...quotaWithoutExpiration } = input.quota;
+    const finalExpiresOn = input.expiresOn ?? expiresOn;
+    const finalExpiresAt = input.expiresAt ?? expiresAt;
+
     const plan: CodingPlan = {
       id,
       name: input.name,
@@ -165,8 +170,8 @@ export class FilePlanRepository implements IPlanRepository {
       quota: input.quota,
       timeout: input.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS,
       status: 'active',
-      expiresOn: input.expiresOn,
-      expiresAt: input.expiresAt,
+      expiresOn: finalExpiresOn,
+      expiresAt: finalExpiresAt,
       weight: input.weight,
       createdAt: now,
       updatedAt: now,
@@ -411,17 +416,29 @@ export class FilePlanRepository implements IPlanRepository {
       throw new Error('Plan ID is required');
     }
 
+    // Support expiresOn/expiresAt in both nested (quota) and top-level positions
+    // Nested takes precedence, falls back to top-level for backward compatibility
+    const effectiveExpiresOn = config.quota.expiresOn ?? config.expiresOn;
+    const effectiveExpiresAt = config.quota.expiresAt ?? config.expiresAt;
+
+    // Merge expires fields into quota for internal consistency
+    const mergedQuota = {
+      ...config.quota,
+      expiresOn: effectiveExpiresOn,
+      expiresAt: effectiveExpiresAt,
+    };
+
     return {
       id,
       name: config.name,
       baseUrl: config.baseUrl,
       apiKeyEncrypted: config.apiKey,
       models: config.models,
-      quota: config.quota,
+      quota: mergedQuota,
       timeout: config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS,
       status: config.status ?? 'active',
-      expiresOn: config.expiresOn,
-      expiresAt: config.expiresAt,
+      expiresOn: effectiveExpiresOn,
+      expiresAt: effectiveExpiresAt,
       weight: config.weight,
       createdAt: now,
       updatedAt: now,
@@ -439,17 +456,22 @@ export class FilePlanRepository implements IPlanRepository {
         ? plan.status
         : undefined;
 
+    // Store expiresOn/expiresAt inside quota for proper nesting
+    const quotaWithExpiration = {
+      ...plan.quota,
+      expiresOn: plan.expiresOn,
+      expiresAt: plan.expiresAt,
+    };
+
     return {
       id: plan.id,
       name: plan.name,
       baseUrl: plan.baseUrl,
       apiKey: plan.apiKeyEncrypted,
       models: plan.models,
-      quota: plan.quota,
+      quota: quotaWithExpiration,
       timeout: plan.timeout,
       status: persistableStatus,
-      expiresOn: plan.expiresOn,
-      expiresAt: plan.expiresAt,
       weight: plan.weight,
     };
   }
