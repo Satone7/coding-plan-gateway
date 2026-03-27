@@ -14,7 +14,6 @@ import type { AuthConfig } from './schema';
 const ENV_VARS = {
   API_KEYS_PATH: 'API_KEYS_PATH',
   USAGE_DATA_PATH: 'USAGE_DATA_PATH',
-  AUTH_EXEMPT_PATHS: 'AUTH_EXEMPT_PATHS',
   USAGE_SYNC_INTERVAL_MS: 'USAGE_SYNC_INTERVAL_MS',
 } as const;
 
@@ -68,7 +67,7 @@ export function loadAuthConfig(): AuthConfig {
   return {
     apiKeysPath: process.env[ENV_VARS.API_KEYS_PATH] ?? DEFAULT_AUTH_CONFIG.apiKeysPath,
     usageDataPath: process.env[ENV_VARS.USAGE_DATA_PATH] ?? DEFAULT_AUTH_CONFIG.usageDataPath,
-    authExemptPaths: process.env[ENV_VARS.AUTH_EXEMPT_PATHS] ?? DEFAULT_AUTH_CONFIG.authExemptPaths,
+    authExemptPaths: DEFAULT_AUTH_CONFIG.authExemptPaths,
     usageSyncIntervalMs: parsePositiveInt(
       process.env[ENV_VARS.USAGE_SYNC_INTERVAL_MS],
       DEFAULT_AUTH_CONFIG.usageSyncIntervalMs

@@ -99,6 +99,9 @@ export interface CreateCodingPlanInput {
   models: string[];
   quota: QuotaConfig;
   timeout?: number;
+  expiresOn?: number;
+  expiresAt?: string;
+  weight?: number;
 }
 
 /**
@@ -112,4 +115,7 @@ export interface UpdateCodingPlanInput {
   quota?: Partial<QuotaConfig>;
   timeout?: number;
   status?: Exclude<PlanStatus, 'error' | 'exhausted'>;
+  expiresOn?: number;
+  expiresAt?: string;
+  weight?: number;
 }

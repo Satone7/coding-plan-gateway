@@ -97,6 +97,7 @@ async function main(): Promise<void> {
       quotaManager,
       apiKeyManager,
       usageTracker,
+      planUsageTracker,
       enableAuth: process.env.ENABLE_AUTH !== 'false',
     });
 

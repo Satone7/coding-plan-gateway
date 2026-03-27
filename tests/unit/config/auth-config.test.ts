@@ -51,12 +51,12 @@ describe('auth-config', () => {
       expect(config.usageDataPath).toBe('/custom/usage.json');
     });
 
-    it('should read custom exempt paths from environment', () => {
+    it('should always use default exempt paths ignoring environment', () => {
       process.env.AUTH_EXEMPT_PATHS = '/health,/ready,/metrics';
 
       const config = loadAuthConfig();
 
-      expect(config.authExemptPaths).toBe('/health,/ready,/metrics');
+      expect(config.authExemptPaths).toBe(DEFAULT_AUTH_CONFIG.authExemptPaths);
     });
 
     it('should parse sync interval from environment', () => {

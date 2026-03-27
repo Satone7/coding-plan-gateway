@@ -31,6 +31,8 @@ export interface AppOptions extends Partial<FastifyServerOptions> {
   apiKeyManager?: ApiKeyManager;
   /** Usage tracker for recording API usage */
   usageTracker?: UsageTracker;
+  /** Plan usage tracker for tracking per-plan usage */
+  planUsageTracker?: any; // any to avoid circular deps, passed to routes
   /** Enable authentication middleware */
   enableAuth?: boolean;
 }
@@ -76,7 +78,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   registerErrorHandler(app);
 
   // Register routes
-  await registerRoutes(app, options.quotaManager);
+  await registerRoutes(app, options.quotaManager, options.planUsageTracker);
 
   // Register internal API key routes if apiKeyManager is provided
   if (options.apiKeyManager) {

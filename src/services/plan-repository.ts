@@ -165,6 +165,9 @@ export class FilePlanRepository implements IPlanRepository {
       quota: input.quota,
       timeout: input.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS,
       status: 'active',
+      expiresOn: input.expiresOn,
+      expiresAt: input.expiresAt,
+      weight: input.weight,
       createdAt: now,
       updatedAt: now,
     };
@@ -208,6 +211,9 @@ export class FilePlanRepository implements IPlanRepository {
         : existing.quota,
       timeout: updates.timeout ?? existing.timeout,
       status: updates.status ?? existing.status,
+      expiresOn: updates.expiresOn !== undefined ? updates.expiresOn : existing.expiresOn,
+      expiresAt: updates.expiresAt !== undefined ? updates.expiresAt : existing.expiresAt,
+      weight: updates.weight !== undefined ? updates.weight : existing.weight,
       updatedAt: now,
     };
 
@@ -414,6 +420,9 @@ export class FilePlanRepository implements IPlanRepository {
       quota: config.quota,
       timeout: config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS,
       status: config.status ?? 'active',
+      expiresOn: config.expiresOn,
+      expiresAt: config.expiresAt,
+      weight: config.weight,
       createdAt: now,
       updatedAt: now,
     };
@@ -439,6 +448,9 @@ export class FilePlanRepository implements IPlanRepository {
       quota: plan.quota,
       timeout: plan.timeout,
       status: persistableStatus,
+      expiresOn: plan.expiresOn,
+      expiresAt: plan.expiresAt,
+      weight: plan.weight,
     };
   }
 

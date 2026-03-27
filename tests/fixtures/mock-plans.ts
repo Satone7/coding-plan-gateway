@@ -134,7 +134,7 @@ export function createMockQuotaStates(): QuotaState[] {
 /**
  * Create a mock plan creation input.
  */
-export function createMockPlanInput(overrides: Partial<CreateCodingPlanInput> = {}): CreateCodingPlanInput {
+export function createMockPlanInput(overrides: Partial<CreateCodingPlanInput & { expiresOn?: number; expiresAt?: string; weight?: number }> = {}): CreateCodingPlanInput {
   return {
     name: 'New Test Plan',
     baseUrl: 'https://api.newplan.com/v1',
