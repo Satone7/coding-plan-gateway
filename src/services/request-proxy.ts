@@ -264,11 +264,10 @@ export class RequestProxy {
       model: request.model,
     });
 
-    // Set SSE headers
+    // Set SSE headers for transparent streaming
     reply.raw.setHeader('Content-Type', 'text/event-stream');
     reply.raw.setHeader('Cache-Control', 'no-cache');
     reply.raw.setHeader('Connection', 'keep-alive');
-    reply.raw.setHeader('X-Accel-Buffering', 'no');
 
     await this.makeStreamingRequest({
       url,
@@ -358,11 +357,10 @@ export class RequestProxy {
       model: request.model,
     });
 
-    // Set SSE headers
+    // Set SSE headers for transparent streaming
     reply.raw.setHeader('Content-Type', 'text/event-stream');
     reply.raw.setHeader('Cache-Control', 'no-cache');
     reply.raw.setHeader('Connection', 'keep-alive');
-    reply.raw.setHeader('X-Accel-Buffering', 'no');
 
     await this.makeStreamingRequest({
       url,
