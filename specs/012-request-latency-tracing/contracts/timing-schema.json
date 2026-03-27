@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "timing-summary.json",
+  "title": "TimingSummary",
+  "description": "JSON schema for request latency timing summary log output",
+  "type": "object",
+  "required": ["requestId", "colorIndex", "totalDurationMs", "phases", "incomplete"],
+  "additionalProperties": false,
+  "properties": {
+    "requestId": {
+      "type": "string",
+      "description": "Fastify's unique request identifier",
+      "minLength": 1
+    },
+    "colorIndex": {
+      "type": "integer",
+      "description": "ANSI color code index (0-9)",
+      "minimum": 0,
+      "maximum": 9
+    },
+    "totalDurationMs": {
+      "type": "number",
+      "description": "Total request duration in milliseconds",
+      "minimum": 0
+    },
+    "phases": {
+      "type": "array",
+      "description": "Ordered array of stage timing records",
+      "items": {
+        "$ref": "#/definitions/PhaseRecord"
+      },
+      "minItems": 1
+    },
+    "incomplete": {
+      "type": "boolean",
+      "description": "True if request failed before completion"
+    }
+  },
+  "definitions": {
+    "PhaseRecord": {
+      "type": "object",
+      "required": ["name", "durationMs"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Processing stage name",
+          "enum": [
+            "requestReceived",
+            "validation",
+            "routing",
+            "quotaCheck",
+            "apiKeyDecryption",
+            "upstreamRequest",
+            "responseSent"
+          ]
+        },
+        "durationMs": {
+          "type": "number",
+          "description": "Stage duration in milliseconds",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
