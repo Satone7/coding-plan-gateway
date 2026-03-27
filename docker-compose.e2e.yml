@@ -16,7 +16,6 @@ services:
       - ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       - LOG_LEVEL=debug
       - GATEWAY_URL=http://localhost:8080
-      - AUTH_EXEMPT_PATHS=/health,/ready,/internal/*
     volumes:
       # Use production config (read-only)
       - ./config.yaml:/app/config.yaml:ro

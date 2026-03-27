@@ -1,0 +1,187 @@
+openapi: 3.0.3
+info:
+  title: Usage Tracking API - Fix Extensions
+  description: |
+    API extensions for unified usage tracking.
+    Modifies existing endpoints to support expiresOn and sync functionality.
+  version: 1.0.0
+
+paths:
+  /api/admin/plans/{planId}/usage:
+    get:
+      summary: Get plan usage report
+      description: |
+        Returns usage report with correct reset date based on expiresOn configuration.
+        MODIFIED: Now respects expiresOn for reset date calculation.
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Usage report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanUsageReport'
+
+  /api/admin/plans/{planId}/usage/adjust:
+    post:
+      summary: Adjust plan usage
+      description: |
+        Manually set usage for a plan.
+        MODIFIED: Now syncs with QuotaManager for immediate routing effect.
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - value
+              properties:
+                value:
+                  type: integer
+                  minimum: 0
+                  description: New usage count
+                type:
+                  type: string
+                  enum: [count, percent]
+                  default: count
+                  description: How the value is specified
+      responses:
+        '200':
+          description: Adjustment successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdjustmentResult'
+        '404':
+          description: Plan not found
+
+  /api/admin/quota/{planId}/sync:
+    post:
+      summary: Sync quota state
+      description: |
+        NEW: Reloads usage data and syncs QuotaManager state.
+        Called by CLI after set-usage to update running server.
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Sync successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  planId:
+                    type: integer
+                  usage:
+                    type: integer
+                  synced:
+                    type: boolean
+
+components:
+  schemas:
+    PlanUsageReport:
+      type: object
+      required:
+        - planId
+        - planName
+        - totalRequests
+        - limit
+        - remaining
+        - percentage
+        - dateRange
+        - quotaPeriod
+        - resetAt
+      properties:
+        planId:
+          type: integer
+        planName:
+          type: string
+        totalRequests:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 0
+        remaining:
+          type: integer
+        percentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+        dateRange:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date
+            end:
+              type: string
+              format: date
+        dailyBreakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyUsage'
+        quotaPeriod:
+          type: string
+          enum: [daily, monthly, total]
+        resetAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Next quota reset date.
+            MODIFIED: Now respects expiresOn configuration.
+            For expiresOn=27, resets on 27th of each month.
+
+    DailyUsage:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        requestCount:
+          type: integer
+          minimum: 0
+
+    AdjustmentResult:
+      type: object
+      properties:
+        adjustmentId:
+          type: string
+          format: uuid
+        planId:
+          type: integer
+        oldValue:
+          type: integer
+        newValue:
+          type: integer
+        warning:
+          type: string
+          description: Warning message if usage exceeds limit

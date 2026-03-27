@@ -14,7 +14,6 @@ import type { AuthConfig } from './schema';
 const ENV_VARS = {
   API_KEYS_PATH: 'API_KEYS_PATH',
   USAGE_DATA_PATH: 'USAGE_DATA_PATH',
-  AUTH_EXEMPT_PATHS: 'AUTH_EXEMPT_PATHS',
   USAGE_SYNC_INTERVAL_MS: 'USAGE_SYNC_INTERVAL_MS',
 } as const;
 
@@ -68,7 +67,7 @@ export function loadAuthConfig(): AuthConfig {
   return {
     apiKeysPath: process.env[ENV_VARS.API_KEYS_PATH] ?? DEFAULT_AUTH_CONFIG.apiKeysPath,
     usageDataPath: process.env[ENV_VARS.USAGE_DATA_PATH] ?? DEFAULT_AUTH_CONFIG.usageDataPath,
-    authExemptPaths: process.env[ENV_VARS.AUTH_EXEMPT_PATHS] ?? DEFAULT_AUTH_CONFIG.authExemptPaths,
+    authExemptPaths: DEFAULT_AUTH_CONFIG.authExemptPaths,
     usageSyncIntervalMs: parsePositiveInt(
       process.env[ENV_VARS.USAGE_SYNC_INTERVAL_MS],
       DEFAULT_AUTH_CONFIG.usageSyncIntervalMs
@@ -90,6 +89,20 @@ export function parseExemptPaths(exemptPaths: string): string[] {
 }
 
 /**
+ * Converts a wildcard pattern to a regex string.
+ * Supports `*` as a wildcard that matches any characters.
+ *
+ * @param pattern - The wildcard pattern (e.g., "path with asterisks as wildcards")
+ * @returns A regex pattern string
+ */
+function wildcardToRegex(pattern: string): string {
+  // Escape special regex characters except *
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  // Replace * with .* (match any characters)
+  return `^${escaped.replace(/\*/g, '.*')}$`;
+}
+
+/**
  * Checks if a given path is exempt from authentication.
  *
  * @param path - The request path to check
@@ -98,18 +111,15 @@ export function parseExemptPaths(exemptPaths: string): string[] {
  */
 export function isExemptPath(path: string, exemptPaths: string[]): boolean {
   return exemptPaths.some((exemptPath) => {
-    // Exact match
-    if (path === exemptPath) {
-      return true;
+    // Check if pattern contains wildcards
+    if (exemptPath.includes('*')) {
+      // Use regex matching for patterns with wildcards
+      const regex = new RegExp(wildcardToRegex(exemptPath));
+      return regex.test(path);
     }
 
-    // Prefix match for paths ending with *
-    if (exemptPath.endsWith('*')) {
-      const prefix = exemptPath.slice(0, -1);
-      return path.startsWith(prefix);
-    }
-
-    return false;
+    // Exact match for patterns without wildcards
+    return path === exemptPath;
   });
 }
 

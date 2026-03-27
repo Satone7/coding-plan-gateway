@@ -53,6 +53,9 @@ export const loadBalanceConfigSchema = z.object({
 export const quotaConfigSchema = z.object({
   limit: z.number().int().positive(),
   period: z.enum(['daily', 'monthly', 'total']),
+  // Load balancing and expiration fields inside quota
+  expiresOn: z.number().int().min(1).max(31).optional(),
+  expiresAt: z.string().datetime().optional(),
 });
 
 /**

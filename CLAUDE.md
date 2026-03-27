@@ -138,6 +138,8 @@ git merge <branch-name> --no-ff -m "merge: branch <branch-name> into master"
 - YAML/JSON files (configuration), in-memory (RPM tracking, quota state) (009-enhance-routing-lb)
 - TypeScript 5.x (strict mode) + Fastify 4.x, Zod (validation), Vitest (testing) (010-plan-id-int)
 - JSON files (config.json, plan-id-counter.json, quota-state.json) (010-plan-id-int)
+- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Zod (validation), Vitest (testing), bcrypt (key hashing) (011-fix-usage-tracking)
+- JSON files (`plan-usage-data.json`, `usage-adjustment-history.json`) (011-fix-usage-tracking)
 
 ## Recent Changes
 - 007-fix-cli-reload: Fixed CLI reload endpoint registration, authentication exemption for internal routes, x-api-key header support

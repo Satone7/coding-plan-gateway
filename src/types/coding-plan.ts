@@ -21,6 +21,10 @@ export interface QuotaConfig {
   limit: number;
   /** Quota reset period */
   period: QuotaPeriod;
+  /** Day of month when quota resets/expires (1-31). Use last day of month if day doesn't exist. */
+  expiresOn?: number;
+  /** Exact ISO 8601 datetime for one-time expiration. Takes precedence over expiresOn. */
+  expiresAt?: string;
 }
 
 /**
@@ -99,6 +103,9 @@ export interface CreateCodingPlanInput {
   models: string[];
   quota: QuotaConfig;
   timeout?: number;
+  expiresOn?: number;
+  expiresAt?: string;
+  weight?: number;
 }
 
 /**
@@ -112,4 +119,7 @@ export interface UpdateCodingPlanInput {
   quota?: Partial<QuotaConfig>;
   timeout?: number;
   status?: Exclude<PlanStatus, 'error' | 'exhausted'>;
+  expiresOn?: number;
+  expiresAt?: string;
+  weight?: number;
 }

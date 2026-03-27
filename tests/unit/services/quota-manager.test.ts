@@ -3,7 +3,7 @@
  * Tests quota tracking, persistence, and management.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { QuotaManager, createQuotaManager } from '@/services/quota-manager';
 import type { QuotaState } from '@/types';
 import { createMockPlans, createMockQuotaStates } from '../../fixtures/mock-plans';
@@ -274,6 +274,129 @@ describe('QuotaManager', () => {
       quotaManager.removePlan(plans[0].id);
 
       expect(quotaManager.getQuotaState(plans[0].id)).toBeUndefined();
+    });
+  });
+
+  describe('setUsedQuota', () => {
+    it('should set usage to a specific value', async () => {
+      const plans = createMockPlans();
+      await quotaManager.initialize(plans);
+
+      // Set usage to 500
+      quotaManager.setUsedQuota(plans[0].id, 500);
+
+      const state = quotaManager.getQuotaState(plans[0].id);
+      expect(state?.used).toBe(500);
+    });
+
+    it('should update lastUpdated timestamp', async () => {
+      const plans = createMockPlans();
+      await quotaManager.initialize(plans);
+
+      const before = new Date();
+      quotaManager.setUsedQuota(plans[0].id, 100);
+      const after = new Date();
+
+      const state = quotaManager.getQuotaState(plans[0].id);
+      expect(state?.lastUpdated.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(state?.lastUpdated.getTime()).toBeLessThanOrEqual(after.getTime());
+    });
+
+    it('should not affect quota limit', async () => {
+      const plans = createMockPlans();
+      await quotaManager.initialize(plans);
+
+      const originalLimit = quotaManager.getQuotaState(plans[0].id)?.limit;
+      quotaManager.setUsedQuota(plans[0].id, 500);
+
+      const state = quotaManager.getQuotaState(plans[0].id);
+      expect(state?.limit).toBe(originalLimit);
+    });
+
+    it('should allow setting usage above limit', async () => {
+      const plans = createMockPlans();
+      await quotaManager.initialize(plans);
+
+      const limit = quotaManager.getQuotaState(plans[0].id)?.limit ?? 1000;
+
+      // Set usage above limit (should work - quota exceeded is allowed)
+      quotaManager.setUsedQuota(plans[0].id, limit + 500);
+
+      const state = quotaManager.getQuotaState(plans[0].id);
+      expect(state?.used).toBe(limit + 500);
+    });
+
+    it('should return false for unknown plan', () => {
+      const result = quotaManager.setUsedQuota(999999, 100);
+      expect(result).toBe(false);
+    });
+
+    it('should not allow negative usage values', async () => {
+      const plans = createMockPlans();
+      await quotaManager.initialize(plans);
+
+      // Should clamp to 0
+      quotaManager.setUsedQuota(plans[0].id, -50);
+
+      const state = quotaManager.getQuotaState(plans[0].id);
+      expect(state?.used).toBe(0);
+    });
+  });
+
+  describe('getUsedQuota', () => {
+    it('should return current usage for a plan', async () => {
+      const plans = createMockPlans();
+      await quotaManager.initialize(plans);
+
+      // Consume some quota
+      await quotaManager.consumeQuota(plans[0].id, 50);
+
+      const used = quotaManager.getUsedQuota(plans[0].id);
+      expect(used).toBe(50);
+    });
+
+    it('should return 0 for unknown plan', () => {
+      const used = quotaManager.getUsedQuota(999999);
+      expect(used).toBe(0);
+    });
+
+    it('should reflect changes after setUsedQuota', async () => {
+      const plans = createMockPlans();
+      await quotaManager.initialize(plans);
+
+      quotaManager.setUsedQuota(plans[0].id, 250);
+
+      const used = quotaManager.getUsedQuota(plans[0].id);
+      expect(used).toBe(250);
+    });
+
+    it('should query PlanUsageTracker when attached', async () => {
+      const plans = createMockPlans();
+      await quotaManager.initialize(plans);
+
+      // Create and attach a mock PlanUsageTracker
+      const mockTracker = {
+        getUsageForQuotaManager: vi.fn().mockReturnValue({ used: 42, lastUpdated: new Date() }),
+      };
+      quotaManager.setPlanUsageTracker(mockTracker as unknown as import('@/services/plan-usage-tracker').PlanUsageTracker);
+
+      const used = quotaManager.getUsedQuota(plans[0].id);
+      expect(used).toBe(42);
+      expect(mockTracker.getUsageForQuotaManager).toHaveBeenCalledWith(plans[0].id);
+    });
+
+    it('should return 0 when PlanUsageTracker returns undefined', async () => {
+      const plans = createMockPlans();
+      await quotaManager.initialize(plans);
+
+      // Create and attach a mock PlanUsageTracker that returns undefined
+      const mockTracker = {
+        getUsageForQuotaManager: vi.fn().mockReturnValue(undefined),
+      };
+      quotaManager.setPlanUsageTracker(mockTracker as unknown as import('@/services/plan-usage-tracker').PlanUsageTracker);
+
+      const used = quotaManager.getUsedQuota(999999);
+      expect(used).toBe(0);
     });
   });
 });

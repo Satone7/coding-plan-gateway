@@ -202,6 +202,8 @@ interface AdminHandlers {
   getQuotaStatus: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSuccessResponse>;
   /** POST /api/quota/:planId/reset - Reset quota for a plan */
   resetQuota: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSuccessResponse>;
+  /** POST /api/quota/:planId/sync - Sync quota state with PlanUsageTracker */
+  syncQuota: (request: FastifyRequest<{ Params: PlanParams }>, reply: FastifyReply) => Promise<QuotaSyncResponse>;
   /** POST /api/reload - Reload configuration */
   reloadConfig: (request: FastifyRequest, reply: FastifyReply) => Promise<ReloadResponse>;
   /** GET /api/plans/:planId/usage - Get plan usage report */
@@ -221,6 +223,15 @@ interface ReloadResponse {
   success: boolean;
   planCount?: number;
   error?: string;
+}
+
+/**
+ * Quota sync response.
+ */
+interface QuotaSyncResponse {
+  planId: number;
+  usage: number;
+  synced: boolean;
 }
 
 /**
@@ -652,6 +663,58 @@ export function createAdminHandlers(
     },
 
     /**
+     * POST /api/quota/:planId/sync - Sync quota state with PlanUsageTracker.
+     * Called by CLI after set-usage to update running server's QuotaManager.
+     */
+    async syncQuota(
+      request: FastifyRequest<{ Params: PlanParams }>,
+      _reply: FastifyReply
+    ): Promise<QuotaSyncResponse> {
+      const planId = parsePlanId(request.params.planId);
+
+      if (!quotaManager) {
+        throw createGatewayError(
+          'INTERNAL_ERROR',
+          'Quota management is not enabled'
+        );
+      }
+
+      if (!planUsageTracker) {
+        throw createGatewayError(
+          'INTERNAL_ERROR',
+          'Plan usage tracking is not enabled'
+        );
+      }
+
+      const plan = await repository.findById(planId);
+      if (!plan) {
+        throw createGatewayError('PLAN_NOT_FOUND', `Plan not found: ${planId}`);
+      }
+
+      // Reload PlanUsageTracker from disk to get latest data from CLI
+      await planUsageTracker.reload();
+
+      // Get current usage from PlanUsageTracker
+      const usageData = planUsageTracker.getUsageForQuotaManager(planId);
+      const usage = usageData?.used ?? 0;
+
+      // Sync QuotaManager with PlanUsageTracker's usage
+      quotaManager.setUsedQuota(planId, usage);
+
+      logger.info('Quota synced via API', {
+        requestId: request.id,
+        planId,
+        usage,
+      });
+
+      return {
+        planId,
+        usage,
+        synced: true,
+      };
+    },
+
+    /**
      * POST /api/reload - Reload configuration.
      */
     async reloadConfig(
@@ -713,28 +776,29 @@ export function createAdminHandlers(
         );
       }
 
-      // Get usage report
+      // Get usage report with expiresOn/expiresAt support
       const report = planUsageTracker.getUsageReport(
         planId,
-        { id: plan.id, name: plan.name, quota: plan.quota },
+        {
+          id: plan.id,
+          name: plan.name,
+          quota: {
+            limit: plan.quota.limit,
+            period: plan.quota.period,
+            expiresOn: plan.expiresOn,
+            expiresAt: plan.expiresAt,
+          },
+        },
         from,
         to
       );
 
-      // Calculate reset date
-      let resetAt: Date | null = null;
-      if (plan.quota.period === 'daily') {
-        const tomorrow = new Date();
-        tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-        tomorrow.setUTCHours(0, 0, 0, 0);
-        resetAt = tomorrow;
-      } else if (plan.quota.period === 'monthly') {
-        const nextMonth = new Date();
-        nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-        nextMonth.setUTCDate(1);
-        nextMonth.setUTCHours(0, 0, 0, 0);
-        resetAt = nextMonth;
-      }
+      // Calculate reset date using the tracker's method that respects expiresOn/expiresAt
+      const resetAt = planUsageTracker.calculateResetAt(
+        plan.quota.period,
+        plan.expiresOn,
+        plan.expiresAt
+      );
 
       const responseData: PlanUsageReportData = report ? {
         planId: report.planId,
@@ -907,20 +971,12 @@ export function createAdminHandlers(
         const remaining = plan.quota.limit - used;
         const percentage = plan.quota.limit > 0 ? Math.round((used / plan.quota.limit) * 100) : 0;
 
-        // Calculate reset date
-        let resetAt: Date | null = null;
-        if (plan.quota.period === 'daily') {
-          const tomorrow = new Date();
-          tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-          tomorrow.setUTCHours(0, 0, 0, 0);
-          resetAt = tomorrow;
-        } else if (plan.quota.period === 'monthly') {
-          const nextMonth = new Date();
-          nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-          nextMonth.setUTCDate(1);
-          nextMonth.setUTCHours(0, 0, 0, 0);
-          resetAt = nextMonth;
-        }
+        // Calculate reset date using the tracker's method that respects expiresOn/expiresAt
+        const resetAt = planUsageTracker.calculateResetAt(
+          plan.quota.period,
+          plan.expiresOn,
+          plan.expiresAt
+        );
 
         return {
           planId: plan.id,

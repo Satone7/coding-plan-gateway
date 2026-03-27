@@ -141,6 +141,25 @@ describe('PlanRepository', () => {
       expect(result.apiKeyEncrypted).toMatch(/^enc:/);
     });
 
+    it('should persist plan with optional fields to file', async () => {
+      await repository.save(createMockPlanInput({ 
+        name: 'Full Plan',
+        expiresOn: 15,
+        expiresAt: '2026-12-31T23:59:59Z',
+        weight: 50
+      }));
+
+      // Create a new repository instance to verify persistence
+      const newRepo = new FilePlanRepository(configPath, TEST_ENCRYPTION_KEY);
+      const result = await newRepo.findAll();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('Full Plan');
+      expect(result[0].expiresOn).toBe(15);
+      expect(result[0].expiresAt).toBe('2026-12-31T23:59:59Z');
+      expect(result[0].weight).toBe(50);
+    });
+
     it('should persist plan to file', async () => {
       await repository.save(createMockPlanInput({ name: 'Persisted Plan' }));
 

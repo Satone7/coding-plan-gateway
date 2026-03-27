@@ -181,13 +181,18 @@ async function handlePlanUsageReport(context: CliContext, planId: number): Promi
     exit(CLI_EXIT_CODES.GENERAL_ERROR);
   }
 
-  // Get usage report
+  // Get usage report with expiresOn/expiresAt support
   const report = tracker.getUsageReport(
     planId,
     {
       id: plan.id,
       name: plan.name,
-      quota: plan.quota,
+      quota: {
+        limit: plan.quota.limit,
+        period: plan.quota.period,
+        expiresOn: plan.expiresOn,
+        expiresAt: plan.expiresAt,
+      },
     },
     from,
     to

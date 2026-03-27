@@ -51,12 +51,12 @@ describe('auth-config', () => {
       expect(config.usageDataPath).toBe('/custom/usage.json');
     });
 
-    it('should read custom exempt paths from environment', () => {
+    it('should always use default exempt paths ignoring environment', () => {
       process.env.AUTH_EXEMPT_PATHS = '/health,/ready,/metrics';
 
       const config = loadAuthConfig();
 
-      expect(config.authExemptPaths).toBe('/health,/ready,/metrics');
+      expect(config.authExemptPaths).toBe(DEFAULT_AUTH_CONFIG.authExemptPaths);
     });
 
     it('should parse sync interval from environment', () => {
@@ -130,6 +130,22 @@ describe('auth-config', () => {
 
     it('should handle empty exempt paths', () => {
       expect(isExemptPath('/health', [])).toBe(false);
+    });
+
+    it('should match path with multiple wildcards in pattern', () => {
+      // This is the pattern used for quota sync endpoint exemption
+      expect(isExemptPath('/api/quota/1/sync', ['*/quota/*/sync'])).toBe(true);
+      expect(isExemptPath('/api/quota/123/sync', ['*/quota/*/sync'])).toBe(true);
+      expect(isExemptPath('/quota/1/sync', ['*/quota/*/sync'])).toBe(true);
+    });
+
+    it('should not match path when middle segment differs', () => {
+      expect(isExemptPath('/api/plans/1/sync', ['*/quota/*/sync'])).toBe(false);
+    });
+
+    it('should match suffix-only wildcard pattern', () => {
+      expect(isExemptPath('/api/quota/1/sync', ['*/sync'])).toBe(true);
+      expect(isExemptPath('/any/path/sync', ['*/sync'])).toBe(true);
     });
   });
 

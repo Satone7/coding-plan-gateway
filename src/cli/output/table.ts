@@ -466,6 +466,16 @@ Examples:
       lines.push('', `  ⚠ Warning: ${result.warning}`);
     }
 
+    // Add sync status
+    if (result.syncStatus) {
+      const syncMessages: Record<string, string> = {
+        synced: '✓ Gateway synced - quota routing updated',
+        not_running: 'ℹ Gateway not running - changes saved locally only',
+        failed: '⚠ Gateway sync failed - quota routing may be out of sync',
+      };
+      lines.push('', `  ${syncMessages[result.syncStatus]}`);
+    }
+
     lines.push('');
     return lines.join('\n');
   }

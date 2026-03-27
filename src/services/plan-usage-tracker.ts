@@ -10,6 +10,7 @@ import { constants } from 'fs';
 import { resolve, dirname } from 'path';
 import { mkdir } from 'fs/promises';
 import { randomUUID } from 'crypto';
+import lockfile from 'proper-lockfile';
 import type {
   PlanUsageRecord,
   PlanUsageReport,
@@ -19,10 +20,12 @@ import type {
   PlanUsageRecordData,
   AdjustmentHistoryStorage,
   AdjustmentRecordData,
+  PlanInfo,
 } from '@/types';
 import { planUsageDataStorageSchema, adjustmentHistoryStorageSchema } from '@/types';
 import { logger } from '@/utils/logger';
 import { PLAN_USAGE_DEFAULTS } from '@/config/defaults';
+import { calculateEffectiveExpiration } from '@/utils/expiration';
 
 /**
  * PlanUsageTracker configuration.
@@ -42,18 +45,6 @@ export interface PlanUsageTrackerConfig {
  * Internal storage key format: `${date}:${planId}`
  */
 type StorageKey = string;
-
-/**
- * Plan info needed for report generation.
- */
-interface PlanInfo {
-  id: number;
-  name: string;
-  quota: {
-    limit: number;
-    period: 'daily' | 'monthly' | 'total';
-  };
-}
 
 /**
  * Result of usage adjustment operation.
@@ -163,10 +154,11 @@ export class PlanUsageTracker {
    * Increment the request count for a plan on the current day.
    *
    * @param planId - The plan ID
+   * @param amount - The amount to increment (default: 1)
    */
-  incrementDailyUsage(planId: number): void {
+  incrementDailyUsage(planId: number, amount: number = 1): void {
     const record = this.getOrCreateRecord(planId);
-    record.requestCount += 1;
+    record.requestCount += amount;
     record.lastUpdated = new Date();
 
     logger.debug('Plan daily usage incremented', {
@@ -180,10 +172,11 @@ export class PlanUsageTracker {
    * Decrement the request count for a plan on the current day.
    *
    * @param planId - The plan ID
+   * @param amount - The amount to decrement (default: 1)
    */
-  decrementDailyUsage(planId: number): void {
+  decrementDailyUsage(planId: number, amount: number = 1): void {
     const record = this.getOrCreateRecord(planId);
-    record.requestCount = Math.max(0, record.requestCount - 1);
+    record.requestCount = Math.max(0, record.requestCount - amount);
     record.lastUpdated = new Date();
 
     logger.debug('Plan daily usage decremented', {
@@ -218,6 +211,26 @@ export class PlanUsageTracker {
     }
 
     return total;
+  }
+
+  /**
+   * Get usage data for QuotaManager integration.
+   * Provides the current usage value and the plan's quota configuration.
+   * This serves as the single source of truth for quota-based routing decisions.
+   *
+   * @param planId - The plan ID
+   * @returns Usage data for the plan, or undefined if no usage recorded
+   */
+  getUsageForQuotaManager(planId: number): { used: number; lastUpdated: Date } | undefined {
+    const used = this.getTotalUsage(planId);
+    const records = Array.from(this.usage.values())
+      .filter(r => r.planId === planId)
+      .sort((a, b) => b.lastUpdated.getTime() - a.lastUpdated.getTime());
+
+    return {
+      used,
+      lastUpdated: records[0]?.lastUpdated ?? new Date(),
+    };
   }
 
   /**
@@ -267,8 +280,8 @@ export class PlanUsageTracker {
       requestCount: r.requestCount,
     }));
 
-    // Calculate reset date
-    const resetAt = this.calculateResetAt(planInfo.quota.period);
+    // Calculate reset date using the plan's expiresOn/expiresAt configuration
+    const resetAt = this.calculateResetDate(planInfo);
 
     return {
       planId,
@@ -289,32 +302,73 @@ export class PlanUsageTracker {
 
   /**
    * Calculate the next reset date based on quota period.
+   * Respects expiresOn and expiresAt from plan configuration.
+   *
+   * @param period - The quota period type
+   * @param expiresOn - Optional day of month (1-31) for custom reset
+   * @param expiresAt - Optional ISO 8601 datetime for absolute expiration
+   * @returns The next reset date, or null for total period
    */
-  private calculateResetAt(period: 'daily' | 'monthly' | 'total'): Date | null {
+  calculateResetAt(
+    period: 'daily' | 'monthly' | 'total',
+    expiresOn?: number,
+    expiresAt?: string
+  ): Date | null {
     if (period === 'total') {
       return null;
     }
 
+    // If expiresAt or expiresOn is configured, calculate the next reset date
+    if (expiresOn !== undefined || expiresAt !== undefined) {
+      const expiration = calculateEffectiveExpiration({ expiresOn, expiresAt });
+
+      if (expiration) {
+        // Return midnight of the expiration day
+        return new Date(
+          expiration.getFullYear(),
+          expiration.getMonth(),
+          expiration.getDate(),
+          0, 0, 0, 0
+        );
+      }
+    }
+
+    // Fallback to default behavior
     const now = new Date();
 
     if (period === 'daily') {
-      // Next midnight UTC
+      // Next midnight local time
       const tomorrow = new Date(now);
-      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-      tomorrow.setUTCHours(0, 0, 0, 0);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
       return tomorrow;
     }
 
     if (period === 'monthly') {
-      // First day of next month at midnight UTC
+      // First day of next month at midnight local time
       const nextMonth = new Date(now);
-      nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-      nextMonth.setUTCDate(1);
-      nextMonth.setUTCHours(0, 0, 0, 0);
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      nextMonth.setDate(1);
+      nextMonth.setHours(0, 0, 0, 0);
       return nextMonth;
     }
 
     return null;
+  }
+
+  /**
+   * Calculate the reset date for a plan based on its quota configuration.
+   * This is a convenience method that extracts the relevant fields from a PlanInfo object.
+   *
+   * @param planInfo - The plan information containing quota configuration
+   * @returns The next reset date, or null for total period
+   */
+  calculateResetDate(planInfo: PlanInfo): Date | null {
+    return this.calculateResetAt(
+      planInfo.quota.period,
+      planInfo.quota.expiresOn,
+      planInfo.quota.expiresAt
+    );
   }
 
   /**
@@ -468,6 +522,7 @@ export class PlanUsageTracker {
 
   /**
    * Persist usage data to file.
+   * Uses file locking to prevent concurrent write conflicts with CLI or other processes.
    */
   private async persistUsageData(): Promise<void> {
     // Build storage structure
@@ -496,22 +551,44 @@ export class PlanUsageTracker {
     const dir = dirname(this.planUsageDataPath);
     await mkdir(dir, { recursive: true });
 
-    // Write to temp file first, then rename for atomicity
-    const tempPath = `${this.planUsageDataPath}.tmp`;
-    await writeFile(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+    // Ensure file exists for locking (proper-lockfile requires file to exist)
+    try {
+      await access(this.planUsageDataPath, constants.F_OK);
+    } catch {
+      // File doesn't exist, create empty file
+      await writeFile(this.planUsageDataPath, '{}', 'utf-8');
+    }
 
-    // Rename for atomic write
-    const { rename } = await import('fs/promises');
-    await rename(tempPath, this.planUsageDataPath);
-
-    logger.debug('Plan usage data persisted', {
-      path: this.planUsageDataPath,
-      dateCount: Object.keys(recordsByDate).length,
+    // Use file locking to prevent concurrent writes
+    const release = await lockfile.lock(this.planUsageDataPath, {
+      retries: {
+        retries: 5,
+        minTimeout: 100,
+        maxTimeout: 1000,
+      },
     });
+
+    try {
+      // Write to temp file first, then rename for atomicity
+      const tempPath = `${this.planUsageDataPath}.tmp`;
+      await writeFile(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+
+      // Rename for atomic write
+      const { rename } = await import('fs/promises');
+      await rename(tempPath, this.planUsageDataPath);
+
+      logger.debug('Plan usage data persisted', {
+        path: this.planUsageDataPath,
+        dateCount: Object.keys(recordsByDate).length,
+      });
+    } finally {
+      await release();
+    }
   }
 
   /**
    * Persist adjustment history to file.
+   * Uses file locking to prevent concurrent write conflicts.
    */
   private async persistAdjustmentHistory(): Promise<void> {
     const adjustmentData: AdjustmentRecordData[] = this.adjustments.map((a) => ({
@@ -534,22 +611,44 @@ export class PlanUsageTracker {
     const dir = dirname(this.adjustmentHistoryPath);
     await mkdir(dir, { recursive: true });
 
-    // Write to temp file first, then rename for atomicity
-    const tempPath = `${this.adjustmentHistoryPath}.tmp`;
-    await writeFile(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+    // Ensure file exists for locking (proper-lockfile requires file to exist)
+    try {
+      await access(this.adjustmentHistoryPath, constants.F_OK);
+    } catch {
+      // File doesn't exist, create empty file
+      await writeFile(this.adjustmentHistoryPath, '{}', 'utf-8');
+    }
 
-    // Rename for atomic write
-    const { rename } = await import('fs/promises');
-    await rename(tempPath, this.adjustmentHistoryPath);
-
-    logger.debug('Adjustment history persisted', {
-      path: this.adjustmentHistoryPath,
-      adjustmentCount: adjustmentData.length,
+    // Use file locking to prevent concurrent writes
+    const release = await lockfile.lock(this.adjustmentHistoryPath, {
+      retries: {
+        retries: 5,
+        minTimeout: 100,
+        maxTimeout: 1000,
+      },
     });
+
+    try {
+      // Write to temp file first, then rename for atomicity
+      const tempPath = `${this.adjustmentHistoryPath}.tmp`;
+      await writeFile(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+
+      // Rename for atomic write
+      const { rename } = await import('fs/promises');
+      await rename(tempPath, this.adjustmentHistoryPath);
+
+      logger.debug('Adjustment history persisted', {
+        path: this.adjustmentHistoryPath,
+        adjustmentCount: adjustmentData.length,
+      });
+    } finally {
+      await release();
+    }
   }
 
   /**
    * Load usage data from file.
+   * Uses file locking to prevent concurrent read/write conflicts with CLI or other processes.
    */
   private async loadUsageData(): Promise<void> {
     try {
@@ -559,6 +658,23 @@ export class PlanUsageTracker {
         path: this.planUsageDataPath,
       });
       return;
+    }
+
+    // Use file locking to prevent concurrent read/write conflicts
+    let release: (() => Promise<void>) | undefined;
+    try {
+      release = await lockfile.lock(this.planUsageDataPath, {
+        retries: {
+          retries: 5,
+          minTimeout: 100,
+          maxTimeout: 1000,
+        },
+      });
+    } catch (lockError) {
+      // If locking fails, proceed without lock (file may not exist yet)
+      logger.debug('Could not acquire lock for reading plan usage data, proceeding without lock', {
+        error: lockError instanceof Error ? lockError.message : String(lockError),
+      });
     }
 
     try {
@@ -602,11 +718,16 @@ export class PlanUsageTracker {
       logger.warn('Failed to load plan usage data from storage, starting fresh', {
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      if (release) {
+        await release();
+      }
     }
   }
 
   /**
    * Load adjustment history from file.
+   * Uses file locking to prevent concurrent read/write conflicts.
    */
   private async loadAdjustmentHistory(): Promise<void> {
     try {
@@ -616,6 +737,23 @@ export class PlanUsageTracker {
         path: this.adjustmentHistoryPath,
       });
       return;
+    }
+
+    // Use file locking to prevent concurrent read/write conflicts
+    let release: (() => Promise<void>) | undefined;
+    try {
+      release = await lockfile.lock(this.adjustmentHistoryPath, {
+        retries: {
+          retries: 5,
+          minTimeout: 100,
+          maxTimeout: 1000,
+        },
+      });
+    } catch (lockError) {
+      // If locking fails, proceed without lock (file may not exist yet)
+      logger.debug('Could not acquire lock for reading adjustment history, proceeding without lock', {
+        error: lockError instanceof Error ? lockError.message : String(lockError),
+      });
     }
 
     try {
@@ -652,6 +790,10 @@ export class PlanUsageTracker {
       logger.warn('Failed to load adjustment history from storage, starting fresh', {
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      if (release) {
+        await release();
+      }
     }
   }
 
@@ -679,6 +821,26 @@ export class PlanUsageTracker {
   }
 
   /**
+   * Reload usage data from disk.
+   * This is useful when an external process (like CLI) has modified the data file.
+   */
+  async reload(): Promise<void> {
+    // Clear existing data
+    this.usage.clear();
+    this.adjustments.length = 0;
+
+    // Reload from disk
+    await this.loadUsageData();
+    await this.loadAdjustmentHistory();
+
+    logger.debug('PlanUsageTracker reloaded from disk', {
+      recordCount: this.usage.size,
+      adjustmentCount: this.adjustments.length,
+      storagePath: this.planUsageDataPath,
+    });
+  }
+
+  /**
    * Get the total number of stored records.
    */
   getRecordCount(): number {
@@ -690,6 +852,107 @@ export class PlanUsageTracker {
    */
   getAdjustmentCount(): number {
     return this.adjustments.length;
+  }
+
+  /**
+   * Reset all usage records for a plan.
+   * This is called when a plan's quota expires (on expiresOn date).
+   *
+   * @param planId - The plan ID to reset
+   * @returns The number of records that were reset
+   */
+  resetPlanUsage(planId: number): number {
+    let resetCount = 0;
+    const keysToDelete: StorageKey[] = [];
+
+    // Find all records for this plan
+    for (const [key, record] of this.usage) {
+      if (record.planId === planId) {
+        keysToDelete.push(key);
+        resetCount++;
+      }
+    }
+
+    // Delete the records
+    for (const key of keysToDelete) {
+      this.usage.delete(key);
+    }
+
+    if (resetCount > 0) {
+      logger.info('Plan usage reset', {
+        planId,
+        resetCount,
+      });
+    }
+
+    return resetCount;
+  }
+
+  /**
+   * Check and reset expired plans.
+   * This method is called by the scheduler to reset plans whose expiration date has passed.
+   *
+   * @param plans - Array of plans with their expiration configuration
+   * @returns Array of plan IDs that were reset
+   */
+  checkAndResetExpiredPlans(
+    plans: Array<{
+      id: number;
+      quota: { period: 'daily' | 'monthly' | 'total'; expiresOn?: number; expiresAt?: string };
+    }>
+  ): number[] {
+    const now = new Date();
+    const resetPlanIds: number[] = [];
+
+    for (const plan of plans) {
+      // Skip 'total' period plans - they never reset
+      if (plan.quota.period === 'total') {
+        continue;
+      }
+
+      // Check if the plan has expiration configured
+      const expiration = calculateEffectiveExpiration({
+        expiresOn: plan.quota.expiresOn,
+        expiresAt: plan.quota.expiresAt,
+      });
+
+      if (!expiration) {
+        // No expiration configured, use default behavior
+        // For 'daily' period, reset every day at midnight
+        // For 'monthly' period without expiresOn, reset on the 1st of each month
+        if (plan.quota.period === 'daily') {
+          // Check if we've passed midnight today (already handled by daily record creation)
+          continue;
+        } else if (plan.quota.period === 'monthly') {
+          // Check if it's the 1st of the month at midnight
+          if (now.getDate() === 1 && now.getHours() === 0 && now.getMinutes() === 0) {
+            const resetCount = this.resetPlanUsage(plan.id);
+            if (resetCount > 0) {
+              resetPlanIds.push(plan.id);
+            }
+          }
+        }
+        continue;
+      }
+
+      // Check if the expiration time has passed
+      // We compare against midnight of the expiration day
+      const expirationMidnight = new Date(
+        expiration.getFullYear(),
+        expiration.getMonth(),
+        expiration.getDate(),
+        0, 0, 0, 0
+      );
+
+      if (now >= expirationMidnight) {
+        const resetCount = this.resetPlanUsage(plan.id);
+        if (resetCount > 0) {
+          resetPlanIds.push(plan.id);
+        }
+      }
+    }
+
+    return resetPlanIds;
   }
 }
 

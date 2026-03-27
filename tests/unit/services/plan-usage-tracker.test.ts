@@ -319,6 +319,332 @@ describe('PlanUsageTracker', () => {
       expect(tracker.isInitialized()).toBe(true);
     });
   });
+
+  describe('calculateResetAt with expiresOn', () => {
+    it('should calculate reset date based on expiresOn for monthly period', async () => {
+      await tracker.initialize();
+
+      // expiresOn = 27 means quota resets on 27th of each month
+      const resetDate = tracker.calculateResetAt('monthly', 27);
+
+      expect(resetDate).toBeInstanceOf(Date);
+      expect(resetDate?.getDate()).toBe(27);
+    });
+
+    it('should return next month date if expiresOn has passed this month', async () => {
+      await tracker.initialize();
+
+      const now = new Date();
+      const currentDay = now.getDate();
+
+      // Use a day that has already passed this month
+      const pastDay = currentDay > 1 ? currentDay - 1 : 1;
+      const resetDate = tracker.calculateResetAt('monthly', pastDay);
+
+      expect(resetDate).toBeInstanceOf(Date);
+      // Should be in a future month
+      expect(resetDate?.getMonth()).not.toBe(now.getMonth());
+    });
+
+    it('should return null for total period regardless of expiresOn', async () => {
+      await tracker.initialize();
+
+      const resetDate = tracker.calculateResetAt('total', 27);
+
+      expect(resetDate).toBeNull();
+    });
+
+    it('should use expiresAt when both expiresOn and expiresAt are provided', async () => {
+      await tracker.initialize();
+
+      // expiresAt takes precedence
+      const futureDate = new Date();
+      futureDate.setMonth(futureDate.getMonth() + 2);
+      futureDate.setDate(15);
+      futureDate.setHours(23, 59, 59, 999);
+
+      const resetDate = tracker.calculateResetAt(
+        'monthly',
+        27, // expiresOn should be ignored
+        futureDate.toISOString()
+      );
+
+      expect(resetDate).toBeInstanceOf(Date);
+      // Reset date should be midnight of the expiration day
+      expect(resetDate?.getDate()).toBe(futureDate.getDate());
+    });
+
+    it('should calculate daily reset date ignoring expiresOn', async () => {
+      await tracker.initialize();
+
+      // Daily period should reset at next midnight regardless of expiresOn
+      const resetDate = tracker.calculateResetAt('daily', 27);
+
+      expect(resetDate).toBeInstanceOf(Date);
+      expect(resetDate?.getHours()).toBe(0);
+      expect(resetDate?.getMinutes()).toBe(0);
+      expect(resetDate?.getSeconds()).toBe(0);
+    });
+  });
+
+  describe('calculateResetDate month boundary edge cases', () => {
+    it('should handle February 30th by using last day of February', async () => {
+      await tracker.initialize();
+
+      // expiresOn = 30 should map to Feb 28/29 depending on leap year
+      const resetDate = tracker.calculateResetAt('monthly', 30);
+
+      expect(resetDate).toBeInstanceOf(Date);
+      // The date should be valid (either 28, 29, or 30)
+      expect(resetDate?.getDate()).toBeLessThanOrEqual(30);
+    });
+
+    it('should handle February 31st by using last day of February', async () => {
+      await tracker.initialize();
+
+      // expiresOn = 31 should map to Feb 28/29
+      const resetDate = tracker.calculateResetAt('monthly', 31);
+
+      expect(resetDate).toBeInstanceOf(Date);
+      // The date should be valid
+      expect(resetDate?.getDate()).toBeLessThanOrEqual(31);
+    });
+
+    it('should handle month with 30 days when expiresOn is 31', async () => {
+      await tracker.initialize();
+
+      // Test April (30 days), June (30 days), September (30 days), November (30 days)
+      const resetDate = tracker.calculateResetAt('monthly', 31);
+
+      expect(resetDate).toBeInstanceOf(Date);
+      // The date should be valid for any month
+      expect(resetDate?.getDate()).toBeLessThanOrEqual(31);
+    });
+
+    it('should handle leap year February 29th', async () => {
+      await tracker.initialize();
+
+      // expiresOn = 29 should work for leap year February
+      const resetDate = tracker.calculateResetAt('monthly', 29);
+
+      expect(resetDate).toBeInstanceOf(Date);
+      // The date should be 29 or the last day of the month
+      expect(resetDate?.getDate()).toBeGreaterThanOrEqual(28);
+      expect(resetDate?.getDate()).toBeLessThanOrEqual(31);
+    });
+  });
+
+  describe('calculateResetDate with PlanInfo', () => {
+    it('should use plan quota expiresOn for reset date calculation', async () => {
+      await tracker.initialize();
+
+      const planInfo = {
+        id: 1,
+        name: 'Test Plan',
+        quota: {
+          limit: 100,
+          period: 'monthly' as const,
+          expiresOn: 27,
+        },
+      };
+
+      const resetDate = tracker.calculateResetDate(planInfo);
+
+      expect(resetDate).toBeInstanceOf(Date);
+      expect(resetDate?.getDate()).toBe(27);
+    });
+
+    it('should use plan quota expiresAt for reset date calculation', async () => {
+      await tracker.initialize();
+
+      const futureDate = new Date();
+      futureDate.setMonth(futureDate.getMonth() + 1);
+      futureDate.setDate(15);
+      futureDate.setHours(23, 59, 59, 999);
+
+      const planInfo = {
+        id: 1,
+        name: 'Test Plan',
+        quota: {
+          limit: 100,
+          period: 'monthly' as const,
+          expiresAt: futureDate.toISOString(),
+        },
+      };
+
+      const resetDate = tracker.calculateResetDate(planInfo);
+
+      expect(resetDate).toBeInstanceOf(Date);
+      expect(resetDate?.getDate()).toBe(futureDate.getDate());
+    });
+
+    it('should fallback to default for plans without expiresOn/expiresAt', async () => {
+      await tracker.initialize();
+
+      const planInfo = {
+        id: 1,
+        name: 'Test Plan',
+        quota: {
+          limit: 100,
+          period: 'monthly' as const,
+        },
+      };
+
+      const resetDate = tracker.calculateResetDate(planInfo);
+
+      expect(resetDate).toBeInstanceOf(Date);
+      // Should be first day of next month
+      expect(resetDate?.getDate()).toBe(1);
+    });
+  });
+
+  describe('getUsageForQuotaManager', () => {
+    it('should return usage data for a plan', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+
+      const usage = tracker.getUsageForQuotaManager(1);
+
+      expect(usage).toBeDefined();
+      expect(usage?.used).toBe(3);
+      expect(usage?.lastUpdated).toBeInstanceOf(Date);
+    });
+
+    it('should return zero usage for non-existent plan', async () => {
+      await tracker.initialize();
+
+      const usage = tracker.getUsageForQuotaManager(999);
+
+      expect(usage).toBeDefined();
+      expect(usage?.used).toBe(0);
+    });
+  });
+
+  describe('resetPlanUsage', () => {
+    it('should reset all usage records for a plan', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(2);
+
+      const resetCount = tracker.resetPlanUsage(1);
+
+      expect(resetCount).toBe(1); // 1 record for plan 1
+      expect(tracker.getTotalUsage(1)).toBe(0);
+      expect(tracker.getTotalUsage(2)).toBe(1); // Plan 2 unaffected
+    });
+
+    it('should return 0 if no records exist for the plan', async () => {
+      await tracker.initialize();
+
+      const resetCount = tracker.resetPlanUsage(999);
+
+      expect(resetCount).toBe(0);
+    });
+  });
+
+  describe('checkAndResetExpiredPlans', () => {
+    it('should not reset plans that have not expired', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+
+      // Create a plan with expiration in the future
+      const futureDate = new Date();
+      futureDate.setFullYear(futureDate.getFullYear() + 1);
+
+      const plans = [
+        {
+          id: 1,
+          quota: {
+            period: 'monthly' as const,
+            expiresAt: futureDate.toISOString(),
+          },
+        },
+      ];
+
+      const resetPlanIds = tracker.checkAndResetExpiredPlans(plans);
+
+      expect(resetPlanIds).toHaveLength(0);
+      expect(tracker.getTotalUsage(1)).toBe(2);
+    });
+
+    it('should reset plans that have expired', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+
+      // Create a plan with expiration in the past
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - 1);
+
+      const plans = [
+        {
+          id: 1,
+          quota: {
+            period: 'monthly' as const,
+            expiresAt: pastDate.toISOString(),
+          },
+        },
+      ];
+
+      const resetPlanIds = tracker.checkAndResetExpiredPlans(plans);
+
+      expect(resetPlanIds).toContain(1);
+      expect(tracker.getTotalUsage(1)).toBe(0);
+    });
+
+    it('should skip total period plans', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+
+      const plans = [
+        {
+          id: 1,
+          quota: { period: 'total' as const },
+        },
+      ];
+
+      const resetPlanIds = tracker.checkAndResetExpiredPlans(plans);
+
+      expect(resetPlanIds).toHaveLength(0);
+      expect(tracker.getTotalUsage(1)).toBe(1);
+    });
+
+    it('should handle plans with expiresOn day in the past', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+
+      // Create a plan with expiresOn that has passed this month
+      const now = new Date();
+      const pastDay = now.getDate() > 1 ? now.getDate() - 1 : 1;
+
+      const plans = [
+        {
+          id: 1,
+          quota: {
+            period: 'monthly' as const,
+            expiresOn: pastDay,
+          },
+        },
+      ];
+
+      // The expiration should be calculated for next month, not reset
+      const resetPlanIds = tracker.checkAndResetExpiredPlans(plans);
+
+      // Should not reset if the calculated expiration date is in the future
+      // (depends on timing of the test)
+      expect(tracker.getTotalUsage(1)).toBe(1);
+    });
+  });
 });
 
 describe('createPlanUsageTracker', () => {

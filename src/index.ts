@@ -13,6 +13,8 @@ import { createQuotaManager } from './services/quota-manager';
 import { createApiKeyManager } from './services/api-key-manager';
 import { createUsageTracker } from './services/usage-tracker';
 import { createPlanUsageTracker } from './services/plan-usage-tracker';
+import { createExpirationScheduler } from './services/expiration-scheduler';
+import { createPlanRepository } from './services/plan-repository';
 import { loadAuthConfig } from './config/auth-config';
 import { loadPlanUsageConfig } from './config/defaults';
 
@@ -61,6 +63,18 @@ async function main(): Promise<void> {
     // Connect plan usage tracker to quota manager
     quotaManager.setPlanUsageTracker(planUsageTracker);
 
+    // Create plan repository for expiration scheduler
+    const planRepository = createPlanRepository(configPath, encryptionKey);
+    await planRepository.reload();
+
+    // Create and start expiration scheduler
+    const expirationScheduler = createExpirationScheduler(
+      planUsageTracker,
+      planRepository,
+      { checkIntervalMs: 60000 } // Check every minute
+    );
+    expirationScheduler.start();
+
     // Create and initialize API key manager
     const authConfig = loadAuthConfig();
     const apiKeyManager = createApiKeyManager({
@@ -83,7 +97,20 @@ async function main(): Promise<void> {
       quotaManager,
       apiKeyManager,
       usageTracker,
+      planUsageTracker,
       enableAuth: process.env.ENABLE_AUTH !== 'false',
+    });
+
+    // Add shutdown hook for expiration scheduler
+    app.addHook('onClose', async () => {
+      logger.info('Shutting down expiration scheduler...');
+      expirationScheduler.stop();
+    });
+
+    // Add shutdown hook for plan usage tracker
+    app.addHook('onClose', async () => {
+      logger.info('Shutting down plan usage tracker...');
+      await planUsageTracker.shutdown();
     });
 
     // Start server

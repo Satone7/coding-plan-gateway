@@ -21,6 +21,16 @@ export interface GatewayNotifierConfig {
 export type ReloadType = 'api-keys' | 'usage' | 'all';
 
 /**
+ * Result of a quota sync operation.
+ */
+export interface QuotaSyncResult {
+  success: boolean;
+  planId: number;
+  usage?: number;
+  error?: string;
+}
+
+/**
  * GatewayNotifier - Sends notifications to the running gateway.
  *
  * @example
@@ -43,6 +53,81 @@ export class GatewayNotifier {
   constructor(config: GatewayNotifierConfig = {}) {
     this.gatewayUrl = config.gatewayUrl ?? process.env.GATEWAY_URL ?? 'http://localhost:8080';
     this.timeout = config.timeout ?? 5000; // 5 seconds default
+  }
+
+  /**
+   * Check if the gateway is running.
+   *
+   * @returns True if gateway is reachable, false otherwise
+   */
+  async isGatewayRunning(): Promise<boolean> {
+    const url = `${this.gatewayUrl}/health`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: AbortSignal.timeout(this.timeout),
+      });
+
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Sync quota for a specific plan.
+   * This tells the gateway to update its QuotaManager with the current usage from PlanUsageTracker.
+   *
+   * @param planId - The plan ID to sync
+   * @returns QuotaSyncResult indicating success or failure
+   */
+  async syncQuota(planId: number): Promise<QuotaSyncResult> {
+    const url = `${this.gatewayUrl}/api/quota/${planId}/sync`;
+
+    try {
+      logger.debug('Syncing quota with gateway', { url, planId });
+
+      const response = await fetch(url, {
+        method: 'POST',
+        signal: AbortSignal.timeout(this.timeout),
+      });
+
+      if (!response.ok) {
+        const errorText = response.statusText;
+        logger.warn('Gateway quota sync failed', {
+          status: response.status,
+          statusText: errorText,
+          planId,
+        });
+        return {
+          success: false,
+          planId,
+          error: `HTTP ${response.status}: ${errorText}`,
+        };
+      }
+
+      const result = await response.json() as { planId: number; usage: number; synced: boolean };
+      logger.debug('Gateway quota sync successful', { result });
+
+      return {
+        success: result.synced === true,
+        planId: result.planId,
+        usage: result.usage,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.warn('Failed to sync quota with gateway', {
+        error: errorMessage,
+        url,
+        planId,
+      });
+      return {
+        success: false,
+        planId,
+        error: errorMessage,
+      };
+    }
   }
 
   /**

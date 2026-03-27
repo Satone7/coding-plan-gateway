@@ -5,6 +5,7 @@
 import { exit } from 'process';
 import { createPlanUsageTracker } from '@/services/plan-usage-tracker';
 import { createPlanRepository } from '@/services/plan-repository';
+import { createGatewayNotifier } from '@/services/gateway-notifier';
 import {
   CLI_EXIT_CODES,
   type CliContext,
@@ -78,20 +79,12 @@ export async function handlePlanListCommand(context: CliContext): Promise<void> 
     const remaining = plan.quota.limit - usage;
     const percentage = plan.quota.limit > 0 ? Math.round((usage / plan.quota.limit) * 100) : 0;
 
-    // Calculate reset date
-    let resetAt: Date | null = null;
-    if (plan.quota.period === 'daily') {
-      const tomorrow = new Date();
-      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-      tomorrow.setUTCHours(0, 0, 0, 0);
-      resetAt = tomorrow;
-    } else if (plan.quota.period === 'monthly') {
-      const nextMonth = new Date();
-      nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-      nextMonth.setUTCDate(1);
-      nextMonth.setUTCHours(0, 0, 0, 0);
-      resetAt = nextMonth;
-    }
+    // Calculate reset date using the tracker's method that respects expiresOn/expiresAt
+    const resetAt = tracker.calculateResetAt(
+      plan.quota.period,
+      plan.expiresOn,
+      plan.expiresAt
+    );
 
     return {
       planId: plan.id,
@@ -112,7 +105,7 @@ export async function handlePlanListCommand(context: CliContext): Promise<void> 
  * Handle plan set-usage subcommand.
  */
 export async function handlePlanSetUsageCommand(context: CliContext): Promise<void> {
-  const { args, formatter } = context;
+  const { args, formatter, gatewayUrl } = context;
 
   const planId = args.options.id as string | undefined;
   const count = args.options.count !== undefined ? Number(args.options.count) : undefined;
@@ -215,6 +208,21 @@ export async function handlePlanSetUsageCommand(context: CliContext): Promise<vo
   // Persist changes
   await tracker.persist();
 
+  // Sync with running gateway if available
+  const notifier = createGatewayNotifier({ gatewayUrl });
+  const gatewayRunning = await notifier.isGatewayRunning();
+
+  let syncStatus: 'synced' | 'not_running' | 'failed' = 'not_running';
+
+  if (gatewayRunning) {
+    const syncResult = await notifier.syncQuota(planIdNum);
+    if (syncResult.success) {
+      syncStatus = 'synced';
+    } else {
+      syncStatus = 'failed';
+    }
+  }
+
   // Display result
   const displayResult: AdjustmentResultDisplay = {
     adjustmentId: result.adjustmentId,
@@ -223,6 +231,7 @@ export async function handlePlanSetUsageCommand(context: CliContext): Promise<vo
     oldValue: result.oldValue,
     newValue: result.newValue,
     warning: result.warning,
+    syncStatus,
   };
 
   console.log(formatter.formatPlanUsageAdjustment(displayResult));
