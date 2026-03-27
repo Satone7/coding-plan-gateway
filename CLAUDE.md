@@ -144,5 +144,6 @@ git merge <branch-name> --no-ff -m "merge: branch <branch-name> into master"
 - In-memory per-request timing state (no persistence required) (012-request-latency-tracing)
 
 ## Recent Changes
+- 012-request-latency-tracing: Added request latency tracing with ANSI color differentiation for concurrent requests
 - 007-fix-cli-reload: Fixed CLI reload endpoint registration, authentication exemption for internal routes, x-api-key header support
 - 001-coding-plan-gateway: Added TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Vitest, Zod (validation), MSW (mocking)

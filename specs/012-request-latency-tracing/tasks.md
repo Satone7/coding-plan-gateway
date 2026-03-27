@@ -24,10 +24,10 @@
 
 **Purpose**: Type definitions and constants (minimal setup - project already initialized)
 
-- [ ] T001 [P] Create StageName type and StageTiming interface in `src/types/request-trace.ts`
-- [ ] T002 [P] Create RequestTrace interface in `src/types/request-trace.ts`
-- [ ] T003 [P] Create TimingSummary interface and ANSI_COLOR_CODES constant in `src/types/request-trace.ts`
-- [ ] T004 Export types from `src/types/index.ts`
+- [X] T001 [P] Create StageName type and StageTiming interface in `src/types/request-trace.ts`
+- [X] T002 [P] Create RequestTrace interface in `src/types/request-trace.ts`
+- [X] T003 [P] Create TimingSummary interface and ANSI_COLOR_CODES constant in `src/types/request-trace.ts`
+- [X] T004 Export types from `src/types/index.ts`
 
 ---
 
@@ -37,12 +37,12 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 Create RequestTimer class with startStage/endStage/getTrace methods in `src/middleware/request-timer.ts`
-- [ ] T006 Implement createRequestTrace factory function with color assignment in `src/middleware/request-timer.ts`
-- [ ] T007 Implement logSummary method that outputs JSON per timing-schema.json in `src/middleware/request-timer.ts`
-- [ ] T008 Register onRequest hook to initialize trace and start 'requestReceived' stage in `src/middleware/request-timer.ts`
-- [ ] T009 Register onResponse hook to end 'responseSent' stage and log summary in `src/middleware/request-timer.ts`
-- [ ] T010 Create registerRequestTimer function to attach hooks to Fastify app in `src/middleware/request-timer.ts`
+- [X] T005 Create RequestTimer class with startStage/endStage/getTrace methods in `src/middleware/request-timer.ts`
+- [X] T006 Implement createRequestTrace factory function with color assignment in `src/middleware/request-timer.ts`
+- [X] T007 Implement logSummary method that outputs JSON per timing-schema.json in `src/middleware/request-timer.ts`
+- [X] T008 Register onRequest hook to initialize trace and start 'requestReceived' stage in `src/middleware/request-timer.ts`
+- [X] T009 Register onResponse hook to end 'responseSent' stage and log summary in `src/middleware/request-timer.ts`
+- [X] T010 Create registerRequestTimer function to attach hooks to Fastify app in `src/middleware/request-timer.ts`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -56,18 +56,18 @@
 
 ### Tests for User Story 1
 
-- [ ] T011 [P] [US1] Unit test for RequestTimer.startStage/endStage in `tests/unit/middleware/request-timer.test.ts`
-- [ ] T012 [P] [US1] Unit test for RequestTimer.logSummary JSON format in `tests/unit/middleware/request-timer.test.ts`
-- [ ] T013 [US1] Integration test for stage timing on /v1/chat/completions in `tests/integration/request-tracing.test.ts`
+- [X] T011 [P] [US1] Unit test for RequestTimer.startStage/endStage in `tests/unit/middleware/request-timer.test.ts`
+- [X] T012 [P] [US1] Unit test for RequestTimer.logSummary JSON format in `tests/unit/middleware/request-timer.test.ts`
+- [X] T013 [US1] Integration test for stage timing on /v1/chat/completions in `tests/integration/request-tracing.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T014 [US1] Add timing markers around validation in `src/routes/openai/handlers.ts` and `src/routes/anthropic/handlers.ts`
-- [ ] T015 [US1] Add timing markers around routing in `src/services/request-router.ts`
-- [ ] T016 [US1] Add timing markers around quotaCheck in handlers
-- [ ] T017 [US1] Add timing markers around apiKeyDecryption in `src/services/plan-repository.ts` or handlers
-- [ ] T018 [US1] Add timing markers around upstreamRequest in `src/services/request-proxy.ts` or handlers
-- [ ] T019 [US1] Integrate registerRequestTimer in `src/app.ts` for external API routes only (per FR-011)
+- [X] T014 [US1] Add timing markers around validation in `src/routes/openai/handlers.ts` and `src/routes/anthropic/handlers.ts`
+- [X] T015 [US1] Add timing markers around routing in `src/services/request-router.ts`
+- [X] T016 [US1] Add timing markers around quotaCheck in handlers
+- [X] T017 [US1] Add timing markers around apiKeyDecryption in `src/services/plan-repository.ts` or handlers
+- [X] T018 [US1] Add timing markers around upstreamRequest in `src/services/request-proxy.ts` or handlers
+- [X] T019 [US1] Integrate registerRequestTimer in `src/app.ts` for external API routes only (per FR-011)
 
 **Checkpoint**: User Story 1 complete - all stage timings visible in logs
 
@@ -81,13 +81,13 @@
 
 ### Tests for User Story 2
 
-- [ ] T020 [P] [US2] Unit test verifying requestId is included in TimingSummary in `tests/unit/middleware/request-timer.test.ts`
-- [ ] T021 [US2] Integration test for concurrent request requestId uniqueness in `tests/integration/request-tracing.test.ts`
+- [X] T020 [P] [US2] Unit test verifying requestId is included in TimingSummary in `tests/unit/middleware/request-timer.test.ts`
+- [X] T021 [US2] Integration test for concurrent request requestId uniqueness in `tests/integration/request-tracing.test.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T022 [US2] Ensure requestId is captured from Fastify request.id in trace initialization
-- [ ] T023 [US2] Verify requestId appears in all log lines for a request (existing logger integration)
+- [X] T022 [US2] Ensure requestId is captured from Fastify request.id in trace initialization
+- [X] T023 [US2] Verify requestId appears in all log lines for a request (existing logger integration)
 
 **Checkpoint**: User Stories 1 AND 2 complete - concurrent requests distinguishable by requestId
 
@@ -101,14 +101,14 @@
 
 ### Tests for User Story 3
 
-- [ ] T024 [P] [US3] Unit test for color assignment modulo logic in `tests/unit/middleware/request-timer.test.ts`
-- [ ] T025 [US3] Unit test for ANSI color code prefix in log output in `tests/unit/middleware/request-timer.test.ts`
+- [X] T024 [P] [US3] Unit test for color assignment modulo logic in `tests/unit/middleware/request-timer.test.ts`
+- [X] T025 [US3] Unit test for ANSI color code prefix in log output in `tests/unit/middleware/request-timer.test.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Implement request counter with modulo COLOR_PALETTE_SIZE in `src/middleware/request-timer.ts`
-- [ ] T027 [US3] Add ANSI color prefix to log output in logger integration
-- [ ] T028 [US3] Ensure colorIndex (0-9) is included in TimingSummary JSON output
+- [X] T026 [US3] Implement request counter with modulo COLOR_PALETTE_SIZE in `src/middleware/request-timer.ts`
+- [X] T027 [US3] Add ANSI color prefix to log output in logger integration
+- [X] T028 [US3] Ensure colorIndex (0-9) is included in TimingSummary JSON output
 
 **Checkpoint**: All user stories complete - visual differentiation working
 
@@ -118,11 +118,11 @@
 
 **Purpose**: Quality improvements and documentation
 
-- [ ] T029 [P] Add TSDoc comments to RequestTimer public methods in `src/middleware/request-timer.ts`
-- [ ] T030 [P] Add TSDoc comments to types in `src/types/request-trace.ts`
-- [ ] T031 Verify timing overhead is <1ms with performance test
-- [ ] T032 Run quickstart.md validation - verify all log examples work
-- [ ] T033 Update CLAUDE.md Active Technologies section if needed
+- [X] T029 [P] Add TSDoc comments to RequestTimer public methods in `src/middleware/request-timer.ts`
+- [X] T030 [P] Add TSDoc comments to types in `src/types/request-trace.ts`
+- [X] T031 Verify timing overhead is <1ms with performance test
+- [X] T032 Run quickstart.md validation - verify all log examples work
+- [X] T033 Update CLAUDE.md Active Technologies section if needed
 
 ---
 

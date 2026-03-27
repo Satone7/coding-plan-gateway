@@ -17,6 +17,10 @@ import {
   attachProviderMetrics,
   extractOpenAITokenUsage,
 } from '@/middleware/request-logger';
+import {
+  startStage,
+  endStage,
+} from '@/middleware/request-timer';
 import type { ChatCompletionRequest, ChatCompletionResponse, ModelsResponse } from '@/types/openai';
 import type { CodingPlan } from '@/types';
 
@@ -70,18 +74,27 @@ interface HandlerServices {
  * Validate request and return parsed data.
  */
 function validateAndParse(request: FastifyRequest<{ Body: ChatCompletionRequest }>): ValidatedChatCompletion {
+  startStage(request, 'validation');
   const validation = chatCompletionSchema.safeParse(request.body);
   if (!validation.success) {
+    endStage(request, 'validation');
     throw validation.error;
   }
+  endStage(request, 'validation');
   return validation.data;
 }
 
 /**
  * Get decrypted API key for a plan.
  */
-async function fetchApiKey(repository: IPlanRepository, planId: number): Promise<string> {
+async function fetchApiKey(
+  repository: IPlanRepository,
+  planId: number,
+  request: FastifyRequest
+): Promise<string> {
+  startStage(request, 'apiKeyDecryption');
   const apiKey = await repository.getDecryptedApiKey(planId);
+  endStage(request, 'apiKeyDecryption');
   if (!apiKey) {
     throw createGatewayError('INTERNAL_ERROR', 'Failed to get API key for plan', { planId });
   }
@@ -124,13 +137,15 @@ async function attemptFailover(
   services: HandlerServices,
   body: ValidatedChatCompletion,
   requestId: string,
-  plan: CodingPlan
+  plan: CodingPlan,
+  request: FastifyRequest
 ): Promise<{ durationMs: number; statusCode: number; data: unknown } | null> {
-  const apiKey = await fetchApiKey(services.repository, plan.id);
+  const apiKey = await fetchApiKey(services.repository, plan.id, request);
   if (!apiKey) {
     return null;
   }
 
+  startStage(request, 'upstreamRequest');
   try {
     const response = await services.proxy.forwardOpenAIRequest(body, {
       baseUrl: plan.baseUrl,
@@ -138,10 +153,12 @@ async function attemptFailover(
       timeout: plan.timeout,
       requestId,
     });
+    endStage(request, 'upstreamRequest');
     services.router.markPlanSuccess(plan.id);
     logger.info('Failover successful', { requestId, failoverPlanId: plan.id, durationMs: response.durationMs });
     return response;
   } catch (err) {
+    endStage(request, 'upstreamRequest');
     services.router.markPlanFailed(plan.id);
     logger.warn('Failover plan failed', {
       requestId,
@@ -178,7 +195,9 @@ export function createOpenAIHandlers(
         requestId, model, stream: body.stream, messageCount: body.messages.length,
       });
 
+      startStage(request, 'routing');
       const routingResult = await router.route(model);
+      endStage(request, 'routing');
       if (!routingResult.selectedPlan) {
         throw createGatewayError('MODEL_NOT_FOUND', `No coding plan supports model '${model}'`, { model, requestId });
       }
@@ -186,9 +205,11 @@ export function createOpenAIHandlers(
       const plan = routingResult.selectedPlan;
 
       // Consume quota after selecting the plan
+      startStage(request, 'quotaCheck');
       if (quotaManager) {
         const consumed = quotaManager.consumeQuota(plan.id);
         if (!consumed) {
+          endStage(request, 'quotaCheck');
           throw createGatewayError(
             'QUOTA_EXHAUSTED',
             `Quota exhausted for plan '${plan.name}'`,
@@ -196,8 +217,9 @@ export function createOpenAIHandlers(
           );
         }
       }
+      endStage(request, 'quotaCheck');
 
-      const apiKey = await fetchApiKey(repository, plan.id);
+      const apiKey = await fetchApiKey(repository, plan.id, request);
 
       logger.debug('Selected plan for request', {
         requestId, planId: plan.id, planName: plan.name,
@@ -206,12 +228,14 @@ export function createOpenAIHandlers(
 
       // Handle streaming
       if (body.stream) {
+        startStage(request, 'upstreamRequest');
         try {
           await proxy.forwardOpenAIStream(
             body,
             { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
             (_chunk, done) => {
               if (done) {
+                endStage(request, 'upstreamRequest');
                 router.markPlanSuccess(plan.id);
                 logger.debug('Stream completed', { requestId });
               }
@@ -219,6 +243,7 @@ export function createOpenAIHandlers(
             reply
           );
         } catch (streamError) {
+          endStage(request, 'upstreamRequest');
           router.markPlanFailed(plan.id);
           // Refund quota on stream failure
           if (quotaManager) {
@@ -230,14 +255,17 @@ export function createOpenAIHandlers(
       }
 
       // Non-streaming request with failover
+      startStage(request, 'upstreamRequest');
       try {
         const response = await proxy.forwardOpenAIRequest(body, {
           baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
         });
+        endStage(request, 'upstreamRequest');
         router.markPlanSuccess(plan.id);
         recordMetrics(request, plan, model, response);
         return response.data as ChatCompletionResponse;
       } catch (error) {
+        endStage(request, 'upstreamRequest');
         router.markPlanFailed(plan.id);
 
         // Refund quota on failure
@@ -251,7 +279,7 @@ export function createOpenAIHandlers(
           }
 
           logger.info('Attempting failover', { requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id });
-          const result = await attemptFailover(services, body, requestId, altPlan);
+          const result = await attemptFailover(services, body, requestId, altPlan, request);
           if (result) {
             recordMetrics(request, altPlan, model, result);
             return result.data as ChatCompletionResponse;
