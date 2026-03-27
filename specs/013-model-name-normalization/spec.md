@@ -5,6 +5,12 @@
 **Status**: Draft
 **Input**: User description: "由于不同平台的plan中，对于同一个模型的命名可能存在些许区别，例如：minimax-m2.5和MiniMax-M2.5，实际上是同一个模型。创建一个feature实现这种兼容，使得用户通过网关请求时，设置MiniMax-M2.5或minimax-m2.5，都可以被路由到支持该模型的平台。"
 
+## Clarifications
+
+### Session 2026-03-27
+
+- Q: Model name standardization scope → A: Case normalization + simple aliases (minimax-m2.5 = MiniMax-M2.5, plus common aliases)
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Case-Insensitive Model Routing (Priority: P1)
@@ -57,6 +63,7 @@ When a user requests a model that doesn't exist in any configured plan (even aft
 - What happens when a model name contains numbers and special characters (e.g., `claude-3-5-sonnet-20241022`)?
 - How does the system handle empty or malformed model names?
 - What if two different plans have models that differ only in case (e.g., `mini-max` vs `MiniMax`)?
+- How are common model aliases defined and maintained (e.g., `gpt-4` as alias for `gpt-4-turbo`)?
 
 ## Requirements *(mandatory)*
 
@@ -67,6 +74,7 @@ When a user requests a model that doesn't exist in any configured plan (even aft
 - **FR-003**: System MUST support all case variations: lowercase, uppercase, title case, mixed case
 - **FR-004**: System MUST return clear error when requested model is not found in any plan (case-insensitive)
 - **FR-005**: System MUST preserve the original model name in requests forwarded to upstream providers (do not modify upstream request)
+- **FR-006**: System MUST support model aliases for common naming variations (e.g., mapping `gpt-4` to configured model)
 
 ### Key Entities
 
@@ -79,6 +87,7 @@ When a user requests a model that doesn't exist in any configured plan (even aft
 - Model names are compared after normalization to lowercase (most common convention)
 - Existing plan configurations do not need to be modified to benefit from this feature
 - Upstream providers are case-sensitive and require the original model name in requests
+- Common model aliases are predefined (e.g., `gpt-4` → `gpt-4-turbo`, `claude-3` → latest claude-3 version)
 
 ## Success Criteria *(mandatory)*
 
