@@ -9,6 +9,7 @@ import { PlanSelector, createPlanSelector, type SelectionContext } from '@/servi
 import { CircuitBreaker, createCircuitBreaker } from '@/services/circuit-breaker';
 import type { QuotaManager } from '@/services/quota-manager';
 import { RpmTracker, createRpmTracker } from '@/services/rpm-tracker';
+import { ModelResolver, createModelResolver } from '@/services/model-resolver';
 import type { CodingPlan, QuotaState } from '@/types';
 import type { LoadBalanceConfig } from '@/types/load-balancing';
 import { DEFAULT_LOAD_BALANCE_CONFIG } from '@/types/load-balancing';
@@ -58,6 +59,7 @@ export class RequestRouter {
   private readonly quotaManager: QuotaManager | null;
   private readonly rpmTracker: RpmTracker;
   private readonly loadBalanceConfig: LoadBalanceConfig;
+  private readonly modelResolver: ModelResolver;
 
   /**
    * Create a new RequestRouter.
@@ -73,6 +75,7 @@ export class RequestRouter {
     this.planSelector = createPlanSelector(this.loadBalanceConfig, this.rpmTracker);
     this.circuitBreaker = createCircuitBreaker();
     this.quotaManager = quotaManager ?? null;
+    this.modelResolver = createModelResolver();
   }
 
   /**
@@ -135,32 +138,46 @@ export class RequestRouter {
   async route(model: string): Promise<RoutingResult> {
     const requestId = randomUUID();
 
-    // Find all plans supporting this model
-    const allPlans = await this.repository.findByModel(model);
+    // Resolve model name (case-insensitive + alias support)
+    const resolution = this.modelResolver.resolveWithOriginal(model);
+    const searchModel = resolution.canonicalName;
+
+    // Log alias resolution if applicable
+    if (resolution.wasAlias) {
+      logger.debug('Model alias resolved for routing', {
+        original: resolution.originalName,
+        alias: resolution.resolvedAlias,
+        canonical: searchModel,
+        requestId,
+      });
+    }
+
+    // Find all plans supporting this model (using canonical name for matching)
+    const allPlans = await this.repository.findByModel(searchModel);
     const activePlans = this.planSelector.filterActivePlans(allPlans);
 
     if (activePlans.length === 0) {
-      return this.handleNoActivePlans(model, requestId, allPlans.length);
+      return this.handleNoActivePlans(searchModel, requestId, allPlans.length);
     }
 
     // Filter out plans with open circuits
     const availablePlans = this.filterByCircuit(activePlans);
 
     if (availablePlans.length === 0) {
-      return this.handleAllCircuitsOpen(model, requestId, activePlans.length);
+      return this.handleAllCircuitsOpen(searchModel, requestId, activePlans.length);
     }
 
     // Filter out exhausted plans if quota manager is available
     const plansWithQuota = this.filterByQuota(availablePlans);
 
     if (plansWithQuota.length === 0) {
-      return this.handleAllExhausted(model, requestId, availablePlans.length);
+      return this.handleAllExhausted(searchModel, requestId, availablePlans.length);
     }
 
     // Select the best plan based on load balancing strategy
     const quotaStates = this.quotaManager?.getAllQuotaStates() ?? new Map<number, QuotaState>();
     const context: SelectionContext = {
-      model,
+      model: searchModel,
       plans: plansWithQuota,
       quotaStates,
       rpmTracker: this.rpmTracker,
@@ -171,7 +188,7 @@ export class RequestRouter {
     if (!selectedPlan) {
       logger.warn('No suitable plan found after quota filtering', {
         requestId,
-        model,
+        model: searchModel,
         availablePlans: plansWithQuota.length,
       });
       return emptyResult(requestId);
@@ -208,10 +225,23 @@ export class RequestRouter {
     const result = await this.route(model);
 
     if (!result.selectedPlan) {
+      // Get all available models to include in error message
+      const allPlans = await this.repository.findAll();
+      const availableModels = [...new Set(allPlans.flatMap((p) => p.models))].sort();
+
+      // Resolve the model to get what we searched for (case-insensitive + alias)
+      const resolution = this.modelResolver.resolveWithOriginal(model);
+
       throw createGatewayError(
         'MODEL_NOT_FOUND',
-        `No coding plan supports model '${model}'`,
-        { model, requestId: result.requestId }
+        `Model '${model}' not found. Case-insensitive search performed. Available models: ${availableModels.join(', ')}`,
+        {
+          model,
+          searchedModel: resolution.canonicalName,
+          availableModels,
+          searchedAliases: resolution.wasAlias ? [resolution.resolvedAlias!] : [],
+          requestId: result.requestId,
+        }
       );
     }
 

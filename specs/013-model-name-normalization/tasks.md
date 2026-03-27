@@ -54,8 +54,8 @@
 
 ### Implementation for User Story 1
 
-- [ ] T011 [P] [US1] Update PlanSelector.findPlansByModel() to use ModelResolver in src/services/plan-selector.ts
-- [ ] T012 Verify case-insensitive matching works with existing plan configurations
+- [x] T011 [P] [US1] Update PlanSelector.findPlansByModel() to use ModelResolver in src/services/plan-selector.ts
+- [x] T012 Verify case-insensitive matching works with existing plan configurations
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -69,12 +69,12 @@
 
 ### Tests for User Story 2
 
-- [ ] T013 [P] [US2] Add integration test for various case variations in tests/integration/model-routing.test.ts
+- [x] T013 [P] [US2] Add integration test for various case variations in tests/integration/model-routing.test.ts
 
 ### Implementation for User Story 2
 
-- [ ] T014 [US2] Update RequestRouter.getPlanForRequest() to use ModelResolver in src/services/request-router.ts
-- [ ] T015 [US2] Ensure original model name is preserved for upstream requests
+- [x] T014 [US2] Update RequestRouter.getPlanForRequest() to use ModelResolver in src/services/request-router.ts
+- [x] T015 [US2] Ensure original model name is preserved for upstream requests
 
 **Checkpoint**: User Stories 1 AND 2 should both work independently
 
@@ -88,8 +88,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T016 [P] [US3] Enhance error handling in RequestRouter to include available models in src/services/request-router.ts
-- [ ] T017 [US3] Format error message with case-normalized available models list
+- [x] T016 [P] [US3] Enhance error handling in RequestRouter to include available models in src/services/request-router.ts
+- [x] T017 [US3] Format error message with case-normalized available models list
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -99,7 +99,7 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T018 [P] Run full test suite to verify backward compatibility
+- [x] T018 [P] Run full test suite to verify backward compatibility
 - [ ] T019 Update documentation in docs/standards.md if needed
 - [ ] T020 Run quickstart.md validation scenarios from specs/013-model-name-normalization/quickstart.md
 
