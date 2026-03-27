@@ -51,7 +51,7 @@
 
 **Acceptance Scenarios**:
 
-1. **Given** 三个并发请求到达 Gateway，**When** 查看实时日志输出，**Then** 每个请求的日志行使用不同的颜色标记或唯一前缀（如 `[A]`、`[B]`、`[C]`）
+1. **Given** 三个并发请求到达 Gateway，**When** 查看实时日志输出，**Then** 每个请求的日志行使用不同的 ANSI 颜色标记
 
 2. **Given** 请求处理包含多个阶段，**When** 查看日志输出，**Then** 同一请求的所有日志行使用相同的颜色/前缀，形成视觉连贯性
 
@@ -71,26 +71,27 @@
 - **FR-001**: System MUST track elapsed time for each of the following stages: `requestReceived`, `validation`, `routing`, `quotaCheck`, `apiKeyDecryption`, `upstreamRequest`, `responseSent`
 - **FR-002**: System MUST record elapsed time in milliseconds with at least millisecond precision for each stage
 - **FR-003**: System MUST associate all log entries for a single request with the request's unique identifier (requestId from Fastify's requestIdHeader)
-- **FR-004**: System MUST output stage timing summary when a request completes, either on success or failure
-- **FR-005**: System MUST use visual differentiation between concurrent requests through: (a) a short request color-code (ANSI color) assigned per request, OR (b) a single-character request identifier prefix (e.g., `[A]`, `[B]`, `[C]`) that remains consistent throughout the request lifecycle
-- **FR-006**: System MUST assign color/prefix based on request sequence number (modulo number of available colors) to ensure color reuse is rare in normal operation
+- **FR-004**: System MUST output stage timing summary as a structured JSON log line when a request completes (success or failure), containing: requestId, colorIndex, totalDurationMs, and an array of phases each with name and durationMs
+- **FR-005**: System MUST use ANSI color codes to visually differentiate concurrent requests — each request is assigned a distinct color from a fixed palette, and all log lines for that request are prefixed with the color code (e.g., `\x1b[31m` for red) so terminals can render them in that color
+- **FR-006**: System MUST assign colors based on request sequence number (modulo number of available colors in the palette) to ensure color reuse is rare in normal operation
 - **FR-007**: The latency tracking mechanism MUST NOT add more than 1ms overhead to request processing under normal conditions
 - **FR-008**: System MUST include total request duration (from request received to response sent) in the timing summary
 - **FR-009**: System MUST log timing data even when requests fail, capturing how far the request progressed before failure
 - **FR-010**: Timing data MUST be logged at `info` level or higher (not `debug`) to ensure visibility in default log configuration
+- **FR-011**: Timing tracing MUST only apply to external API requests — specifically `/v1/chat/completions`, `/v1/messages`, and admin API endpoints (`/api/*`). Internal endpoints (`/health`, `/ready`, `/internal/*`) are excluded from timing tracing
 
 ### Key Entities
 
-- **RequestTrace**: Represents the timing data for a single request through all stages. Key attributes: requestId, colorCode, stages (array of {name, startTime, endTime, durationMs}), totalDurationMs
+- **RequestTrace**: Represents the timing data for a single request through all stages. JSON representation: `{requestId: string, colorIndex: number (0-9), totalDurationMs: number, phases: [{name: string, durationMs: number}]}`
 - **StageTiming**: Represents timing for a single processing stage. Key attributes: stageName, startTimestamp, endTimestamp, durationMs
-- **TimingSummary**: The formatted log output containing all stage timings and total duration for a request
+- **TimingSummary**: The JSON log line containing all stage timings and total duration for a request
 
 ## Success Criteria
 
 ### Measurable Outcomes
 
 - **SC-001**: 100% of completed requests have timing data logged in the standard format with all documented stages present
-- **SC-002**: A developer can identify which specific stage is slowest for a given request by reading the timing summary log line
+- **SC-002**: A developer can identify which specific stage is slowest for a given request by reading the timing summary JSON — phases are ordered by execution sequence and include durationMs field
 - **SC-003**: When two requests are processed concurrently, a developer can distinguish which log lines belong to which request using the requestId or color/prefix within 5 seconds of inspection
 - **SC-004**: The latency tracking overhead is not perceptible to end users — requests complete in essentially the same wall-clock time whether timing is enabled or not (verified by benchmark comparison)
 - **SC-005**: Failed requests (upstream timeout, validation error, etc.) have timing data showing exactly how far the request progressed before failure
@@ -98,10 +99,20 @@
 
 ---
 
+## Clarifications
+
+### Session 2026-03-27
+
+- Q: Visual differentiation via color vs prefix — which to use? → A: ANSI color codes (Option A) — each request assigned a distinct ANSI color from a fixed palette; all log lines for that request prefixed with color code for terminal rendering
+- Q: Color palette size (8 vs 10 vs 12)? → A: 10 distinct ANSI colors (Option B) — balanced between concurrent distinction and palette manageability
+- Q: Timing summary log format (free-text vs JSON vs multi-line)? → A: JSON line format (Option B) — structured JSON log line with requestId, colorIndex, totalDurationMs, and phases array; machine-parseable yet human-readable
+- Q: Scope of timing tracing — all HTTP requests or only external API? → A: External API only (Option B) — tracing applies to `/v1/chat/completions`, `/v1/messages`, and `/api/*`; internal endpoints (`/health`, `/ready`, `/internal/*`) excluded
+- Q: Color collision concern for high concurrency (>10)? → A: Assume normal operation ≤10 concurrent requests (Option A) — 10-color palette sufficient; color collisions acceptable since requestId always available for disambiguation
+
 ## Assumptions
 
 - The gateway already generates a unique requestId for each request (Fastify's `requestIdHeader`)
 - The existing logger supports ANSI color codes in terminal output
 - The performance overhead of timing must be minimal — implementations should avoid synchronous date calls in hot paths
-- Colors will be assigned from a fixed palette of 8-12 distinct colors to ensure contrast and readability
-- The short request identifier (single letter) will be assigned sequentially from a rotating alphabet to minimize collision
+- Colors will be assigned from a fixed palette of exactly 10 distinct ANSI colors to ensure contrast and readability
+- Color is assigned based on request sequence number (modulo palette size) rather than free-form allocation
