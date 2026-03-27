@@ -19,9 +19,9 @@
 
 **Purpose**: Review existing codebase structure and understand current implementation
 
-- [ ] T001 Review existing PlanSelector implementation in src/services/plan-selector.ts
-- [ ] T002 Review existing PlanRepository implementation in src/services/plan-repository.ts
-- [ ] T003 Review existing RequestRouter implementation in src/services/request-router.ts
+- [x] T001 Review existing PlanSelector implementation in src/services/plan-selector.ts
+- [x] T002 Review existing PlanRepository implementation in src/services/plan-repository.ts
+- [x] T003 Review existing RequestRouter implementation in src/services/request-router.ts
 
 ---
 
@@ -31,10 +31,10 @@
 
 **⚠️ CRITICAL**: No user story work can begin until ModelResolver is complete
 
-- [ ] T004 [P] Create ModelResolutionResult interface in src/services/model-resolver.ts
-- [ ] T005 [P] Define MODEL_ALIASES constant with common model aliases in src/services/model-resolver.ts
-- [ ] T006 Implement ModelResolver.resolve() method for alias resolution in src/services/model-resolver.ts
-- [ ] T007 Implement ModelResolver.resolveWithOriginal() method in src/services/model-resolver.ts
+- [x] T004 [P] Create ModelResolutionResult interface in src/services/model-resolver.ts
+- [x] T005 [P] Define MODEL_ALIASES constant with common model aliases in src/services/model-resolver.ts
+- [x] T006 Implement ModelResolver.resolve() method for alias resolution in src/services/model-resolver.ts
+- [x] T007 Implement ModelResolver.resolveWithOriginal() method in src/services/model-resolver.ts
 
 **Checkpoint**: ModelResolver ready - user story implementation can now begin
 
@@ -48,9 +48,9 @@
 
 ### Tests for User Story 1
 
-- [ ] T008 [P] [US1] Write unit tests for ModelResolver.resolve() in tests/unit/model-resolver.test.ts
-- [ ] T009 [P] [US1] Write unit tests for ModelResolver.resolveWithOriginal() in tests/unit/model-resolver.test.ts
-- [ ] T010 [US1] Run unit tests to verify they pass
+- [x] T008 [P] [US1] Write unit tests for ModelResolver.resolve() in tests/unit/model-resolver.test.ts
+- [x] T009 [P] [US1] Write unit tests for ModelResolver.resolveWithOriginal() in tests/unit/model-resolver.test.ts
+- [x] T010 [US1] Run unit tests to verify they pass
 
 ### Implementation for User Story 1
 
