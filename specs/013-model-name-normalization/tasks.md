@@ -100,8 +100,8 @@
 **Purpose**: Improvements that affect multiple user stories
 
 - [x] T018 [P] Run full test suite to verify backward compatibility
-- [ ] T019 Update documentation in docs/standards.md if needed
-- [ ] T020 Run quickstart.md validation scenarios from specs/013-model-name-normalization/quickstart.md
+- [x] T019 Update documentation in docs/standards.md if needed
+- [x] T020 Run quickstart.md validation scenarios from specs/013-model-name-normalization/quickstart.md
 
 ---
 
