@@ -6,6 +6,7 @@
 import Fastify, { FastifyInstance, FastifyServerOptions } from 'fastify';
 import { registerErrorHandler } from '@/middleware/error-handler';
 import { registerRequestLogger } from '@/middleware/request-logger';
+import { registerRequestTimer } from '@/middleware/request-timer';
 import { registerAuthMiddleware } from '@/middleware/auth';
 import { registerRoutes } from '@/routes';
 import { registerInternalApiKeyRoutes, registerReloadRoutes } from '@/routes/internal';
@@ -66,6 +67,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
 
   // Register middleware
   registerRequestLogger(app, options.usageTracker);
+  registerRequestTimer(app);
 
   // Register auth middleware if apiKeyManager is provided
   if (options.apiKeyManager && options.enableAuth !== false) {

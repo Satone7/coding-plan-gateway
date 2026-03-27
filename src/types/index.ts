@@ -192,3 +192,17 @@ export type {
 } from './plan-id-counter';
 
 export { MAX_SAFE_PLAN_ID } from './plan-id-counter';
+
+// Request trace types
+export type {
+  StageName,
+  StageTiming,
+  RequestTrace,
+  PhaseRecord,
+  TimingSummary,
+} from './request-trace';
+
+export {
+  ANSI_COLOR_CODES,
+  COLOR_PALETTE_SIZE,
+} from './request-trace';
