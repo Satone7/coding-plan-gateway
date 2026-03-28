@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { ApiKeyManager } from '@/services/api-key-manager';
 import type { UsageTracker } from '@/services/usage-tracker';
 import { logger } from '@/utils/logger';
+import { reloadModelAliases } from '@/config';
 
 /**
  * Options for reload routes.
@@ -24,11 +25,11 @@ export interface ReloadRoutesOptions {
 /**
  * Types of data that can be reloaded.
  */
-type ReloadType = 'api-keys' | 'usage' | 'all';
+type ReloadType = 'api-keys' | 'usage' | 'config' | 'all';
 
 // Request schema
 const reloadSchema = z.object({
-  type: z.enum(['api-keys', 'usage', 'all']).default('all'),
+  type: z.enum(['api-keys', 'usage', 'config', 'all']).default('all'),
 });
 
 /**
@@ -85,6 +86,13 @@ function createHandlers(
             await usageTracker.initialize();
             reloaded.push('usage');
             logger.info('Usage data reloaded');
+          }
+        }
+
+        if (type === 'config' || type === 'all') {
+          const reloadedAliases = await reloadModelAliases();
+          if (reloadedAliases) {
+            reloaded.push('model-aliases');
           }
         }
 
