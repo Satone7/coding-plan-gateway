@@ -1,0 +1,73 @@
+version: "1.0"
+
+# Model aliases configuration
+# Maps user-provided alias names to canonical model names
+modelAliases:
+  # GPT aliases
+  gpt-4: gpt-4-turbo
+  gpt-4-32k: gpt-4-32k-context
+  gpt-3.5-turbo: gpt-3.5-turbo-0125
+
+  # Claude aliases
+  claude-3: claude-3-opus-20240229
+  claude-3-sonnet: claude-3-sonnet-20240229
+  claude-3-haiku: claude-3-haiku-20240307
+
+  # MiniMax aliases
+  minimax-m2.5: MiniMax-M2.5
+  minimax-m2.7: MiniMax-M2.7
+
+plans:
+  - id: 1
+    name: "Ark Coding Plan"
+    baseUrl: "https://ark.cn-beijing.volces.com/api/coding"
+    apiKey: "YOUR_API_KEY_HERE"
+    models:
+      - "ark-code-latest"
+      - "doubao-seed-2.0-code"
+      - "kimi-k2.5"
+      - "minimax-m2.5"
+      - "glm-4.7"
+    quota:
+      limit: 90000
+      period: "monthly"
+      # expiresOn: Day of month (1-31) when quota resets. If not set, defaults to 1st of each month.
+      # Example: 15 = quota resets on the 15th of each month
+      # Note: If the day doesn't exist in a month (e.g., 31), uses the last day of that month
+      expiresOn: 1
+    timeout: 180000
+    # status: Plan operational status
+    #   active   - Plan is running and accepting requests (default)
+    #   paused   - Plan is paused, not accepting requests
+    #   error    - Plan has an error (system-managed, not settable)
+    #   exhausted - Plan quota is exhausted (system-managed, not settable)
+    status: "active"
+  - id: 2
+    name: "Ali Coding Plan"
+    baseUrl: "https://coding.dashscope.aliyuncs.com/apps/anthropic"
+    apiKey: "YOUR_API_KEY_HERE"
+    models:
+      - "qwen3.5-plus"
+      - "glm-5"
+      - "glm-4.7"
+      - "kimi-k2.5"
+      - "MiniMax-M2.5"
+    quota:
+      limit: 90000
+      period: "monthly"
+      # expiresOn: Day of month (1-31) when quota resets. If not set, defaults to 1st of each month.
+      # Example: 15 = quota resets on the 15th of each month
+      # Note: If the day doesn't exist in a month (e.g., 31), uses the last day of that month
+      expiresOn: 27
+    timeout: 180000
+    # status: Plan operational status
+    #   active   - Plan is running and accepting requests (default)
+    #   paused   - Plan is paused, not accepting requests
+    #   error    - Plan has an error (system-managed, not settable)
+    #   exhausted - Plan quota is exhausted (system-managed, not settable)
+    status: "active"
+
+# Alternative: Use expiresAt for one-time absolute expiration (ISO 8601 datetime)
+# expiresAt takes precedence over expiresOn when both are specified
+# Example: "2025-12-31T23:59:59Z" - plan expires at this specific datetime
+# Note: expiresAt is for one-time expiration, expiresOn is for recurring monthly resets
