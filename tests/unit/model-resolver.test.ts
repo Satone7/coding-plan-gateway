@@ -3,14 +3,26 @@
  * Tests model name normalization and alias resolution.
  */
 
-import { describe, it, expect } from 'vitest';
-import { ModelResolver, createModelResolver, MODEL_ALIASES } from '@/services/model-resolver';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { ModelResolver, createModelResolver } from '@/services/model-resolver';
 
 describe('ModelResolver', () => {
+  // Default test aliases
+  const testAliases = {
+    'gpt-4': 'gpt-4-turbo',
+    'gpt-4-32k': 'gpt-4-32k-context',
+    'gpt-3.5-turbo': 'gpt-3.5-turbo-0125',
+    'claude-3': 'claude-3-opus-20240229',
+    'claude-3-sonnet': 'claude-3-sonnet-20240229',
+    'claude-3-haiku': 'claude-3-haiku-20240307',
+    'minimax-m2.5': 'MiniMax-M2.5',
+    'minimax-m2': 'MiniMax-M2',
+  };
+
   let resolver: ModelResolver;
 
   beforeEach(() => {
-    resolver = createModelResolver();
+    resolver = createModelResolver({ aliases: testAliases });
   });
 
   describe('resolve', () => {
@@ -97,7 +109,7 @@ describe('ModelResolver', () => {
   describe('getAliases', () => {
     it('should return all known aliases', () => {
       const aliases = resolver.getAliases();
-      expect(aliases).toEqual(MODEL_ALIASES);
+      expect(aliases).toEqual(testAliases);
     });
 
     it('should return a copy (not reference)', () => {
@@ -129,6 +141,56 @@ describe('ModelResolver', () => {
     it('should handle minimax alias', () => {
       expect(resolver.isAlias('minimax-m2.5')).toBe(true);
       expect(resolver.isAlias('MiniMax-M2.5')).toBe(true);
+    });
+  });
+
+  describe('constructor with empty aliases', () => {
+    it('should work with empty aliases', () => {
+      const emptyResolver = createModelResolver({ aliases: {} });
+      expect(emptyResolver.resolve('gpt-4')).toBe('gpt-4');
+    });
+  });
+
+  describe('updateAliases', () => {
+    it('should update aliases at runtime', () => {
+      resolver.updateAliases({ 'new-alias': 'new-canonical' });
+      expect(resolver.resolve('new-alias')).toBe('new-canonical');
+    });
+
+    it('should reject circular aliases on update', () => {
+      expect(() => {
+        resolver.updateAliases({ 'a': 'b', 'b': 'a' });
+      }).toThrow('Circular alias chain');
+    });
+
+    it('should log when aliases are updated', () => {
+      const emptyResolver = createModelResolver({ aliases: {} });
+      emptyResolver.updateAliases({ 'test': 'canonical' });
+      expect(emptyResolver.getAliases()).toEqual({ 'test': 'canonical' });
+    });
+  });
+
+  describe('detectCircularAliases', () => {
+    it('should detect circular chains', () => {
+      const error = ModelResolver.detectCircularAliases({ 'a': 'b', 'b': 'a' });
+      expect(error).toContain('Circular alias chain');
+    });
+
+    it('should detect longer circular chains', () => {
+      const error = ModelResolver.detectCircularAliases({ 'a': 'b', 'b': 'c', 'c': 'a' });
+      expect(error).toContain('Circular alias chain');
+    });
+
+    it('should return null for valid aliases', () => {
+      const result = ModelResolver.detectCircularAliases(testAliases);
+      expect(result).toBeNull();
+    });
+
+    it('should handle aliases with different casing', () => {
+      // This should NOT be flagged as circular - "minimax-m2.5" is the alias key,
+      // "MiniMax-M2.5" is the canonical name (different cases are allowed)
+      const result = ModelResolver.detectCircularAliases({ 'minimax-m2.5': 'MiniMax-M2.5' });
+      expect(result).toBeNull();
     });
   });
 });

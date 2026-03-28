@@ -9,7 +9,7 @@ import { PlanSelector, createPlanSelector, type SelectionContext } from '@/servi
 import { CircuitBreaker, createCircuitBreaker } from '@/services/circuit-breaker';
 import type { QuotaManager } from '@/services/quota-manager';
 import { RpmTracker, createRpmTracker } from '@/services/rpm-tracker';
-import { ModelResolver, createModelResolver } from '@/services/model-resolver';
+import { ModelResolver, createModelResolver, type ModelAliases } from '@/services/model-resolver';
 import type { CodingPlan, QuotaState } from '@/types';
 import type { LoadBalanceConfig } from '@/types/load-balancing';
 import { DEFAULT_LOAD_BALANCE_CONFIG } from '@/types/load-balancing';
@@ -67,7 +67,8 @@ export class RequestRouter {
   constructor(
     repository: IPlanRepository,
     quotaManager?: QuotaManager,
-    loadBalanceConfig?: LoadBalanceConfig
+    loadBalanceConfig?: LoadBalanceConfig,
+    modelAliases?: ModelAliases
   ) {
     this.repository = repository;
     this.loadBalanceConfig = loadBalanceConfig ?? DEFAULT_LOAD_BALANCE_CONFIG;
@@ -75,7 +76,7 @@ export class RequestRouter {
     this.planSelector = createPlanSelector(this.loadBalanceConfig, this.rpmTracker);
     this.circuitBreaker = createCircuitBreaker();
     this.quotaManager = quotaManager ?? null;
-    this.modelResolver = createModelResolver();
+    this.modelResolver = createModelResolver({ aliases: modelAliases ?? {} });
   }
 
   /**
@@ -379,7 +380,8 @@ export class RequestRouter {
 export function createRequestRouter(
   repository: IPlanRepository,
   quotaManager?: QuotaManager,
-  loadBalanceConfig?: LoadBalanceConfig
+  loadBalanceConfig?: LoadBalanceConfig,
+  modelAliases?: ModelAliases
 ): RequestRouter {
-  return new RequestRouter(repository, quotaManager, loadBalanceConfig);
+  return new RequestRouter(repository, quotaManager, loadBalanceConfig, modelAliases);
 }

@@ -152,7 +152,7 @@ export async function loadConfig(
 
   if (!(await fileExists(absolutePath))) {
     logger.warn(`Configuration file not found: ${absolutePath}, using empty configuration`);
-    return { version: CONFIG_VERSION, plans: [] };
+    return { version: CONFIG_VERSION, plans: [], modelAliases: {} };
   }
 
   logger.info(`Loading configuration from ${absolutePath}`);
@@ -250,6 +250,7 @@ export function createEmptyConfig(): Config {
   return {
     version: CONFIG_VERSION,
     plans: [],
+    modelAliases: {},
   };
 }
 

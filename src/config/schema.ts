@@ -81,12 +81,24 @@ export const planConfigSchema = z.object({
 });
 
 /**
+ * Model aliases schema.
+ * Maps user-provided alias names to canonical model names.
+ */
+export const modelAliasesSchema = z
+  .record(
+    z.string().min(1), // alias key (e.g., "gpt-4")
+    z.string().min(1) // canonical model name (e.g., "gpt-4-turbo")
+  )
+  .default({});
+
+/**
  * Full configuration schema (root).
  */
 export const configSchema = z.object({
   version: z.string().optional(),
   plans: z.array(planConfigSchema).default([]),
   loadBalancing: loadBalanceConfigSchema.optional(),
+  modelAliases: modelAliasesSchema, // NEW: configurable model aliases
 });
 
 /**
@@ -146,6 +158,7 @@ export const appConfigSchema = z.object({
  */
 export type PlanConfig = z.infer<typeof planConfigSchema>;
 export type Config = z.infer<typeof configSchema>;
+export type ModelAliases = z.infer<typeof modelAliasesSchema>;
 export type ServerConfig = z.infer<typeof serverConfigSchema>;
 export type PathsConfig = z.infer<typeof pathsConfigSchema>;
 export type SecurityConfig = z.infer<typeof securityConfigSchema>;
