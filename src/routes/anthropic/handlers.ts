@@ -9,6 +9,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { IPlanRepository } from '@/services/plan-repository';
 import { RequestRouter, createRequestRouter } from '@/services/request-router';
+import { type ModelAliases } from '@/services/model-resolver';
 import { RequestProxy } from '@/services/request-proxy';
 import { QuotaManager } from '@/services/quota-manager';
 import { logger } from '@/utils/logger';
@@ -184,9 +185,10 @@ async function attemptFailover(
 export function createAnthropicHandlers(
   repository: IPlanRepository,
   proxy: RequestProxy,
-  quotaManager?: QuotaManager
+  quotaManager?: QuotaManager,
+  modelAliases?: ModelAliases
 ): AnthropicHandlers {
-  const router = createRequestRouter(repository, quotaManager);
+  const router = createRequestRouter(repository, quotaManager, undefined, modelAliases);
   const services: HandlerServices = { repository, proxy, router };
 
   return {

@@ -15,6 +15,8 @@ import type { QuotaManager } from '@/services/quota-manager';
 import type { PlanUsageTracker } from '@/services/plan-usage-tracker';
 import { createRequestProxy } from '@/services/request-proxy';
 import { dirname, join } from 'path';
+import { loadConfig, setModelResolver } from '@/config';
+import { ModelResolver } from '@/services/model-resolver';
 
 /**
  * Register all routes with the Fastify instance.
@@ -51,6 +53,14 @@ export async function registerRoutes(
   const encryptionKey = process.env.ENCRYPTION_KEY;
   const configPath = process.env.CONFIG_PATH ?? './config.yaml';
   const repository = createPlanRepository(configPath, encryptionKey);
+
+  // Load config to get model aliases
+  const config = await loadConfig(configPath, encryptionKey);
+  const modelAliases = config.modelAliases ?? {};
+
+  // Create a ModelResolver and register it for hot-reload support
+  const modelResolver = new ModelResolver({ aliases: modelAliases, validateCircular: false });
+  setModelResolver(modelResolver, configPath);
 
   // Create and initialize PlanIdCounter
   const configDir = dirname(configPath);
@@ -90,11 +100,12 @@ export async function registerRoutes(
 
   const proxy = createRequestProxy();
 
-  // Register API routes
+  // Register API routes with model aliases
   await registerOpenAIRoutes(app, {
     repository,
     proxy,
     quotaManager,
+    modelAliases,
     prefix: '/v1',
   });
 
@@ -102,6 +113,7 @@ export async function registerRoutes(
     repository,
     proxy,
     quotaManager,
+    modelAliases,
     prefix: '/v1',
   });
 

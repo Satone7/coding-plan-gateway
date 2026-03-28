@@ -8,6 +8,11 @@
 import { logger } from '@/utils/logger';
 
 /**
+ * Type for model aliases (alias -> canonical model name).
+ */
+export type ModelAliases = Record<string, string>;
+
+/**
  * Result of model name resolution.
  */
 export interface ModelResolutionResult {
@@ -22,31 +27,21 @@ export interface ModelResolutionResult {
 }
 
 /**
- * Built-in model aliases for common naming variations.
- * Maps alias -> canonical model name.
+ * Options for ModelResolver constructor.
  */
-export const MODEL_ALIASES: Record<string, string> = {
-  // GPT aliases
-  'gpt-4': 'gpt-4-turbo',
-  'gpt-4-32k': 'gpt-4-32k-context',
-  'gpt-3.5-turbo': 'gpt-3.5-turbo-0125',
-
-  // Claude aliases
-  'claude-3': 'claude-3-opus-20240229',
-  'claude-3-sonnet': 'claude-3-sonnet-20240229',
-  'claude-3-haiku': 'claude-3-haiku-20240307',
-
-  // MiniMax aliases (from spec requirement)
-  'minimax-m2.5': 'MiniMax-M2.5',
-  'minimax-m2': 'MiniMax-M2',
-};
+export interface ModelResolverOptions {
+  /** Initial model aliases to use */
+  aliases?: ModelAliases;
+  /** Whether to validate for circular references at startup */
+  validateCircular?: boolean;
+}
 
 /**
  * ModelResolver - Handles model name normalization and alias resolution.
  *
  * @example
  * ```typescript
- * const resolver = new ModelResolver();
+ * const resolver = new ModelResolver({ aliases: { 'gpt-4': 'gpt-4-turbo' } });
  *
  * // Resolve with alias
  * const result = resolver.resolveWithOriginal('gpt-4');
@@ -57,6 +52,111 @@ export const MODEL_ALIASES: Record<string, string> = {
  * ```
  */
 export class ModelResolver {
+  private aliases: ModelAliases;
+
+  /**
+   * Create a new ModelResolver instance.
+   *
+   * @param options - Configuration options
+   */
+  constructor(options: ModelResolverOptions = {}) {
+    const aliases = options.aliases ?? {};
+
+    // Validate circular references if enabled (default: true for constructor)
+    if (options.validateCircular !== false) {
+      const circularError = ModelResolver.detectCircularAliases(aliases);
+      if (circularError) {
+        throw new Error(circularError);
+      }
+    }
+
+    this.aliases = aliases;
+  }
+
+  /**
+   * Detect circular references in alias configuration.
+   * Checks for circular chains (a: b, b: a or a: b, b: c, c: a).
+   *
+   * Note: A cycle only exists if the canonical name matches an EXACT alias key.
+   * For example, "minimax-m2.5": "MiniMax-M2.5" is NOT a cycle because
+   * "MiniMax-M2.5" (the canonical) is not a key in the aliases - only "minimax-m2.5" is.
+   *
+   * @param aliases - The alias map to validate
+   * @returns Error message if circular references found, null otherwise
+   */
+  static detectCircularAliases(aliases: ModelAliases): string | null {
+    // Get all alias keys (both lowercase and original)
+    const aliasKeys = new Set(Object.keys(aliases));
+
+    // Check for circular chains using DFS
+    // A cycle exists only if the canonical name is an EXACT alias key (same case)
+    const visited = new Set<string>();
+    const recursionStack = new Set<string>();
+
+    function hasCycle(node: string): boolean {
+      visited.add(node);
+      recursionStack.add(node);
+
+      // Get the canonical name
+      const canonical = aliases[node];
+      if (!canonical) {
+        // No mapping - end of chain, not a cycle
+        recursionStack.delete(node);
+        return false;
+      }
+
+      // Only follow the path if the canonical is ALSO an exact alias key (same case)
+      // This is what creates a cycle - if the target is not an alias key, there's no cycle
+      if (aliasKeys.has(canonical)) {
+        if (!visited.has(canonical)) {
+          if (hasCycle(canonical)) {
+            return true;
+          }
+        } else if (recursionStack.has(canonical)) {
+          // Found a cycle
+          return true;
+        }
+      }
+
+      recursionStack.delete(node);
+      return false;
+    }
+
+    for (const alias of Object.keys(aliases)) {
+      if (!visited.has(alias)) {
+        if (hasCycle(alias)) {
+          // Build cycle path for error message
+          const cycle: string[] = [alias];
+          let current = aliases[alias];
+          while (current && current !== alias && aliasKeys.has(current)) {
+            cycle.push(current);
+            current = aliases[current];
+          }
+          cycle.push(alias);
+          return `Circular alias chain detected: ${cycle.join(' -> ')}`;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Update aliases at runtime (for hot-reload support).
+   *
+   * @param aliases - New alias map to use
+   * @throws Error if circular references are detected
+   */
+  updateAliases(aliases: ModelAliases): void {
+    const circularError = ModelResolver.detectCircularAliases(aliases);
+    if (circularError) {
+      throw new Error(circularError);
+    }
+
+    this.aliases = aliases;
+    logger.info('Model aliases updated', { count: Object.keys(aliases).length });
+  }
+
   /**
    * Resolve a model name to its canonical form.
    * 1. Normalize input (trim, lowercase)
@@ -83,7 +183,7 @@ export class ModelResolver {
     const normalizedName = originalName.toLowerCase();
 
     // Check if the normalized name is a known alias
-    const alias = MODEL_ALIASES[normalizedName];
+    const alias = this.aliases[normalizedName];
 
     if (alias) {
       logger.debug('Model alias resolved', {
@@ -119,8 +219,8 @@ export class ModelResolver {
    *
    * @returns Record of alias -> canonical mappings
    */
-  getAliases(): Record<string, string> {
-    return { ...MODEL_ALIASES };
+  getAliases(): ModelAliases {
+    return { ...this.aliases };
   }
 
   /**
@@ -131,15 +231,17 @@ export class ModelResolver {
    */
   isAlias(modelName: string): boolean {
     const normalized = modelName.toLowerCase().trim();
-    return normalized in MODEL_ALIASES;
+    return normalized in this.aliases;
   }
 }
 
 /**
  * Create a new ModelResolver instance.
+ * For backward compatibility - creates resolver with empty aliases.
  *
+ * @param options - Configuration options
  * @returns A new ModelResolver instance
  */
-export function createModelResolver(): ModelResolver {
-  return new ModelResolver();
+export function createModelResolver(options?: ModelResolverOptions): ModelResolver {
+  return new ModelResolver(options);
 }

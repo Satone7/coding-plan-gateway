@@ -142,6 +142,8 @@ git merge <branch-name> --no-ff -m "merge: branch <branch-name> into master"
 - JSON files (`plan-usage-data.json`, `usage-adjustment-history.json`) (011-fix-usage-tracking)
 - TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x (existing), no new dependencies required (012-request-latency-tracing)
 - In-memory per-request timing state (no persistence required) (012-request-latency-tracing)
+- TypeScript 5.x / Node.js 20+ LTS + Fastify 4.x, Zod (validation), yaml (for config parsing) (014-model-alias-config)
+- YAML file (config.yaml) - existing file-based configuration (014-model-alias-config)
 
 ## Recent Changes
 - 012-request-latency-tracing: Added request latency tracing with ANSI color differentiation for concurrent requests
