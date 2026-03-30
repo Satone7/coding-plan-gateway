@@ -7,10 +7,10 @@ services:
       dockerfile: Dockerfile
     container_name: coding-plan-gateway
     ports:
-      - "8080:8080"
+      - "${PORT:-8080}:${PORT:-8080}"
     environment:
       - NODE_ENV=production
-      - PORT=8080
+      - PORT=${PORT:-8080}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       - CONFIG_PATH=/app/config.yaml
