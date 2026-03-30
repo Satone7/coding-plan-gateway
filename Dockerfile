@@ -24,9 +24,10 @@ WORKDIR /app
 # Install dumb-init for proper signal handling
 RUN apk add --no-cache dumb-init
 
-# Create non-root user
+# Create non-root user with ability to read mounted config files
+# Add gateway to nodejs group so it can read files owned by node (from build stage)
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S gateway -u 1001
+    adduser -S gateway -u 1001 -G nodejs
 
 # Copy package files and install production dependencies
 COPY package*.json ./
@@ -40,7 +41,11 @@ COPY bin/cpg ./bin/cpg
 RUN chmod +x bin/cpg
 
 # Create data and config directories with proper permissions
-RUN mkdir -p /app/config /app/data && chown -R gateway:nodejs /app
+# Create placeholder config with read permission for all users (will be mounted over)
+RUN mkdir -p /app/config /app/data && \
+    touch /app/config.yaml && \
+    chmod 644 /app/config.yaml && \
+    chown -R gateway:nodejs /app
 
 # Add CLI to PATH
 ENV PATH="/app/bin:${PATH}"

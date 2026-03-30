@@ -33,7 +33,8 @@ if [ -f "config.yaml.example" ]; then
         echo "⚠️  config.yaml already exists, skipping..."
     else
         cp config.yaml.example config.yaml
-        echo "✅ Created config.yaml from config.yaml.example"
+        chmod 644 config.yaml
+        echo "✅ Created config.yaml from config.yaml.example (permissions: 644)"
     fi
 else
     echo "❌ config.yaml.example not found"
