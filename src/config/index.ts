@@ -6,6 +6,7 @@
 import { readFile, access } from 'fs/promises';
 import { constants } from 'fs';
 import { resolve, extname } from 'path';
+import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { configSchema, planConfigSchema, type PlanConfig, type Config } from './schema';
 import { encryptApiKey } from './encryption';
@@ -158,6 +159,13 @@ export async function loadConfig(
   logger.info(`Loading configuration from ${absolutePath}`);
 
   const content = await readFile(absolutePath, 'utf-8');
+  const md5Hash = createHash('md5').update(content).digest('hex');
+  logger.info('Configuration file loaded', {
+    path: absolutePath,
+    md5: md5Hash,
+    size: content.length,
+  });
+
   const parsed = parseConfigContent(content, absolutePath);
 
   // Expand environment variables
