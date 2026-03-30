@@ -32,6 +32,11 @@ export async function registerRoutes(
 ): Promise<void> {
   logger.info('Registering routes...');
 
+  // Create dependencies
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  const configPath = process.env.CONFIG_PATH ?? './config.yaml';
+  const repository = createPlanRepository(configPath, encryptionKey);
+
   // Register health endpoints
   app.get('/health', () => ({
     status: 'healthy',
@@ -39,24 +44,26 @@ export async function registerRoutes(
     version: process.env.npm_package_version ?? '1.0.0',
   }));
 
-  app.get('/ready', () => ({
-    ready: true,
-    plans: 0,
-    models: 0,
-    checks: {
-      config: true,
-      quotaStore: true,
-    },
-  }));
-
-  // Create dependencies
-  const encryptionKey = process.env.ENCRYPTION_KEY;
-  const configPath = process.env.CONFIG_PATH ?? './config.yaml';
-  const repository = createPlanRepository(configPath, encryptionKey);
-
-  // Load config to get model aliases
+  // Load config to get model aliases and plan count for readiness check
   const config = await loadConfig(configPath, encryptionKey);
   const modelAliases = config.modelAliases ?? {};
+  const planCount = config.plans.length;
+  const modelSet = new Set<string>();
+  for (const plan of config.plans) {
+    for (const model of plan.models) {
+      modelSet.add(model);
+    }
+  }
+
+  app.get('/ready', () => ({
+    ready: true,
+    plans: planCount,
+    models: modelSet.size,
+    checks: {
+      config: true,
+      quotaStore: quotaManager !== undefined,
+    },
+  }));
 
   // Create a ModelResolver and register it for hot-reload support
   const modelResolver = new ModelResolver({ aliases: modelAliases, validateCircular: false });
