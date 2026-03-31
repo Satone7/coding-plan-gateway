@@ -1,0 +1,187 @@
+openapi: 3.0.3
+info:
+  title: Docker Auto-Update API
+  description: Internal API for managing auto-update functionality in Docker containers
+  version: 1.0.0
+
+paths:
+  /autoupdate/status:
+    get:
+      summary: Get current update status
+      operationId: getUpdateStatus
+      responses:
+        '200':
+          description: Current update status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateStatus'
+
+  /autoupdate/trigger:
+    post:
+      summary: Manually trigger an update check
+      operationId: triggerUpdate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriggerUpdateRequest'
+      responses:
+        '202':
+          description: Update check triggered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerUpdateResponse'
+        '409':
+          description: Update already in progress
+
+  /autoupdate/config:
+    get:
+      summary: Get current auto-update configuration
+      operationId: getUpdateConfig
+      responses:
+        '200':
+          description: Current configuration (sensitive fields masked)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateConfigPublic'
+
+    put:
+      summary: Update auto-update configuration
+      operationId: updateConfig
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateConfig'
+      responses:
+        '200':
+          description: Configuration updated
+        '400':
+          description: Invalid configuration
+
+  /autoupdate/history:
+    get:
+      summary: Get update history
+      operationId: getUpdateHistory
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: List of past updates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateHistory'
+
+components:
+  schemas:
+    UpdateStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [idle, checking, updating, failed, success]
+        lastCheckTime:
+          type: string
+          format: date-time
+        lastSuccessfulUpdate:
+          type: string
+          format: date-time
+        currentCommit:
+          type: string
+          pattern: '^[a-f0-9]{40}$'
+        remoteCommit:
+          type: string
+          pattern: '^[a-f0-9]{40}$'
+        updateInProgress:
+          type: boolean
+        consecutiveFailures:
+          type: integer
+
+    TriggerUpdateRequest:
+      type: object
+      properties:
+        force:
+          type: boolean
+          default: false
+          description: Force update even if commits match
+
+    TriggerUpdateResponse:
+      type: object
+      properties:
+        accepted:
+          type: boolean
+        message:
+          type: string
+        status:
+          $ref: '#/components/schemas/UpdateStatus'
+
+    UpdateConfig:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: true
+        branch:
+          type: string
+          default: master
+        checkInterval:
+          type: integer
+          minimum: 0
+          default: 0
+        gitUrl:
+          type: string
+        maxRetries:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 3
+        backupEnabled:
+          type: boolean
+          default: true
+
+    UpdateConfigPublic:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        branch:
+          type: string
+        checkInterval:
+          type: integer
+        maxRetries:
+          type: integer
+        backupEnabled:
+          type: boolean
+        # Note: gitUrl, gitToken, sshKeyPath are hidden for security
+
+    UpdateHistory:
+      type: object
+      properties:
+        total:
+          type: integer
+        updates:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+              fromCommit:
+                type: string
+              toCommit:
+                type: string
+              status:
+                type: string
+                enum: [success, failed, rolled_back]
+              duration:
+                type: integer
+                description: Duration in seconds
