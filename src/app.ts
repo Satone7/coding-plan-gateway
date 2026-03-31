@@ -87,13 +87,14 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     await registerInternalApiKeyRoutes(app, {
       apiKeyManager: options.apiKeyManager,
       usageTracker: options.usageTracker,
-      prefix: '/internal',
+      prefix: '/api/internal',
     });
 
     // Register reload routes for CLI notifications
     await registerReloadRoutes(app, {
       apiKeyManager: options.apiKeyManager,
       usageTracker: options.usageTracker,
+      prefix: '/api/internal',
     });
   }
 

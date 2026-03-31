@@ -80,7 +80,7 @@ async function handleCreate(
     const notified = await notifier.notifyApiKeysChanged();
     if (!notified) {
       console.error('Warning: Failed to notify gateway. Key may not be immediately available.');
-      console.error('Restart the gateway or run: curl -X POST http://localhost:8080/internal/reload');
+      console.error('Restart the gateway or run: curl -X POST http://localhost:8080/api/internal/reload');
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

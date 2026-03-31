@@ -118,7 +118,7 @@ export const BCRYPT_COST_FACTOR = 12;
 export const DEFAULT_AUTH_CONFIG = {
   apiKeysPath: './api-keys.json',
   usageDataPath: './usage-data.json',
-  authExemptPaths: '/health,/ready,/internal/*,*/quota/*/sync,/v1/models',
+  authExemptPaths: '/health,/ready,/api/internal/*,/api/admin/quota/*/sync,/api/v1/models',
   usageSyncIntervalMs: 60000, // 60 seconds
 };
 

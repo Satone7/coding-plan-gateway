@@ -107,13 +107,13 @@ export async function registerRoutes(
 
   const proxy = createRequestProxy();
 
-  // Register API routes with model aliases
+  // Register API routes under /api prefix
   await registerOpenAIRoutes(app, {
     repository,
     proxy,
     quotaManager,
     modelAliases,
-    prefix: '/v1',
+    prefix: '/api/v1',
   });
 
   await registerAnthropicRoutes(app, {
@@ -121,14 +121,14 @@ export async function registerRoutes(
     proxy,
     quotaManager,
     modelAliases,
-    prefix: '/v1',
+    prefix: '/api/v1',
   });
 
   await registerAdminRoutes(app, {
     repository,
     quotaManager,
     planUsageTracker,
-    prefix: '/api',
+    prefix: '/api/admin',
   });
 
   logger.info('All routes registered');
