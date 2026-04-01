@@ -47,7 +47,7 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, columns
             const endTime = req.endTime || now;
             const duration = Math.floor((endTime - req.startTime) / 1000);
             const displayUrl = req.url.split('?')[0];
-            const statusIcon = req.status === 'completed' ? '✅' : req.status === 'failed' ? '❌' : '⏳';
+            const statusIcon = req.status === 'completed' ? '✅' : req.status === 'failed' ? '❌' : '⚡';
             return (
               <Box key={req.id} flexDirection="row">
                 <Box width={3}><Text>{statusIcon}</Text></Box>
