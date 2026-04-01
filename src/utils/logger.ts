@@ -74,6 +74,8 @@ interface LogEntry {
     name: string;
     message: string;
     stack?: string;
+    code?: string;
+    type?: string;
   };
 }
 
@@ -152,6 +154,14 @@ export class Logger {
         message: error.message,
         stack: error.stack,
       };
+
+      // Extract fastify/gateway error code if present
+      if ('code' in error && typeof (error as any).code === 'string') {
+        entry.error.code = (error as any).code;
+      }
+      if ('type' in error && typeof (error as any).type === 'string') {
+        entry.error.type = (error as any).type;
+      }
     }
 
     notifyListeners(entry);
