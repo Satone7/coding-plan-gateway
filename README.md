@@ -129,7 +129,7 @@ plans:
     quota:
       limit: 1000        # Maximum requests
       period: "monthly"  # daily, monthly, or total
-    timeout: 30000       # Request timeout in ms (optional)
+    timeout: 30          # Request timeout in seconds (optional)
     status: "active"     # active or paused (optional)
     weight: 1            # Used for weighted-round-robin strategy (optional)
 ```
