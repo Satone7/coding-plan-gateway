@@ -196,6 +196,25 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
         { value: 'total', label: 'Total' }
       ],
       initialValue: existing?.quota.period || 'monthly'
+    }),
+    expiresOn: () => p.text({
+      message: 'Expiration Day (1-31, optional, for monthly reset)',
+      initialValue: existing?.expiresOn?.toString() || existing?.quota?.expiresOn?.toString() || '',
+      validate: value => value && (isNaN(parseInt(value)) || parseInt(value) < 1 || parseInt(value) > 31) ? 'Must be between 1 and 31' : undefined
+    }),
+    expiresAt: () => p.text({
+      message: 'Expiration Date (ISO format e.g., 2026-12-31T23:59:59Z, optional)',
+      initialValue: existing?.expiresAt || existing?.quota?.expiresAt || '',
+      validate: value => {
+        if (!value) return undefined;
+        if (isNaN(new Date(value).getTime())) return 'Must be a valid ISO date';
+        return undefined;
+      }
+    }),
+    weight: () => p.text({
+      message: 'Load Balancing Weight (1-100, optional)',
+      initialValue: existing?.weight?.toString() || '',
+      validate: value => value && (isNaN(parseInt(value)) || parseInt(value) < 1 || parseInt(value) > 100) ? 'Must be between 1 and 100' : undefined
     })
   }, {
     onCancel: () => {
@@ -206,7 +225,7 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
 
   if (!group || Object.keys(group).length === 0) return null;
 
-  return {
+  const plan: PlanConfig = {
     id,
     name: group.name as string,
     baseUrl: group.baseUrl as string,
@@ -218,6 +237,18 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
     },
     status: existing?.status || 'active'
   };
+
+  if (group.expiresOn) {
+    plan.expiresOn = parseInt(group.expiresOn as string, 10);
+  }
+  if (group.expiresAt) {
+    plan.expiresAt = group.expiresAt as string;
+  }
+  if (group.weight) {
+    plan.weight = parseInt(group.weight as string, 10);
+  }
+
+  return plan;
 }
 
 async function manageLoadBalancing(config: Config) {
