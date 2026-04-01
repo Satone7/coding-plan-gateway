@@ -27,8 +27,12 @@ if [ ! -f "$PROJECT_ROOT/e2e/test-config.yaml" ]; then
     echo -e "${RED}Error: test-config.yaml not found.${NC}"
     echo -e "${YELLOW}Copy test-config.example.yaml and configure your API keys:${NC}"
     echo "  cp e2e/test-config.example.yaml e2e/test-config.yaml"
+    echo "  chmod 666 e2e/test-config.yaml"
     exit 2
 fi
+
+# Ensure the config file is writable by the container
+chmod 666 "$PROJECT_ROOT/e2e/test-config.yaml" || true
 
 # Build images
 echo "Building images..."

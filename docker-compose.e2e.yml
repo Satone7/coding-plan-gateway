@@ -17,8 +17,8 @@ services:
       - LOG_LEVEL=debug
       - GATEWAY_URL=http://localhost:8080
     volumes:
-      # Use production config (read-only)
-      - ./config.yaml:/app/config.yaml:ro
+      # Use test config (read-write for onboard command)
+      - ./e2e/test-config.yaml:/app/config.yaml
       # Isolated data volumes for testing (won't pollute production)
       - e2e-api-keys:/app/data
       - e2e-logs:/app/logs

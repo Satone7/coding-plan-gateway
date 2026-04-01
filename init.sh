@@ -30,11 +30,12 @@ echo ""
 # Copy config.yaml.example to config.yaml
 if [ -f "config.yaml.example" ]; then
     if [ -f "config.yaml" ]; then
-        echo "⚠️  config.yaml already exists, skipping..."
+        echo "⚠️  config.yaml already exists, ensuring it is writable by the container..."
+        chmod 666 config.yaml || echo "⚠️  Could not change permissions of config.yaml. Ensure it is writable by the container user (uid 1001)."
     else
         cp config.yaml.example config.yaml
-        chmod 644 config.yaml
-        echo "✅ Created config.yaml from config.yaml.example (permissions: 644)"
+        chmod 666 config.yaml
+        echo "✅ Created config.yaml from config.yaml.example (permissions: 666)"
     fi
 else
     echo "❌ config.yaml.example not found"
