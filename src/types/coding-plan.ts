@@ -86,6 +86,9 @@ export interface CodingPlan {
   /** Load balancing weight (1-100, default 1). Higher values = higher priority. */
   weight?: number;
 
+  /** Whether the plan is enabled. Temporarily disable without deleting. */
+  enable?: boolean;
+
   /** Creation timestamp */
   createdAt: Date;
 
@@ -106,6 +109,7 @@ export interface CreateCodingPlanInput {
   expiresOn?: number;
   expiresAt?: string;
   weight?: number;
+  enable?: boolean;
 }
 
 /**
@@ -122,4 +126,5 @@ export interface UpdateCodingPlanInput {
   expiresOn?: number;
   expiresAt?: string;
   weight?: number;
+  enable?: boolean;
 }

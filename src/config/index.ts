@@ -135,6 +135,7 @@ function normalizePlanConfig(plan: PlanConfig): PlanConfig {
     id: plan.id ?? uuidv4(),
     timeout: plan.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
     status: plan.status ?? 'active',
+    enable: plan.enable ?? true,
   };
 }
 

@@ -215,6 +215,10 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
       message: 'Load Balancing Weight (1-100, optional)',
       initialValue: existing?.weight?.toString() || '',
       validate: value => value && (isNaN(parseInt(value)) || parseInt(value) < 1 || parseInt(value) > 100) ? 'Must be between 1 and 100' : undefined
+    }),
+    enable: () => p.confirm({
+      message: 'Enable this plan?',
+      initialValue: existing?.enable !== false // default to true if not explicitly set to false
     })
   }, {
     onCancel: () => {
@@ -235,7 +239,8 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
       limit: parseInt(group.quotaLimit as string),
       period: group.quotaPeriod as 'daily' | 'monthly' | 'total'
     },
-    status: existing?.status || 'active'
+    status: existing?.status || 'active',
+    enable: group.enable as boolean
   };
 
   if (group.expiresOn) {

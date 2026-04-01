@@ -41,6 +41,7 @@ const createPlanBodySchema = z.object({
     period: z.enum(['daily', 'monthly', 'total']),
   }),
   timeout: z.number().int().min(1).optional(),
+  enable: z.boolean().optional().default(true),
 });
 
 /**
@@ -59,6 +60,7 @@ const updatePlanBodySchema = z.object({
     .optional(),
   timeout: z.number().int().min(1).optional(),
   status: z.enum(['active', 'paused']).optional(),
+  enable: z.boolean().optional(),
 });
 
 /**
@@ -75,6 +77,7 @@ interface PlanResponse {
   };
   timeout: number;
   status: string;
+  enable?: boolean;
   createdAt: string;
   updatedAt: string;
   usage?: {
@@ -155,6 +158,7 @@ function toPlanResponse(
     quota: { limit: number; period: string };
     timeout: number;
     status: string;
+    enable?: boolean;
     createdAt: Date;
     updatedAt: Date;
   },
@@ -171,6 +175,7 @@ function toPlanResponse(
     quota: plan.quota,
     timeout: plan.timeout,
     status: plan.status,
+    enable: plan.enable,
     createdAt: plan.createdAt.toISOString(),
     updatedAt: plan.updatedAt.toISOString(),
     usage: quotaState
@@ -466,6 +471,7 @@ export function createAdminHandlers(
         models: input.models,
         quota: input.quota,
         timeout: input.timeout,
+        enable: input.enable,
       });
 
       logger.info('Plan created via API', {
