@@ -18,7 +18,7 @@ import type {
   AnthropicCountTokensResponse,
 } from '@/types/anthropic';
 import { logger } from '@/utils/logger';
-import { DEFAULT_USER_AGENT } from '@/config/defaults';
+import { DEFAULT_USER_AGENT, DEFAULT_REQUEST_TIMEOUT_SEC } from '@/config/defaults';
 
 /**
  * Proxy request options.
@@ -215,7 +215,7 @@ export class RequestProxy {
       method: 'POST',
       apiKey: options.apiKey,
       body: request,
-      timeout: options.timeout ?? 30,
+      timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
     });
 
     response.durationMs = Date.now() - startTime;
@@ -261,7 +261,7 @@ export class RequestProxy {
       method: 'POST',
       apiKey: options.apiKey,
       body: request,
-      timeout: options.timeout ?? 60,
+      timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
       reply,
       onComplete: (tokenUsage) => {
         onChunk('', true);
@@ -306,7 +306,7 @@ export class RequestProxy {
       method: 'POST',
       apiKey: options.apiKey,
       body: request,
-      timeout: options.timeout ?? 30,
+      timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
@@ -351,7 +351,7 @@ export class RequestProxy {
       method: 'POST',
       apiKey: options.apiKey,
       body: request,
-      timeout: options.timeout ?? 30,
+      timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
@@ -404,7 +404,7 @@ export class RequestProxy {
       method: 'POST',
       apiKey: options.apiKey,
       body: request,
-      timeout: options.timeout ?? 60,
+      timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',

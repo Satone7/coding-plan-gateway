@@ -216,6 +216,11 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
       initialValue: existing?.weight?.toString() || '',
       validate: value => value && (isNaN(parseInt(value)) || parseInt(value) < 1 || parseInt(value) > 100) ? 'Must be between 1 and 100' : undefined
     }),
+    timeout: () => p.text({
+      message: 'Request Timeout in seconds (default: 300)',
+      initialValue: existing?.timeout?.toString() || '',
+      validate: value => value && (isNaN(parseInt(value)) || parseInt(value) < 1) ? 'Must be a positive number' : undefined
+    }),
     enable: () => p.confirm({
       message: 'Enable this plan?',
       initialValue: existing?.enable !== false // default to true if not explicitly set to false
@@ -251,6 +256,9 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
   }
   if (group.weight) {
     plan.weight = parseInt(group.weight as string, 10);
+  }
+  if (group.timeout) {
+    plan.timeout = parseInt(group.timeout as string, 10);
   }
 
   return plan;
