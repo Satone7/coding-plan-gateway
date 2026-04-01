@@ -29,19 +29,14 @@ export const DEFAULT_QUOTA_SYNC_CONFIG: QuotaSyncConfig = {
 };
 
 /**
- * Default request timeout in milliseconds.
+ * Default request timeout in seconds.
  */
-export const DEFAULT_REQUEST_TIMEOUT_MS = 30000; // 30 seconds
+export const DEFAULT_REQUEST_TIMEOUT_SEC = 30; // 30 seconds
 
 /**
- * Minimum request timeout in milliseconds.
+ * Minimum request timeout in seconds.
  */
-export const MIN_REQUEST_TIMEOUT_MS = 1000;
-
-/**
- * Maximum request timeout in milliseconds.
- */
-export const MAX_REQUEST_TIMEOUT_MS = 300000; // 5 minutes
+export const MIN_REQUEST_TIMEOUT_SEC = 1;
 
 /**
  * Default HTTP status messages.

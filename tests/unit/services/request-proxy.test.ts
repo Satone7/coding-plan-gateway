@@ -46,7 +46,7 @@ describe('RequestProxy', () => {
         proxy.forwardOpenAIRequest(request, {
           baseUrl: 'https://api.example.com',
           apiKey: 'test-key',
-          timeout: 1000,
+          timeout: 1,
         })
       ).rejects.toThrow();
     });
@@ -80,7 +80,7 @@ describe('RequestProxy', () => {
         proxy.forwardAnthropicRequest(request, {
           baseUrl: 'https://api.anthropic.com',
           apiKey: 'test-key',
-          timeout: 1000,
+          timeout: 1,
         })
       ).rejects.toThrow();
     });

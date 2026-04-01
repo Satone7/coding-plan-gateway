@@ -312,13 +312,13 @@ describe('Admin Routes', () => {
         url: `/api/plans/${plan.id}`,
         payload: {
           name: 'Updated Name',
-          timeout: 60000,
+          timeout: 60,
         },
       });
 
       expect(response.statusCode).toBe(200);
       expect(response.json().data.name).toBe('Updated Name');
-      expect(response.json().data.timeout).toBe(60000);
+      expect(response.json().data.timeout).toBe(60);
     });
 
     it('should return 404 when plan does not exist', async () => {
@@ -456,7 +456,7 @@ describe('Admin Routes', () => {
           baseUrl: 'https://api.example.com',
           models: ['model-1', 'model-2'],
           quota: { limit: 500, period: 'monthly' },
-          timeout: 45000,
+          timeout: 45,
         })
       );
 
@@ -472,7 +472,7 @@ describe('Admin Routes', () => {
         baseUrl: 'https://api.example.com',
         models: ['model-1', 'model-2'],
         quota: { limit: 500, period: 'monthly' },
-        timeout: 45000,
+        timeout: 45,
         status: 'active',
         createdAt: expect.any(String),
         updatedAt: expect.any(String),

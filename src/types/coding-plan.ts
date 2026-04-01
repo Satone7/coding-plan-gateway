@@ -43,7 +43,7 @@ export interface QuotaConfig {
  *   apiKeyEncrypted: 'enc:...',
  *   models: ['kimi-k2.5', 'kimi-k2'],
  *   quota: { limit: 1000, period: 'monthly' },
- *   timeout: 30000,
+ *   timeout: 30,
  *   status: 'active',
  *   expiresOn: 28, // Expires on 28th of each month
  *   weight: 2, // Higher priority for load balancing
@@ -71,7 +71,7 @@ export interface CodingPlan {
   /** Quota configuration */
   quota: QuotaConfig;
 
-  /** Request timeout in milliseconds */
+  /** Request timeout in seconds */
   timeout: number;
 
   /** Current operational status */

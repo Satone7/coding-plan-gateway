@@ -200,7 +200,7 @@ export const mockDelays = {
   fast: 10,
   normal: 100,
   slow: 1000,
-  timeout: 35000,
+  timeout: 35,
 };
 
 /**

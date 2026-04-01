@@ -10,7 +10,7 @@ import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { configSchema, planConfigSchema, type PlanConfig, type Config } from './schema';
 import { encryptApiKey } from './encryption';
-import { DEFAULT_REQUEST_TIMEOUT_MS, CONFIG_VERSION } from './defaults';
+import { DEFAULT_REQUEST_TIMEOUT_SEC, CONFIG_VERSION } from './defaults';
 import { logger } from '@/utils/logger';
 
 /**
@@ -133,7 +133,7 @@ function normalizePlanConfig(plan: PlanConfig): PlanConfig {
   return {
     ...plan,
     id: plan.id ?? uuidv4(),
-    timeout: plan.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS,
+    timeout: plan.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
     status: plan.status ?? 'active',
   };
 }

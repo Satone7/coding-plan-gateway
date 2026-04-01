@@ -22,7 +22,7 @@ function createMockPlanRepository(plans: Array<{ id: number; quota: { period: 'd
       apiKeyEncrypted: 'test',
       models: ['test-model'],
       quota: { limit: 100, period: p.quota.period },
-      timeout: 30000,
+      timeout: 30,
       status: 'active' as const,
       expiresOn: p.quota.expiresOn,
       expiresAt: p.quota.expiresAt,
