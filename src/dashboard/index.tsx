@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { render, Box, Text, useStdout } from 'ink';
+import { render, Box, Text, useStdout, useInput } from 'ink';
 import { Table } from './components/Table';
 import { useDashboardState } from './hooks/useDashboardState';
 import { loadAuthConfig } from '../config/auth-config';
@@ -19,6 +19,13 @@ const Dashboard = () => {
   const { stdout } = useStdout();
   const [size, setSize] = useState({ columns: stdout.columns, rows: stdout.rows });
   const [now, setNow] = useState(Date.now());
+  const [isErrorsExpanded, setIsErrorsExpanded] = useState(false);
+
+  useInput((input, key) => {
+    if (input.toLowerCase() === 'e') {
+      setIsErrorsExpanded(prev => !prev);
+    }
+  });
 
   useEffect(() => {
     const onResize = () => setSize({ columns: stdout.columns, rows: stdout.rows });
@@ -104,9 +111,10 @@ const Dashboard = () => {
             return (
               <Box key={req.id} flexDirection="row" marginBottom={0}>
                 <Box width={6}><Text color="green">{duration}s</Text></Box>
-                <Box width={15}><Text color="cyan">{req.apiKey || 'Auth...'}</Text></Box>
-                <Box width={20}><Text color="blue">{req.planName || 'Routing...'}</Text></Box>
-                <Box width={10}><Text color="magenta">{req.score !== undefined ? req.score.toFixed(2) : '-'}</Text></Box>
+                <Box width={15}><Text color="cyan" wrap="truncate-end">{req.apiKey || 'Auth...'}</Text></Box>
+                <Box width={15}><Text color="yellow" wrap="truncate-end">{req.model || 'Unknown'}</Text></Box>
+                <Box width={20}><Text color="blue" wrap="truncate-end">{req.planName || 'Routing...'}</Text></Box>
+                <Box width={8}><Text color="magenta">{req.score !== undefined ? req.score.toFixed(2) : '-'}</Text></Box>
                 <Box flexGrow={1}><Text wrap="truncate-end">{req.url}</Text></Box>
               </Box>
             );
@@ -118,13 +126,21 @@ const Dashboard = () => {
 
       {/* Recent Errors Panel */}
       <Box flexDirection="column" borderStyle="single" borderColor="red" paddingX={1} marginBottom={1} minHeight={3}>
-        <Box marginBottom={1}><Text bold color="red">🚨 Recent Errors & Warnings</Text></Box>
+        <Box marginBottom={1} flexDirection="row" justifyContent="space-between">
+          <Text bold color="red">🚨 Recent Errors & Warnings</Text>
+          <Text color="gray">[Press 'E' to {isErrorsExpanded ? 'collapse' : 'expand'}]</Text>
+        </Box>
         {state.recentErrors.length > 0 ? (
           state.recentErrors.map((log, i) => (
-            <Box key={i}>
-              <Text color={log.level === 'warn' ? 'yellow' : 'red'}>
+            <Box key={i} flexDirection="column" marginBottom={isErrorsExpanded ? 1 : 0}>
+              <Text color={log.level === 'warn' ? 'yellow' : 'red'} wrap={isErrorsExpanded ? 'wrap' : 'truncate-end'}>
                 [{log.timestamp}] {log.message}
               </Text>
+              {isErrorsExpanded && log.context && Object.keys(log.context).length > 0 && (
+                <Box paddingLeft={2}>
+                  <Text color="gray">{JSON.stringify(log.context, null, 2)}</Text>
+                </Box>
+              )}
             </Box>
           ))
         ) : (

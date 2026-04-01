@@ -20,6 +20,7 @@ export interface ActiveRequest {
   apiKey?: string;
   planName?: string;
   score?: number;
+  model?: string;
 }
 
 export interface LogEntry {
@@ -94,6 +95,9 @@ function processLogEntry(log: LogEntry, setState: React.Dispatch<React.SetStateA
       } else if (message === 'Request routed to plan') {
         if (newState.activeRequests[requestId]) {
           newState.activeRequests[requestId].planName = context.selectedPlanName;
+          if (context.model) {
+            newState.activeRequests[requestId].model = context.model;
+          }
         }
       } else if (message === 'Selected plan with multi-factor score') {
         if (newState.activeRequests[requestId]) {
