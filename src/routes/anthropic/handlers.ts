@@ -288,6 +288,13 @@ export function createAnthropicHandlers(
         return response.data as AnthropicMessageResponse;
       } catch (error) {
         endStage(request, 'upstreamRequest');
+        logger.warn('Primary plan request failed', {
+          requestId,
+          planId: plan.id,
+          planName: plan.name,
+          model,
+          error: error instanceof Error ? error.message : String(error),
+        });
         router.markPlanFailed(plan.id);
 
         // Refund quota on failure
