@@ -68,7 +68,37 @@ interface InternalRequestOptions {
  */
 interface InternalStreamingOptions extends InternalRequestOptions {
   reply: FastifyReply;
-  onComplete: () => void;
+  onComplete: (tokenUsage?: StreamTokenUsage) => void;
+}
+
+/**
+ * Token usage extracted from streaming SSE events.
+ */
+export interface StreamTokenUsage {
+  totalTokens?: number;
+}
+
+/**
+ * Extract token usage from the tail of an SSE stream.
+ * Handles both OpenAI and Anthropic streaming formats.
+ */
+function extractStreamTokenUsage(tail: string): StreamTokenUsage | undefined {
+  // OpenAI format: "usage":{"prompt_tokens":X,"completion_tokens":Y,"total_tokens":Z}
+  const openaiMatch = tail.match(/"total_tokens"\s*:\s*(\d+)/);
+  if (openaiMatch) {
+    return { totalTokens: parseInt(openaiMatch[1]!, 10) };
+  }
+
+  // Anthropic format: look for input_tokens and output_tokens in separate events
+  const inputMatch = tail.match(/"input_tokens"\s*:\s*(\d+)/);
+  const outputMatch = tail.match(/"output_tokens"\s*:\s*(\d+)/);
+  if (inputMatch || outputMatch) {
+    const input = inputMatch ? parseInt(inputMatch[1]!, 10) : 0;
+    const output = outputMatch ? parseInt(outputMatch[1]!, 10) : 0;
+    return { totalTokens: input + output };
+  }
+
+  return undefined;
 }
 
 /**
@@ -204,7 +234,8 @@ export class RequestProxy {
     request: ChatCompletionRequest,
     options: ProxyRequestOptions,
     onChunk: StreamCallback,
-    reply: FastifyReply
+    reply: FastifyReply,
+    onTokenUsage?: (tokenUsage?: StreamTokenUsage) => void
   ): Promise<void> {
     const basePath = options.baseUrl.endsWith('/')
       ? options.baseUrl.slice(0, -1)
@@ -230,12 +261,16 @@ export class RequestProxy {
       body: request,
       timeout: options.timeout ?? 60,
       reply,
-      onComplete: () => {
+      onComplete: (tokenUsage) => {
         onChunk('', true);
+        if (onTokenUsage) {
+          onTokenUsage(tokenUsage);
+        }
         const durationMs = Date.now() - startTime;
         logger.info('OpenAI streaming request completed', {
           requestId: options.requestId,
           durationMs,
+          totalTokens: tokenUsage?.totalTokens,
         });
       },
     });
@@ -294,7 +329,8 @@ export class RequestProxy {
     request: AnthropicMessageRequest,
     options: ProxyRequestOptions,
     onChunk: StreamCallback,
-    reply: FastifyReply
+    reply: FastifyReply,
+    onTokenUsage?: (tokenUsage?: StreamTokenUsage) => void
   ): Promise<void> {
     const basePath = options.baseUrl.endsWith('/')
       ? options.baseUrl.slice(0, -1)
@@ -327,12 +363,16 @@ export class RequestProxy {
         'anthropic-dangerous-direct-browser-access': 'true',
       },
       reply,
-      onComplete: () => {
+      onComplete: (tokenUsage) => {
         onChunk('', true);
+        if (onTokenUsage) {
+          onTokenUsage(tokenUsage);
+        }
         const durationMs = Date.now() - startTime;
         logger.info('Anthropic streaming request completed', {
           requestId: options.requestId,
           durationMs,
+          totalTokens: tokenUsage?.totalTokens,
         });
       },
     });
@@ -363,6 +403,8 @@ export class RequestProxy {
 
   /**
    * Make a streaming HTTP request.
+   * When SSE headers are already sent, errors are delivered as SSE events
+   * to avoid ERR_HTTP_HEADERS_SENT crashes.
    */
   private makeStreamingRequest(options: InternalStreamingOptions): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -371,6 +413,22 @@ export class RequestProxy {
       const headers = buildHeaders(options.apiKey, options.extraHeaders, true);
       const bodyStr = JSON.stringify(options.body);
       headers['Content-Length'] = Buffer.byteLength(bodyStr).toString();
+
+      /**
+       * Handle errors after SSE headers have been sent.
+       * Sends an error event to the client and ends the response.
+       */
+      const handleStreamError = (errorMessage: string): void => {
+        if (options.reply.raw.headersSent) {
+          try {
+            options.reply.raw.write(`event: error\ndata: ${JSON.stringify({ error: errorMessage })}\n\n`);
+          } catch {
+            // Ignore write errors on closed connections
+          }
+          options.reply.raw.end();
+        }
+        reject(new Error(errorMessage));
+      };
 
       const req = requestFn(
         options.url,
@@ -382,27 +440,44 @@ export class RequestProxy {
               data += chunk;
             });
             res.on('end', () => {
-              const error = new Error(`Upstream error: ${res.statusCode} - ${data.slice(0, 500)}`);
-              (error as Error & { statusCode?: number }).statusCode = res.statusCode;
-              reject(error);
+              handleStreamError(`Upstream error: ${res.statusCode} - ${data.slice(0, 500)}`);
             });
             return;
           }
 
-          res.pipe(options.reply.raw);
+          // Forward chunks manually instead of piping, to extract token usage from tail
+          let tailData = '';
+          res.on('data', (chunk: Buffer) => {
+            options.reply.raw.write(chunk);
+            tailData += chunk.toString();
+            // Keep last 4KB for usage extraction
+            if (tailData.length > 4096) {
+              tailData = tailData.slice(-4096);
+            }
+          });
 
           res.on('end', () => {
-            options.onComplete();
+            const tokenUsage = extractStreamTokenUsage(tailData);
+            options.onComplete(tokenUsage);
+            options.reply.raw.end();
             resolve();
           });
 
           res.on('error', (error) => {
-            reject(new Error(`Stream error: ${error.message}`));
+            handleStreamError(`Stream error: ${error.message}`);
           });
         }
       );
 
-      setupErrorHandlers(req, reject);
+      req.on('error', (error) => {
+        handleStreamError(`Request failed: ${error.message}`);
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        handleStreamError('Request timeout');
+      });
+
       req.write(bodyStr);
       req.end();
     });

@@ -239,6 +239,16 @@ export function createOpenAIHandlers(
         body.model = routingResult.canonicalName;
       }
 
+      // Attach provider metrics early so onResponse hook always has plan/model info
+      // (non-streaming will overwrite with full metrics via recordMetrics)
+      attachProviderMetrics(request, {
+        planId: plan.id,
+        planName: plan.name,
+        model,
+        durationMs: 0,
+        statusCode: 0,
+      });
+
       // Handle streaming
       if (body.stream) {
         startStage(request, 'upstreamRequest');
@@ -253,7 +263,24 @@ export function createOpenAIHandlers(
                 logger.debug('Stream completed', { requestId });
               }
             },
-            reply
+            reply,
+            (tokenUsage) => {
+              // Update provider metrics with stream token usage for dashboard/logging
+              if (tokenUsage?.totalTokens) {
+                attachProviderMetrics(request, {
+                  planId: plan.id,
+                  planName: plan.name,
+                  model,
+                  durationMs: Date.now() - (request.startTime || Date.now()),
+                  statusCode: 200,
+                  tokenUsage: {
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    totalTokens: tokenUsage.totalTokens,
+                  },
+                });
+              }
+            }
           );
         } catch (streamError) {
           endStage(request, 'upstreamRequest');
@@ -262,7 +289,11 @@ export function createOpenAIHandlers(
           if (quotaManager) {
             quotaManager.refundQuota(plan.id);
           }
-          throw streamError;
+          // If SSE headers were already sent, the error event has been
+          // delivered to the client — do not throw to avoid crash.
+          if (!reply.raw.headersSent) {
+            throw streamError;
+          }
         }
         return;
       }
