@@ -31,33 +31,11 @@ cd coding-plan-gateway
 # Install dependencies
 npm install
 
-# Generate encryption key
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# Initialize configuration files
+./init.sh
 
-# Create .env file
-cat > .env << EOF
-ENCRYPTION_KEY=your-generated-key-here
-PORT=8080
-LOG_LEVEL=info
-EOF
-
-# Create initial configuration
-mkdir -p config
-cat > config/plans.yaml << EOF
-plans:
-  - name: "Claude"
-    baseUrl: "https://api.anthropic.com"
-    apiKey: "\${ANTHROPIC_API_KEY}"
-    models:
-      - "claude-sonnet-4-6"
-      - "claude-opus-4-6"
-    quota:
-      limit: 500
-      period: "monthly"
-EOF
-
-# Set your API key
-export ANTHROPIC_API_KEY=your-api-key
+# Set your API keys in config.yaml
+# (Open config.yaml and replace placeholders with actual keys)
 
 # Build and start
 npm run build
@@ -71,7 +49,7 @@ npm start
 curl http://localhost:8080/health
 
 # List available models
-curl http://localhost:8080/v1/models
+curl http://localhost:8080/api/v1/models
 ```
 
 ## API Reference
@@ -81,7 +59,7 @@ curl http://localhost:8080/v1/models
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/v1/chat/completions` | POST | Create chat completion (streaming supported) |
-| `/v1/models` | GET | List available models |
+| `/api/v1/models` | GET | List available models |
 
 ### Anthropic Compatible Endpoints
 
@@ -124,7 +102,7 @@ curl http://localhost:8080/v1/models
 
 ### Plan Configuration
 
-Plans are configured in `config/plans.yaml`:
+Plans are configured in `config.yaml` (copied from `config.yaml.example` during initialization):
 
 ```yaml
 plans:
