@@ -25,7 +25,7 @@ services:
       - IPC_SOCKET_PATH=/app/data/coding-plan-gateway.sock
     volumes:
       # Persist configuration - mount config.yaml to container root
-      - ./config.yaml:/app/config.yaml:ro
+      - ./config.yaml:/app/config.yaml
       # Persist quota state and IPC socket
       - gateway-data:/app/data
     restart: unless-stopped
@@ -59,7 +59,7 @@ services:
       - IPC_SOCKET_PATH=/app/data/coding-plan-gateway.sock
     volumes:
       - ./src:/app/src:ro
-      - ./config.yaml:/app/config.yaml:ro
+      - ./config.yaml:/app/config.yaml
       - gateway-data:/app/data
     restart: unless-stopped
     networks:

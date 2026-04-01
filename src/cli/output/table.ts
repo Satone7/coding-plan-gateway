@@ -265,6 +265,7 @@ Commands:
   key           Manage API keys
   usage-report  View usage reports
   plan          Manage plans and view plan usage
+  onboard       Launch the TUI wizard to configure the gateway
 
 Global Options:
   --help, -h     Show this help message
@@ -274,6 +275,7 @@ Global Options:
 
 Examples:
   cpg dashboard
+  cpg onboard
   cpg key create --name "My Key"
   cpg key list
   cpg key test cpg_xxxx...

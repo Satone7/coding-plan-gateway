@@ -186,6 +186,7 @@ export class JsonFormatter implements OutputFormatter {
         { name: 'key', description: 'Manage API keys' },
         { name: 'usage-report', description: 'View usage reports' },
         { name: 'plan', description: 'Manage plans and view plan usage' },
+        { name: 'onboard', description: 'Launch the TUI wizard to configure the gateway' },
       ];
       helpData.globalOptions = ['--help', '--version', '--json', '--gateway-url'];
     }

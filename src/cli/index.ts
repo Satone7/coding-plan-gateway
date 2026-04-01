@@ -14,6 +14,7 @@ import { handleKeyCommand } from './commands/key';
 import { handleUsageReportCommand } from './commands/usage';
 import { handlePlanCommand } from './commands/plan';
 import { handleDashboardCommand } from './commands/dashboard';
+import { handleOnboardCommand } from './commands/onboard';
 import { CLI_EXIT_CODES, CLI_VERSION } from '@/types/cli';
 import type { CliContext } from '@/types/cli';
 
@@ -70,6 +71,10 @@ export async function runCli(argv: string[]): Promise<void> {
 
       case 'dashboard':
         await handleDashboardCommand(context);
+        break;
+
+      case 'onboard':
+        await handleOnboardCommand(context);
         break;
 
       case '':

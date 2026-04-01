@@ -55,7 +55,7 @@ if [ -f "$PROJECT_ROOT/e2e/test-config.yaml" ]; then
     echo -e "Config:      ${GREEN}valid${NC}"
 else
     echo -e "Config:      ${RED}missing${NC}"
-    echo "             Copy e2e/test-config.example.yaml to e2e/test-config.yaml"
+    echo "             Copy e2e/test-config.example.yaml to e2e/test-config.yaml and chmod 666 e2e/test-config.yaml"
 fi
 
 # Check logs directory
