@@ -38,7 +38,7 @@ plans:
       limit: 90000
       period: "monthly"
       expiresOn: 27
-    timeout: 180000
+    timeout: 180
     status: "active"
 `;
     await fs.writeFile(configPath, configContent, 'utf-8');
@@ -68,7 +68,7 @@ plans:
       limit: 90000
       period: "monthly"
       expiresAt: "${expiresAt}"
-    timeout: 180000
+    timeout: 180
     status: "active"
 `;
     await fs.writeFile(configPath, configContent, 'utf-8');
@@ -98,7 +98,7 @@ plans:
       limit: 90000
       period: "monthly"
     expiresOn: 15
-    timeout: 180000
+    timeout: 180
     status: "active"
 `;
     await fs.writeFile(configPath, configContent, 'utf-8');

@@ -98,7 +98,7 @@ export const createPlanSchema = z.object({
   apiKey: nonEmptyStringSchema,
   models: z.array(nonEmptyStringSchema).min(1).max(100),
   quota: quotaConfigSchema,
-  timeout: z.number().int().min(1000).max(300000).optional(),
+  timeout: z.number().int().min(1).optional(),
 });
 
 /**
@@ -110,7 +110,7 @@ export const updatePlanSchema = z.object({
   apiKey: nonEmptyStringSchema.optional(),
   models: z.array(nonEmptyStringSchema).min(1).max(100).optional(),
   quota: quotaConfigSchema.partial().optional(),
-  timeout: z.number().int().min(1000).max(300000).optional(),
+  timeout: z.number().int().min(1).optional(),
   status: z.enum(['active', 'paused']).optional(),
 });
 
@@ -124,7 +124,7 @@ export const codingPlanSchema = z.object({
   apiKeyEncrypted: nonEmptyStringSchema,
   models: z.array(nonEmptyStringSchema).min(1).max(100),
   quota: quotaConfigSchema,
-  timeout: z.number().int().min(1000).max(300000),
+  timeout: z.number().int().min(1),
   status: planStatusSchema,
   createdAt: z.string().or(z.date()),
   updatedAt: z.string().or(z.date()),

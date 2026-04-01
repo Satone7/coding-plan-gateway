@@ -124,13 +124,13 @@ describe('PlanRepository', () => {
       expect(result.models).toEqual(input.models);
       expect(result.quota).toEqual(input.quota);
       expect(result.status).toBe('active');
-      expect(result.timeout).toBe(30000);
+      expect(result.timeout).toBe(30);
     });
 
     it('should use custom timeout when provided', async () => {
-      const input = createMockPlanInput({ timeout: 60000 });
+      const input = createMockPlanInput({ timeout: 60 });
       const result = await repository.save(input);
-      expect(result.timeout).toBe(60000);
+      expect(result.timeout).toBe(60);
     });
 
     it('should encrypt API key when encryption key is provided', async () => {
@@ -183,11 +183,11 @@ describe('PlanRepository', () => {
       const created = await repository.save(createMockPlanInput());
       const updated = await repository.update(created.id, {
         name: 'Updated Name',
-        timeout: 60000,
+        timeout: 60,
       });
 
       expect(updated.name).toBe('Updated Name');
-      expect(updated.timeout).toBe(60000);
+      expect(updated.timeout).toBe(60);
       expect(updated.baseUrl).toBe(created.baseUrl);
     });
 

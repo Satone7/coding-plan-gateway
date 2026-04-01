@@ -72,7 +72,7 @@ export const planConfigSchema = z.object({
   apiKey: z.string().min(1),
   models: z.array(z.string().min(1)).min(1),
   quota: quotaConfigSchema,
-  timeout: z.number().int().min(1000).max(300000).optional(),
+  timeout: z.number().int().min(1).optional(),
   status: z.enum(['active', 'paused']).optional(),
   // Load balancing and expiration fields
   expiresOn: z.number().int().min(1).max(31).optional(),

@@ -19,7 +19,7 @@ import {
   isApiKeyEncrypted,
 } from '@/config/encryption';
 import { logger } from '@/utils/logger';
-import { DEFAULT_REQUEST_TIMEOUT_MS } from '@/config/defaults';
+import { DEFAULT_REQUEST_TIMEOUT_SEC } from '@/config/defaults';
 import type { PlanIdCounter } from './plan-id-counter';
 
 /**
@@ -168,7 +168,7 @@ export class FilePlanRepository implements IPlanRepository {
       apiKeyEncrypted,
       models: input.models,
       quota: input.quota,
-      timeout: input.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS,
+      timeout: input.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
       status: 'active',
       expiresOn: finalExpiresOn,
       expiresAt: finalExpiresAt,
@@ -435,7 +435,7 @@ export class FilePlanRepository implements IPlanRepository {
       apiKeyEncrypted: config.apiKey,
       models: config.models,
       quota: mergedQuota,
-      timeout: config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS,
+      timeout: config.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
       status: config.status ?? 'active',
       expiresOn: effectiveExpiresOn,
       expiresAt: effectiveExpiresAt,

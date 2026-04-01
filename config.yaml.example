@@ -35,7 +35,8 @@ plans:
       # Example: 15 = quota resets on the 15th of each month
       # Note: If the day doesn't exist in a month (e.g., 31), uses the last day of that month
       expiresOn: 1
-    timeout: 180000
+    # timeout: Request timeout in seconds. Defaults to 30 if not specified.
+    timeout: 180
     # status: Plan operational status
     #   active   - Plan is running and accepting requests (default)
     #   paused   - Plan is paused, not accepting requests
@@ -59,7 +60,8 @@ plans:
       # Example: 15 = quota resets on the 15th of each month
       # Note: If the day doesn't exist in a month (e.g., 31), uses the last day of that month
       expiresOn: 27
-    timeout: 180000
+    # timeout: Request timeout in seconds. Defaults to 30 if not specified.
+    timeout: 180
     # status: Plan operational status
     #   active   - Plan is running and accepting requests (default)
     #   paused   - Plan is paused, not accepting requests

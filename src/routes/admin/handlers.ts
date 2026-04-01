@@ -40,7 +40,7 @@ const createPlanBodySchema = z.object({
     limit: z.number().int().positive(),
     period: z.enum(['daily', 'monthly', 'total']),
   }),
-  timeout: z.number().int().min(1000).max(300000).optional(),
+  timeout: z.number().int().min(1).optional(),
 });
 
 /**
@@ -57,7 +57,7 @@ const updatePlanBodySchema = z.object({
       period: z.enum(['daily', 'monthly', 'total']).optional(),
     })
     .optional(),
-  timeout: z.number().int().min(1000).max(300000).optional(),
+  timeout: z.number().int().min(1).optional(),
   status: z.enum(['active', 'paused']).optional(),
 });
 

@@ -26,7 +26,7 @@ export interface ProxyRequestOptions {
   baseUrl: string;
   /** Decrypted API key for upstream */
   apiKey: string;
-  /** Request timeout in milliseconds */
+  /** Request timeout in seconds */
   timeout?: number;
   /** Request ID for tracing */
   requestId?: string;
@@ -229,7 +229,7 @@ export class RequestProxy {
       method: 'POST',
       apiKey: options.apiKey,
       body: request,
-      timeout: options.timeout ?? 30000,
+      timeout: options.timeout ?? 30,
     });
 
     response.durationMs = Date.now() - startTime;
@@ -274,7 +274,7 @@ export class RequestProxy {
       method: 'POST',
       apiKey: options.apiKey,
       body: request,
-      timeout: options.timeout ?? 60000,
+      timeout: options.timeout ?? 60,
       onChunk: (chunk) => {
         onChunk(chunk, false);
         reply.raw.write(`data: ${chunk}\n\n`);
@@ -318,7 +318,7 @@ export class RequestProxy {
       method: 'POST',
       apiKey: options.apiKey,
       body: request,
-      timeout: options.timeout ?? 30000,
+      timeout: options.timeout ?? 30,
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
@@ -367,7 +367,7 @@ export class RequestProxy {
       method: 'POST',
       apiKey: options.apiKey,
       body: request,
-      timeout: options.timeout ?? 60000,
+      timeout: options.timeout ?? 60,
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
@@ -400,7 +400,7 @@ export class RequestProxy {
 
       const req = requestFn(
         options.url,
-        { method: options.method, headers, timeout: options.timeout },
+        { method: options.method, headers, timeout: options.timeout * 1000 },
         (res) => handleResponse<T>(res, resolve, reject)
       );
 
@@ -421,7 +421,7 @@ export class RequestProxy {
 
       const req = requestFn(
         options.url,
-        { method: options.method, headers, timeout: options.timeout },
+        { method: options.method, headers, timeout: options.timeout * 1000 },
         (res) => handleStreamingResponse(res, options, resolve, reject)
       );
 
