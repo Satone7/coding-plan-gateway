@@ -1,5 +1,7 @@
 import * as p from '@clack/prompts';
 import color from 'picocolors';
+import { copyFile, access } from 'fs/promises';
+import { dirname, join, basename } from 'path';
 import { loadConfig, saveConfig, createEmptyConfig } from '@/config';
 import { configSchema } from '@/config/schema';
 import type { CliContext } from '@/types/cli';
@@ -49,6 +51,31 @@ export async function handleOnboardCommand(context: CliContext): Promise<void> {
       case 'save':
         try {
           configSchema.parse(config);
+
+          // Backup original config before saving
+          try {
+            await access(context.configPath); // Check if original file exists
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const fileName = basename(context.configPath);
+            let backupDir = dirname(context.configPath);
+            
+            // Prefer /app/data for backups in production Docker container
+            if (process.env.NODE_ENV === 'production') {
+              try {
+                await access('/app/data');
+                backupDir = '/app/data';
+              } catch {
+                // Ignore if /app/data doesn't exist, use dirname(configPath)
+              }
+            }
+            
+            const backupPath = join(backupDir, `${fileName}.${timestamp}.bak`);
+            await copyFile(context.configPath, backupPath);
+            p.log.info(`Original configuration backed up to ${backupPath}`);
+          } catch (e) {
+            // Ignore if original config doesn't exist or backup fails
+          }
+
           await saveConfig(context.configPath, config, 'yaml');
           p.log.success(`Configuration saved to ${context.configPath}`);
           exit = true;
