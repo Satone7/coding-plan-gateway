@@ -861,15 +861,17 @@ export class PlanUsageTracker {
    * @param planId - The plan ID to reset
    * @returns The number of records that were reset
    */
-  resetPlanUsage(planId: number): number {
+  resetPlanUsage(planId: number, beforeDate?: string): number {
     let resetCount = 0;
     const keysToDelete: StorageKey[] = [];
 
     // Find all records for this plan
     for (const [key, record] of this.usage) {
       if (record.planId === planId) {
-        keysToDelete.push(key);
-        resetCount++;
+        if (!beforeDate || record.date < beforeDate) {
+          keysToDelete.push(key);
+          resetCount++;
+        }
       }
     }
 
@@ -882,6 +884,7 @@ export class PlanUsageTracker {
       logger.info('Plan usage reset', {
         planId,
         resetCount,
+        beforeDate,
       });
     }
 
@@ -903,52 +906,73 @@ export class PlanUsageTracker {
   ): number[] {
     const now = new Date();
     const resetPlanIds: number[] = [];
+    const todayStr = now.toISOString().split('T')[0]!;
 
     for (const plan of plans) {
-      // Skip 'total' period plans - they never reset
       if (plan.quota.period === 'total') {
         continue;
       }
 
-      // Check if the plan has expiration configured
-      const expiration = calculateEffectiveExpiration({
-        expiresOn: plan.quota.expiresOn,
-        expiresAt: plan.quota.expiresAt,
-      });
+      let cycleStartDateStr: string | null = null;
+      let shouldResetAll = false;
 
-      if (!expiration) {
-        // No expiration configured, use default behavior
-        // For 'daily' period, reset every day at midnight
-        // For 'monthly' period without expiresOn, reset on the 1st of each month
-        if (plan.quota.period === 'daily') {
-          // Check if we've passed midnight today (already handled by daily record creation)
-          continue;
-        } else if (plan.quota.period === 'monthly') {
-          // Check if it's the 1st of the month at midnight
-          if (now.getDate() === 1 && now.getHours() === 0 && now.getMinutes() === 0) {
-            const resetCount = this.resetPlanUsage(plan.id);
-            if (resetCount > 0) {
-              resetPlanIds.push(plan.id);
-            }
+      // Check if the plan has a fixed expiration configured
+      if (plan.quota.expiresAt) {
+        const expiration = new Date(plan.quota.expiresAt);
+        if (!isNaN(expiration.getTime())) {
+          const expirationMidnight = new Date(
+            expiration.getFullYear(),
+            expiration.getMonth(),
+            expiration.getDate(),
+            0, 0, 0, 0
+          );
+          if (now >= expirationMidnight) {
+            // For one-time expiration, reset all usage (original behavior)
+            shouldResetAll = true;
           }
         }
+      } else {
+        // Handle periodic resets (daily/monthly)
+        if (plan.quota.period === 'daily') {
+          cycleStartDateStr = todayStr;
+        } else if (plan.quota.period === 'monthly') {
+          const currentYear = now.getFullYear();
+          const currentMonth = now.getMonth();
+          const currentDay = now.getDate();
+
+          const daysInCurrentMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+          const targetDay = plan.quota.expiresOn !== undefined 
+            ? Math.min(plan.quota.expiresOn, daysInCurrentMonth)
+            : 1;
+
+          if (currentDay >= targetDay) {
+            // Cycle started this month
+            cycleStartDateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
+          } else {
+            // Cycle started last month
+            let lastMonth = currentMonth - 1;
+            let lastMonthYear = currentYear;
+            if (lastMonth < 0) {
+              lastMonth = 11;
+              lastMonthYear--;
+            }
+            const daysInLastMonth = new Date(lastMonthYear, lastMonth + 1, 0).getDate();
+            const lastMonthTargetDay = plan.quota.expiresOn !== undefined 
+              ? Math.min(plan.quota.expiresOn, daysInLastMonth)
+              : 1;
+            
+            cycleStartDateStr = `${lastMonthYear}-${String(lastMonth + 1).padStart(2, '0')}-${String(lastMonthTargetDay).padStart(2, '0')}`;
+          }
+        }
+      }
+
+      if (!shouldResetAll && !cycleStartDateStr) {
         continue;
       }
 
-      // Check if the expiration time has passed
-      // We compare against midnight of the expiration day
-      const expirationMidnight = new Date(
-        expiration.getFullYear(),
-        expiration.getMonth(),
-        expiration.getDate(),
-        0, 0, 0, 0
-      );
-
-      if (now >= expirationMidnight) {
-        const resetCount = this.resetPlanUsage(plan.id);
-        if (resetCount > 0) {
-          resetPlanIds.push(plan.id);
-        }
+      const resetCount = this.resetPlanUsage(plan.id, shouldResetAll ? undefined : cycleStartDateStr!);
+      if (resetCount > 0) {
+        resetPlanIds.push(plan.id);
       }
     }
 

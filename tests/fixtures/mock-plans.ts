@@ -113,7 +113,7 @@ export function createMockQuotaState(overrides: Partial<QuotaState> = {}): Quota
     limit: 1000,
     period: 'monthly',
     lastUpdated: new Date(),
-    resetAt: new Date('2026-04-01T00:00:00Z'),
+    resetAt: new Date('2030-04-01T00:00:00Z'),
     ...overrides,
   };
 }
