@@ -1,0 +1,3 @@
+- [x] 当执行 `quotaPriorityStrategy` 策略时，所有候选 Plan 的名称和得分（总分、RPM、Expiration、Quota）能够在日志中正常输出。
+- [x] 选择结果仍正确地返回总分最高的 Plan。
+- [x] 相关的单元测试（如 `tests/unit/services/plan-selector.test.ts`）能够顺利通过，没有因新增的日志引发 mock 断言错误。
