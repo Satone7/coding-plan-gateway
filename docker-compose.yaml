@@ -1,8 +1,11 @@
 services:
   gateway:
+    image: coding-plan-gateway:latest
+    pull_policy: build
     build:
       context: .
       dockerfile: Dockerfile
+      pull: true
     container_name: coding-plan-gateway
     ports:
       - "${PORT:-8080}:${PORT:-8080}"
@@ -43,9 +46,12 @@ services:
 
   # Development service with hot reload
   gateway-dev:
+    image: coding-plan-gateway-dev:latest
+    pull_policy: build
     build:
       context: .
       dockerfile: Dockerfile.dev
+      pull: true
     container_name: coding-plan-gateway-dev
     ports:
       - "8080:8080"
