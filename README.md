@@ -10,7 +10,8 @@ A load balancer for managing multiple AI coding plan subscriptions. Routes reque
 - **Quota management**: Track and prioritize usage across plans
 - **Circuit breaker**: Automatic failover when providers fail
 - **Streaming support**: Full SSE streaming for chat completions
-- **CLI tool**: Built-in `cpg` command-line tool for API key management and usage reports
+- **CLI tool**: Built-in `cpg` command-line tool for API key management, usage reports, and TUI dashboard
+- **TUI Dashboard**: Real-time terminal UI for monitoring active requests, plan usage, and gateway latency
 
 ## Quick Start
 
@@ -99,6 +100,7 @@ curl http://localhost:8080/v1/models
 | `/api/plans/:planId` | DELETE | Delete a plan |
 | `/api/quota/:planId` | GET | Get quota status |
 | `/api/quota/:planId/reset` | POST | Reset quota |
+| `/api/internal/reload` | POST | Hot reload plans configuration |
 
 ### Health Endpoints
 
@@ -117,6 +119,8 @@ curl http://localhost:8080/v1/models
 | `PORT` | No | `8080` | Server port |
 | `LOG_LEVEL` | No | `info` | Log level (debug, info, warn, error) |
 | `NODE_ENV` | No | `development` | Environment (development, production) |
+| `CONFIG_PATH` | No | `./config.yaml` | Path to plans config file |
+| `IPC_SOCKET_PATH` | No | `/tmp/coding-plan-gateway.sock` | Path for IPC dashboard socket |
 
 ### Plan Configuration
 
@@ -205,10 +209,10 @@ docker-compose --profile dev up gateway-dev
 
 | Command | Description |
 |---------|-------------|
-| `npm run build` | Compile TypeScript |
+| `npm run build` | Compile TypeScript and TUI Dashboard |
 | `npm start` | Run production build |
 | `npm run dev` | Run with ts-node |
-| `npm run dev:watch` | Run with hot reload |
+| `npm run dashboard` | Launch the TUI Dashboard |
 | `npm test` | Run tests |
 | `npm run test:coverage` | Run tests with coverage |
 | `npm run lint` | Lint code |
@@ -225,9 +229,12 @@ src/
 │   ├── openai/           # OpenAI-compatible routes
 │   ├── anthropic/        # Anthropic-compatible routes
 │   ├── admin/            # Plan management routes
+│   ├── internal/         # Internal system endpoints
 │   └── health/           # Health check routes
 ├── services/             # Business logic
 ├── middleware/           # Request/response middleware
+├── dashboard/            # Ink-based TUI Dashboard
+├── cli/                  # Command-line interface
 ├── types/                # TypeScript types
 └── utils/                # Utilities
 ```
@@ -251,7 +258,7 @@ The gateway follows a service-oriented architecture:
 
 ## CLI Usage
 
-The `cpg` command-line tool provides API key management and usage reporting.
+The `cpg` command-line tool provides API key management, usage reporting, and a TUI dashboard.
 
 ### Installation
 
@@ -267,6 +274,13 @@ npm run cpg -- --help
 ```
 
 ### Commands
+
+#### TUI Dashboard
+
+```bash
+# Launch the real-time TUI dashboard
+cpg dashboard
+```
 
 #### API Key Management
 
@@ -301,6 +315,16 @@ cpg usage-report --key-id <uuid> --from 2026-03-01 --to 2026-03-31
 
 # JSON output
 cpg usage-report --json
+```
+
+#### Plan Management
+
+```bash
+# List all plans with usage summary
+cpg plan list
+
+# Set usage for a plan manually
+cpg plan set-usage --id 1 --count 100
 ```
 
 ### Docker Usage
