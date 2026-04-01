@@ -45,9 +45,18 @@ Options:
     
     // We run the dashboard script as a child process, inheriting stdio
     // This allows ink to take over the terminal
+    
+    // Check if we are running in docker environment
+    const isDocker = fs.existsSync('/.dockerenv');
+    const env = { ...process.env };
+    
+    if (isDocker && !env.IPC_SOCKET_PATH) {
+      env.IPC_SOCKET_PATH = '/app/data/coding-plan-gateway.sock';
+    }
+    
     const child = spawn(process.execPath, [dashboardScript], {
       stdio: 'inherit',
-      env: process.env
+      env
     });
 
     child.on('error', (error) => {
