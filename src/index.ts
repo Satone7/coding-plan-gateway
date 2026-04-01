@@ -7,7 +7,8 @@
 import 'dotenv/config';
 
 import { createApp, startServer } from './app';
-import { logger } from './utils/logger';
+import { logger, addLogListener } from './utils/logger';
+import { ipcServer } from './utils/ipc-server';
 import { loadConfig } from './config';
 import { createQuotaManager } from './services/quota-manager';
 import { createApiKeyManager } from './services/api-key-manager';
@@ -90,6 +91,14 @@ async function main(): Promise<void> {
     await usageTracker.initialize();
     usageTracker.startPeriodicSync();
 
+    // Start IPC server
+    try {
+      await ipcServer.start();
+      addLogListener((entry) => ipcServer.broadcast(entry));
+    } catch (err) {
+      logger.error('Failed to start IPC server', err as Error);
+    }
+
     // Create application with managers
     const app = await createApp({
       port: parseInt(process.env.PORT ?? '8080', 10),
@@ -113,11 +122,17 @@ async function main(): Promise<void> {
       await planUsageTracker.shutdown();
     });
 
+    // Add shutdown hook for IPC server
+    app.addHook('onClose', async () => {
+      logger.info('Shutting down IPC server...');
+      await ipcServer.stop();
+    });
+
     // Start server
     await startServer(app);
 
   } catch (error) {
-    logger.fatal('Failed to start application', error as Error);
+    logger.fatal('Failed to start application', error as Error, { component: 'main' });
     process.exit(1);
   }
 }
