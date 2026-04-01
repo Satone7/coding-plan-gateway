@@ -261,6 +261,7 @@ Usage:
   cpg <command> [subcommand] [options]
 
 Commands:
+  dashboard     Launch the real-time TUI dashboard
   key           Manage API keys
   usage-report  View usage reports
   plan          Manage plans and view plan usage
@@ -272,6 +273,7 @@ Global Options:
   --gateway-url  Gateway URL for notifications (default: http://localhost:8080)
 
 Examples:
+  cpg dashboard
   cpg key create --name "My Key"
   cpg key list
   cpg key test cpg_xxxx...

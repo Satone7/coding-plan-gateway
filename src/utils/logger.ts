@@ -22,6 +22,32 @@ const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
   fatal: 60,
 };
 
+export type LogListener = (entry: LogEntry) => void;
+const logListeners: LogListener[] = [];
+
+/**
+ * Add a listener for all log entries.
+ */
+export function addLogListener(listener: LogListener): void {
+  logListeners.push(listener);
+}
+
+/**
+ * Notify all listeners of a log entry.
+ */
+function notifyListeners(entry: LogEntry): void {
+  // Only broadcast debug and above
+  if (LOG_LEVEL_PRIORITY[entry.level] >= LOG_LEVEL_PRIORITY.debug) {
+    for (const listener of logListeners) {
+      try {
+        listener(entry);
+      } catch (err) {
+        // Ignore listener errors to avoid infinite loops
+      }
+    }
+  }
+}
+
 /**
  * Log context with additional metadata.
  */
@@ -117,7 +143,7 @@ export class Logger {
       timestamp: this.timestamp ? new Date().toISOString() : '',
       level: 'error',
       message,
-      context: { ...context, service: this.service },
+      context: { ...context, service: this.service, pid: process.pid },
     };
 
     if (error) {
@@ -128,6 +154,7 @@ export class Logger {
       };
     }
 
+    notifyListeners(entry);
     this.writeLog(entry);
   }
 
@@ -139,7 +166,7 @@ export class Logger {
       timestamp: this.timestamp ? new Date().toISOString() : '',
       level: 'fatal',
       message,
-      context: { ...context, service: this.service },
+      context: { ...context, service: this.service, pid: process.pid },
     };
 
     if (error) {
@@ -150,6 +177,7 @@ export class Logger {
       };
     }
 
+    notifyListeners(entry);
     this.writeLog(entry);
   }
 
@@ -165,16 +193,19 @@ export class Logger {
    */
   private log(level: LogLevel, message: string, context?: LogContext): void {
     const priority = LOG_LEVEL_PRIORITY[level];
-    if (priority < this.minLevel) {
-      return;
-    }
-
+    
     const entry: LogEntry = {
       timestamp: this.timestamp ? new Date().toISOString() : '',
       level,
       message,
-      context: { ...context, service: this.service },
+      context: { ...context, service: this.service, pid: process.pid },
     };
+
+    notifyListeners(entry);
+
+    if (priority < this.minLevel) {
+      return;
+    }
 
     this.writeLog(entry);
   }

@@ -22,10 +22,11 @@ services:
       - ENABLE_AUTH=${ENABLE_AUTH:-true}
       - PLAN_USAGE_DATA_PATH=/app/data/plan-usage-data.json
       - GATEWAY_URL=http://localhost:${PORT:-8080}
+      - IPC_SOCKET_PATH=/app/data/coding-plan-gateway.sock
     volumes:
       # Persist configuration - mount config.yaml to container root
       - ./config.yaml:/app/config.yaml:ro
-      # Persist quota state
+      # Persist quota state and IPC socket
       - gateway-data:/app/data
     restart: unless-stopped
     healthcheck:
@@ -55,6 +56,7 @@ services:
       - PORT=8080
       - LOG_LEVEL=debug
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - IPC_SOCKET_PATH=/app/data/coding-plan-gateway.sock
     volumes:
       - ./src:/app/src:ro
       - ./config.yaml:/app/config.yaml:ro

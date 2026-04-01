@@ -8,7 +8,7 @@ COPY package*.json ./
 COPY tsconfig.json ./
 
 # Install dependencies
-RUN npm ci --only=production=false
+RUN npm ci
 
 # Copy source code
 COPY src/ ./src/
@@ -63,6 +63,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Set environment variables
 ENV NODE_ENV=production
 ENV PORT=8080
+ENV IPC_SOCKET_PATH=/tmp/coding-plan-gateway.sock
 
 # Start the application
 ENTRYPOINT ["dumb-init", "--"]
