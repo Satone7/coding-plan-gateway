@@ -263,7 +263,24 @@ export function createOpenAIHandlers(
                 logger.debug('Stream completed', { requestId });
               }
             },
-            reply
+            reply,
+            (tokenUsage) => {
+              // Update provider metrics with stream token usage for dashboard/logging
+              if (tokenUsage?.totalTokens) {
+                attachProviderMetrics(request, {
+                  planId: plan.id,
+                  planName: plan.name,
+                  model,
+                  durationMs: Date.now() - (request.startTime || Date.now()),
+                  statusCode: 200,
+                  tokenUsage: {
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    totalTokens: tokenUsage.totalTokens,
+                  },
+                });
+              }
+            }
           );
         } catch (streamError) {
           endStage(request, 'upstreamRequest');
