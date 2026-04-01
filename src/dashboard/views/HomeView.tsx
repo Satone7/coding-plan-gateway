@@ -27,6 +27,19 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, columns
       {/* Active Requests */}
       <Box flexDirection="column" marginBottom={1}>
         <Divider width={columns} title="⏳ ACTIVE REQUESTS" color="cyan" />
+        <Box flexDirection="row" marginBottom={0}>
+          <Box width={5}><Text color="gray" bold>Time</Text></Box>
+          <Text color="gray">│ </Text>
+          <Box width={10}><Text color="gray" bold>API Key</Text></Box>
+          <Text color="gray">│ </Text>
+          <Box width={16}><Text color="gray" bold>Model</Text></Box>
+          <Text color="gray">│ </Text>
+          <Box width={12}><Text color="gray" bold>Plan</Text></Box>
+          <Text color="gray">│ </Text>
+          <Box width={6}><Text color="gray" bold>Score</Text></Box>
+          <Text color="gray">│ </Text>
+          <Box flexGrow={1}><Text color="gray" bold>URL</Text></Box>
+        </Box>
         {activeRequests.length > 0 ? (
           activeRequests.map(req => {
             const duration = Math.floor((now - req.startTime) / 1000);

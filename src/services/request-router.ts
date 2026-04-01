@@ -186,6 +186,7 @@ export class RequestRouter {
       quotaStates,
       rpmTracker: this.rpmTracker,
       config: this.loadBalanceConfig,
+      requestId,
     };
     const selectedPlan = this.planSelector.selectBestPlan(context);
 
