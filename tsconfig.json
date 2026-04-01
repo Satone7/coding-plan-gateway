@@ -19,6 +19,7 @@
     "resolveJsonModule": true,
     "baseUrl": ".",
     "jsx": "react-jsx",
+    "ignoreDeprecations": "5.0",
     "paths": {
       "@/*": ["src/*"]
     }

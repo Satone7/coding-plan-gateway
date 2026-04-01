@@ -8,7 +8,7 @@ export interface TableProps {
 
 export function Table({ data, columns }: TableProps) {
   if (!data || data.length === 0) {
-    return <Text>No data</Text>;
+    return <Text color="gray">No data</Text>;
   }
 
   const cols = columns || Object.keys(data[0] || {});
@@ -25,20 +25,20 @@ export function Table({ data, columns }: TableProps) {
   });
 
   return (
-    <Box flexDirection="column" borderStyle="single">
+    <Box flexDirection="column">
       {/* Header */}
-      <Box flexDirection="row" borderBottom={false}>
-        {cols.map((col, i) => (
-          <Box key={`header-${col}`} width={colWidths[col]} paddingX={1} borderRight={i < cols.length - 1} borderStyle="single" borderTop={false} borderBottom={true} borderLeft={false}>
-            <Text bold color="cyan">{col}</Text>
+      <Box flexDirection="row">
+        {cols.map((col) => (
+          <Box key={`header-${col}`} width={colWidths[col]}>
+            <Text bold color="cyan" underline>{col}</Text>
           </Box>
         ))}
       </Box>
       {/* Rows */}
       {data.map((row, rowIndex) => (
         <Box key={`row-${rowIndex}`} flexDirection="row">
-          {cols.map((col, colIndex) => (
-            <Box key={`cell-${rowIndex}-${col}`} width={colWidths[col]} paddingX={1} borderRight={colIndex < cols.length - 1} borderStyle="single" borderTop={false} borderBottom={false} borderLeft={false}>
+          {cols.map((col) => (
+            <Box key={`cell-${rowIndex}-${col}`} width={colWidths[col]}>
               <Text>{String(row[col] ?? '')}</Text>
             </Box>
           ))}
