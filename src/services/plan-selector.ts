@@ -38,6 +38,8 @@ export interface SelectionContext {
   rpmTracker?: RpmTrackerInterface;
   /** Load balancing configuration */
   config: LoadBalanceConfig;
+  /** Request ID for tracing */
+  requestId?: string;
 }
 
 /**
@@ -334,6 +336,7 @@ function quotaPriorityStrategy(context: SelectionContext): CodingPlan | undefine
     const plan = plans.find((p) => p.id === score.planId);
     if (plan) {
       logger.debug('Candidate plan multi-factor score details', {
+        requestId: context.requestId,
         planId: plan.id,
         planName: plan.name,
         totalScore: score.totalScore,
@@ -354,6 +357,7 @@ function quotaPriorityStrategy(context: SelectionContext): CodingPlan | undefine
   const selectedPlan = plans.find((p) => p.id === best.planId);
   if (selectedPlan) {
     logger.debug('Selected plan with multi-factor score', {
+      requestId: context.requestId,
       planId: selectedPlan.id,
       planName: selectedPlan.name,
       totalScore: best.totalScore,
@@ -388,6 +392,7 @@ function roundRobinStrategy(context: SelectionContext): CodingPlan | undefined {
   }
 
   logger.debug('Selected plan via round-robin', {
+    requestId: context.requestId,
     model,
     planId: selectedPlan.id,
     planName: selectedPlan.name,
@@ -451,6 +456,7 @@ function weightedRoundRobinStrategy(context: SelectionContext): CodingPlan | und
   }
 
   logger.debug('Selected plan via weighted-round-robin', {
+    requestId: context.requestId,
     model,
     planId: selectedPlan.id,
     planName: selectedPlan.name,
@@ -480,6 +486,7 @@ function randomStrategy(context: SelectionContext): CodingPlan | undefined {
   }
 
   logger.debug('Selected plan via random', {
+    requestId: context.requestId,
     planId: selectedPlan.id,
     planName: selectedPlan.name,
     index: randomIndex,

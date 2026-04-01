@@ -139,8 +139,8 @@ export class RequestRouter {
   /**
    * Route a request to the best available plan.
    */
-  async route(model: string): Promise<RoutingResult> {
-    const requestId = randomUUID();
+  async route(model: string, incomingRequestId?: string): Promise<RoutingResult> {
+    const requestId = incomingRequestId ?? randomUUID();
 
     // Resolve model name (case-insensitive + alias support)
     const resolution = this.modelResolver.resolveWithOriginal(model);
@@ -186,6 +186,7 @@ export class RequestRouter {
       quotaStates,
       rpmTracker: this.rpmTracker,
       config: this.loadBalanceConfig,
+      requestId,
     };
     const selectedPlan = this.planSelector.selectBestPlan(context);
 
@@ -226,8 +227,8 @@ export class RequestRouter {
    * Get a plan with credentials for executing a request.
    * Throws an error if no plan is available.
    */
-  async getPlanForRequest(model: string): Promise<PlanWithCredentials> {
-    const result = await this.route(model);
+  async getPlanForRequest(model: string, incomingRequestId?: string): Promise<PlanWithCredentials> {
+    const result = await this.route(model, incomingRequestId);
 
     if (!result.selectedPlan) {
       // Get all available models to include in error message

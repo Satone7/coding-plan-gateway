@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text } from 'ink';
+import { Box, Text } from 'ink';
 
 interface DividerProps {
   width: number;
@@ -10,12 +10,20 @@ interface DividerProps {
 
 export function Divider({ width, title = '', char = '─', color = 'gray' }: DividerProps) {
   if (title) {
-    const spaceRemaining = Math.max(0, width - title.length - 1);
     return (
-      <Text color={color}>
-        {title} {char.repeat(spaceRemaining)}
-      </Text>
+      <Box flexDirection="row" width="100%">
+        <Text color={color}>{title} </Text>
+        <Box flexGrow={1}>
+          <Text color={color} wrap="truncate-end">
+            {char.repeat(Math.max(1, width - title.length - 2))}
+          </Text>
+        </Box>
+      </Box>
     );
   }
-  return <Text color={color}>{char.repeat(width)}</Text>;
+  return (
+    <Box width="100%">
+      <Text color={color} wrap="truncate-end">{char.repeat(width)}</Text>
+    </Box>
+  );
 }

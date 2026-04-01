@@ -21,6 +21,8 @@ export interface ActiveRequest {
   planName?: string;
   score?: number;
   model?: string;
+  status?: 'active' | 'completed' | 'failed';
+  endTime?: number;
 }
 
 export interface LogEntry {
@@ -87,6 +89,7 @@ function processLogEntry(log: LogEntry, setState: React.Dispatch<React.SetStateA
           id: requestId,
           url: context.url || 'Unknown',
           startTime: Date.now(),
+          status: 'active',
         };
       } else if (message === 'Request authenticated') {
         if (newState.activeRequests[requestId]) {
@@ -105,8 +108,11 @@ function processLogEntry(log: LogEntry, setState: React.Dispatch<React.SetStateA
         }
       } else if (message === 'Request completed' || message === 'Request failed') {
         const activeReq = newState.activeRequests[requestId];
-        // Remove from active requests
-        delete newState.activeRequests[requestId];
+        // Update status instead of removing immediately
+        if (activeReq) {
+          activeReq.status = message === 'Request completed' ? 'completed' : 'failed';
+          activeReq.endTime = Date.now();
+        }
         
         if (message === 'Request completed') {
           newState.completedRequests++;
@@ -164,6 +170,32 @@ export function useDashboardState(): DashboardState {
     recentLogs: [],
     recentErrors: [],
   });
+
+  useEffect(() => {
+    const cleanupTimer = setInterval(() => {
+      setState(prevState => {
+        const now = Date.now();
+        let changed = false;
+        const newActive = { ...prevState.activeRequests };
+
+        for (const [id, req] of Object.entries(newActive)) {
+          if (req.status === 'completed' && req.endTime && now - req.endTime > 5000) {
+            delete newActive[id];
+            changed = true;
+          } else if (req.status === 'failed' && req.endTime && now - req.endTime > 10000) {
+            delete newActive[id];
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          return { ...prevState, activeRequests: newActive };
+        }
+        return prevState;
+      });
+    }, 1000);
+    return () => clearInterval(cleanupTimer);
+  }, []);
 
   useEffect(() => {
     let socket: net.Socket;

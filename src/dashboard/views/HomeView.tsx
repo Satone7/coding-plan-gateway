@@ -9,10 +9,11 @@ interface HomeViewProps {
   activeRequests: ActiveRequest[];
   now: number;
   isErrorsExpanded: boolean;
+  showHeaders: boolean;
   columns: number;
 }
 
-export function HomeView({ state, activeRequests, now, isErrorsExpanded, columns }: HomeViewProps) {
+export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHeaders, columns }: HomeViewProps) {
   // Take top 3 plans and top 3 models by requests
   const topPlans = Object.entries(state.planUsages)
     .sort((a, b) => b[1].requests - a[1].requests)
@@ -27,11 +28,37 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, columns
       {/* Active Requests */}
       <Box flexDirection="column" marginBottom={1}>
         <Divider width={columns} title="⏳ ACTIVE REQUESTS" color="cyan" />
+        {showHeaders && (
+          <Box flexDirection="row" marginBottom={0}>
+            <Box width={3}><Text color="gray" bold>St</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box width={10}><Text color="gray" bold>Req ID</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box width={5}><Text color="gray" bold>Time</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box width={10}><Text color="gray" bold>API Key</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box width={16}><Text color="gray" bold>Model</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box width={12}><Text color="gray" bold>Plan</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box width={6}><Text color="gray" bold>Score</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box flexGrow={1}><Text color="gray" bold>URL</Text></Box>
+          </Box>
+        )}
         {activeRequests.length > 0 ? (
           activeRequests.map(req => {
-            const duration = Math.floor((now - req.startTime) / 1000);
+            const endTime = req.endTime || now;
+            const duration = Math.floor((endTime - req.startTime) / 1000);
+            const displayUrl = req.url.split('?')[0];
+            const statusIcon = req.status === 'completed' ? '✅' : req.status === 'failed' ? '❌' : '⚡';
             return (
               <Box key={req.id} flexDirection="row">
+                <Box width={3}><Text>{statusIcon}</Text></Box>
+                <Text color="gray">│ </Text>
+                <Box width={10}><Text color="white" wrap="truncate-end">{req.id}</Text></Box>
+                <Text color="gray">│ </Text>
                 <Box width={5}><Text color="green">{duration}s</Text></Box>
                 <Text color="gray">│ </Text>
                 <Box width={10}><Text color="cyan" wrap="truncate-end">{req.apiKey || 'Auth...'}</Text></Box>
@@ -42,7 +69,7 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, columns
                 <Text color="gray">│ </Text>
                 <Box width={6}><Text color="magenta">{req.score !== undefined ? req.score.toFixed(2) : '-'}</Text></Box>
                 <Text color="gray">│ </Text>
-                <Box flexGrow={1}><Text wrap="truncate-end">`{req.url}`</Text></Box>
+                <Box flexGrow={1}><Text wrap="truncate-end">{displayUrl}</Text></Box>
               </Box>
             );
           })

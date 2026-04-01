@@ -26,12 +26,15 @@ const Dashboard = () => {
   const [size, setSize] = useState({ columns: stdout.columns || 80, rows: stdout.rows || 24 });
   const [now, setNow] = useState(Date.now());
   const [isErrorsExpanded, setIsErrorsExpanded] = useState(false);
+  const [showHeaders, setShowHeaders] = useState(false);
   const [currentView, setCurrentView] = useState<'home' | 'plans' | 'models' | 'keys' | 'health'>('home');
 
   useInput((input, key) => {
     const char = input.toLowerCase();
     if (char === 'e') {
       setIsErrorsExpanded(prev => !prev);
+    } else if (char === 't') {
+      setShowHeaders(prev => !prev);
     } else if (char === '1') {
       setCurrentView('plans');
     } else if (char === '2') {
@@ -108,7 +111,7 @@ const Dashboard = () => {
       {/* Main View Area */}
       <Box flexGrow={1} flexDirection="column" width="100%">
         {currentView === 'home' && (
-          <HomeView state={state} activeRequests={activeRequests} now={now} isErrorsExpanded={isErrorsExpanded} columns={size.columns} />
+          <HomeView state={state} activeRequests={activeRequests} now={now} isErrorsExpanded={isErrorsExpanded} showHeaders={showHeaders} columns={size.columns} />
         )}
         {currentView === 'plans' && <PlansView state={state} columns={size.columns} />}
         {currentView === 'models' && <ModelsView state={state} columns={size.columns} />}
@@ -123,9 +126,10 @@ const Dashboard = () => {
         <Text color="cyan">[2]</Text><Text>Models  </Text>
         <Text color="cyan">[3]</Text><Text>API Keys  </Text>
         <Text color="cyan">[4]</Text><Text>Health  </Text>
-        <Text color="cyan">[H]</Text><Text>Home  </Text>
-        <Text color="cyan">[E]</Text><Text>Errors  </Text>
-        <Text color="cyan">[Q]</Text><Text>Quit</Text>
+        <Text color="cyan">[H]</Text><Text>ome  </Text>
+        <Text color="cyan">[E]</Text><Text>rrors  </Text>
+        <Text color="cyan">[T]</Text><Text>oggle Headers  </Text>
+        <Text color="cyan">[Q]</Text><Text>uit</Text>
       </Box>
     </Box>
   );
