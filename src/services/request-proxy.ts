@@ -363,6 +363,8 @@ export class RequestProxy {
 
   /**
    * Make a streaming HTTP request.
+   * When SSE headers are already sent, errors are delivered as SSE events
+   * to avoid ERR_HTTP_HEADERS_SENT crashes.
    */
   private makeStreamingRequest(options: InternalStreamingOptions): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -371,6 +373,22 @@ export class RequestProxy {
       const headers = buildHeaders(options.apiKey, options.extraHeaders, true);
       const bodyStr = JSON.stringify(options.body);
       headers['Content-Length'] = Buffer.byteLength(bodyStr).toString();
+
+      /**
+       * Handle errors after SSE headers have been sent.
+       * Sends an error event to the client and ends the response.
+       */
+      const handleStreamError = (errorMessage: string): void => {
+        if (options.reply.raw.headersSent) {
+          try {
+            options.reply.raw.write(`event: error\ndata: ${JSON.stringify({ error: errorMessage })}\n\n`);
+          } catch {
+            // Ignore write errors on closed connections
+          }
+          options.reply.raw.end();
+        }
+        reject(new Error(errorMessage));
+      };
 
       const req = requestFn(
         options.url,
@@ -382,9 +400,7 @@ export class RequestProxy {
               data += chunk;
             });
             res.on('end', () => {
-              const error = new Error(`Upstream error: ${res.statusCode} - ${data.slice(0, 500)}`);
-              (error as Error & { statusCode?: number }).statusCode = res.statusCode;
-              reject(error);
+              handleStreamError(`Upstream error: ${res.statusCode} - ${data.slice(0, 500)}`);
             });
             return;
           }
@@ -397,12 +413,20 @@ export class RequestProxy {
           });
 
           res.on('error', (error) => {
-            reject(new Error(`Stream error: ${error.message}`));
+            handleStreamError(`Stream error: ${error.message}`);
           });
         }
       );
 
-      setupErrorHandlers(req, reject);
+      req.on('error', (error) => {
+        handleStreamError(`Request failed: ${error.message}`);
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        handleStreamError('Request timeout');
+      });
+
       req.write(bodyStr);
       req.end();
     });

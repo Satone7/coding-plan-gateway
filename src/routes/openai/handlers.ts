@@ -272,7 +272,11 @@ export function createOpenAIHandlers(
           if (quotaManager) {
             quotaManager.refundQuota(plan.id);
           }
-          throw streamError;
+          // If SSE headers were already sent, the error event has been
+          // delivered to the client — do not throw to avoid crash.
+          if (!reply.raw.headersSent) {
+            throw streamError;
+          }
         }
         return;
       }
