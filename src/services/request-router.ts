@@ -26,6 +26,8 @@ export interface RoutingResult {
   alternativePlans: CodingPlan[];
   /** Request ID for tracing */
   requestId: string;
+  /** The canonical name of the model */
+  canonicalName?: string;
 }
 
 /**
@@ -41,11 +43,12 @@ export interface PlanWithCredentials {
 /**
  * Create an empty routing result.
  */
-function emptyResult(requestId: string): RoutingResult {
+function emptyResult(requestId: string, canonicalName?: string): RoutingResult {
   return {
     selectedPlan: undefined,
     alternativePlans: [],
     requestId,
+    canonicalName,
   };
 }
 
@@ -105,7 +108,7 @@ export class RequestRouter {
       model,
       totalPlans,
     });
-    return emptyResult(requestId);
+    return emptyResult(requestId, model);
   }
 
   /**
@@ -118,7 +121,7 @@ export class RequestRouter {
       totalPlans: activeCount,
       openCircuits: this.circuitBreaker.getOpenCircuitCount(),
     });
-    return emptyResult(requestId);
+    return emptyResult(requestId, model);
   }
 
   /**
@@ -130,7 +133,7 @@ export class RequestRouter {
       model,
       availablePlans: availableCount,
     });
-    return emptyResult(requestId);
+    return emptyResult(requestId, model);
   }
 
   /**
@@ -192,7 +195,7 @@ export class RequestRouter {
         model: searchModel,
         availablePlans: plansWithQuota.length,
       });
-      return emptyResult(requestId);
+      return emptyResult(requestId, searchModel);
     }
 
     // Record the request in RPM tracker for load balancing
@@ -215,6 +218,7 @@ export class RequestRouter {
       selectedPlan,
       alternativePlans,
       requestId,
+      canonicalName: searchModel,
     };
   }
 

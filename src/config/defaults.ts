@@ -126,8 +126,8 @@ export const DEFAULT_GATEWAY_URL = 'http://localhost:8080';
  * Plan usage tracking configuration defaults.
  */
 export const PLAN_USAGE_DEFAULTS = {
-  planUsageDataPath: './plan-usage-data.json',
-  adjustmentHistoryPath: './usage-adjustment-history.json',
+  planUsageDataPath: './data/plan-usage-data.json',
+  adjustmentHistoryPath: './data/usage-adjustment-history.json',
   syncIntervalMs: 60000, // 60 seconds
   retentionDays: 90,
 };
