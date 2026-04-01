@@ -28,6 +28,8 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, columns
       <Box flexDirection="column" marginBottom={1}>
         <Divider width={columns} title="⏳ ACTIVE REQUESTS" color="cyan" />
         <Box flexDirection="row" marginBottom={0}>
+          <Box width={3}><Text color="gray" bold>St</Text></Box>
+          <Text color="gray">│ </Text>
           <Box width={5}><Text color="gray" bold>Time</Text></Box>
           <Text color="gray">│ </Text>
           <Box width={10}><Text color="gray" bold>API Key</Text></Box>
@@ -42,10 +44,14 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, columns
         </Box>
         {activeRequests.length > 0 ? (
           activeRequests.map(req => {
-            const duration = Math.floor((now - req.startTime) / 1000);
+            const endTime = req.endTime || now;
+            const duration = Math.floor((endTime - req.startTime) / 1000);
             const displayUrl = req.url.split('?')[0];
+            const statusIcon = req.status === 'completed' ? '✅' : req.status === 'failed' ? '❌' : '⏳';
             return (
               <Box key={req.id} flexDirection="row">
+                <Box width={3}><Text>{statusIcon}</Text></Box>
+                <Text color="gray">│ </Text>
                 <Box width={5}><Text color="green">{duration}s</Text></Box>
                 <Text color="gray">│ </Text>
                 <Box width={10}><Text color="cyan" wrap="truncate-end">{req.apiKey || 'Auth...'}</Text></Box>
