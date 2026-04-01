@@ -67,7 +67,7 @@ interface InternalRequestOptions {
  * Options for internal streaming requests.
  */
 interface InternalStreamingOptions extends InternalRequestOptions {
-  onChunk: (chunk: string) => void;
+  reply: FastifyReply;
   onComplete: () => void;
 }
 
@@ -134,52 +134,6 @@ function handleResponse<T>(
     } catch {
       reject(new Error(`Failed to parse upstream response: ${data.slice(0, 200)}`));
     }
-  });
-}
-
-/**
- * Handle streaming response.
- */
-function handleStreamingResponse(
-  res: import('http').IncomingMessage,
-  options: InternalStreamingOptions,
-  resolve: () => void,
-  reject: (reason: Error) => void
-): void {
-  let buffer = '';
-
-  res.on('data', (chunk: Buffer) => {
-    const text = chunk.toString();
-    buffer += text;
-
-    // Process SSE events
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6);
-        if (data !== '[DONE]') {
-          options.onChunk(data);
-        }
-      }
-    }
-  });
-
-  res.on('end', () => {
-    // Process any remaining buffer
-    if (buffer.startsWith('data: ')) {
-      const data = buffer.slice(6);
-      if (data !== '[DONE]') {
-        options.onChunk(data);
-      }
-    }
-    options.onComplete();
-    resolve();
-  });
-
-  res.on('error', (error) => {
-    reject(new Error(`Stream error: ${error.message}`));
   });
 }
 
@@ -275,15 +229,9 @@ export class RequestProxy {
       apiKey: options.apiKey,
       body: request,
       timeout: options.timeout ?? 60,
-      onChunk: (chunk) => {
-        onChunk(chunk, false);
-        reply.raw.write(`data: ${chunk}\n\n`);
-      },
+      reply,
       onComplete: () => {
         onChunk('', true);
-        reply.raw.write('data: [DONE]\n\n');
-        reply.raw.end();
-
         const durationMs = Date.now() - startTime;
         logger.info('OpenAI streaming request completed', {
           requestId: options.requestId,
@@ -372,14 +320,9 @@ export class RequestProxy {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
-      onChunk: (chunk) => {
-        onChunk(chunk, false);
-        reply.raw.write(`data: ${chunk}\n\n`);
-      },
+      reply,
       onComplete: () => {
         onChunk('', true);
-        reply.raw.end();
-
         const durationMs = Date.now() - startTime;
         logger.info('Anthropic streaming request completed', {
           requestId: options.requestId,
@@ -422,7 +365,31 @@ export class RequestProxy {
       const req = requestFn(
         options.url,
         { method: options.method, headers, timeout: options.timeout * 1000 },
-        (res) => handleStreamingResponse(res, options, resolve, reject)
+        (res) => {
+          if (res.statusCode && res.statusCode >= 400) {
+            let data = '';
+            res.on('data', (chunk) => {
+              data += chunk;
+            });
+            res.on('end', () => {
+              const error = new Error(`Upstream error: ${res.statusCode} - ${data.slice(0, 500)}`);
+              (error as Error & { statusCode?: number }).statusCode = res.statusCode;
+              reject(error);
+            });
+            return;
+          }
+
+          res.pipe(options.reply.raw);
+
+          res.on('end', () => {
+            options.onComplete();
+            resolve();
+          });
+
+          res.on('error', (error) => {
+            reject(new Error(`Stream error: ${error.message}`));
+          });
+        }
       );
 
       setupErrorHandlers(req, reject);

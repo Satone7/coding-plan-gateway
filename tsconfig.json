@@ -18,6 +18,7 @@
     "sourceMap": true,
     "resolveJsonModule": true,
     "baseUrl": ".",
+    "ignoreDeprecations": "5.0",
     "jsx": "react-jsx",
     "paths": {
       "@/*": ["src/*"]
