@@ -9,10 +9,11 @@ interface HomeViewProps {
   activeRequests: ActiveRequest[];
   now: number;
   isErrorsExpanded: boolean;
+  showHeaders: boolean;
   columns: number;
 }
 
-export function HomeView({ state, activeRequests, now, isErrorsExpanded, columns }: HomeViewProps) {
+export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHeaders, columns }: HomeViewProps) {
   // Take top 3 plans and top 3 models by requests
   const topPlans = Object.entries(state.planUsages)
     .sort((a, b) => b[1].requests - a[1].requests)
@@ -27,21 +28,23 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, columns
       {/* Active Requests */}
       <Box flexDirection="column" marginBottom={1}>
         <Divider width={columns} title="⏳ ACTIVE REQUESTS" color="cyan" />
-        <Box flexDirection="row" marginBottom={0}>
-          <Box width={3}><Text color="gray" bold>St</Text></Box>
-          <Text color="gray">│ </Text>
-          <Box width={5}><Text color="gray" bold>Time</Text></Box>
-          <Text color="gray">│ </Text>
-          <Box width={10}><Text color="gray" bold>API Key</Text></Box>
-          <Text color="gray">│ </Text>
-          <Box width={16}><Text color="gray" bold>Model</Text></Box>
-          <Text color="gray">│ </Text>
-          <Box width={12}><Text color="gray" bold>Plan</Text></Box>
-          <Text color="gray">│ </Text>
-          <Box width={6}><Text color="gray" bold>Score</Text></Box>
-          <Text color="gray">│ </Text>
-          <Box flexGrow={1}><Text color="gray" bold>URL</Text></Box>
-        </Box>
+        {showHeaders && (
+          <Box flexDirection="row" marginBottom={0}>
+            <Box width={3}><Text color="gray" bold>St</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box width={5}><Text color="gray" bold>Time</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box width={10}><Text color="gray" bold>API Key</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box width={16}><Text color="gray" bold>Model</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box width={12}><Text color="gray" bold>Plan</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box width={6}><Text color="gray" bold>Score</Text></Box>
+            <Text color="gray">│ </Text>
+            <Box flexGrow={1}><Text color="gray" bold>URL</Text></Box>
+          </Box>
+        )}
         {activeRequests.length > 0 ? (
           activeRequests.map(req => {
             const endTime = req.endTime || now;
