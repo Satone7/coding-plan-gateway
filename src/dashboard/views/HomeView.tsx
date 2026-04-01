@@ -87,9 +87,25 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
               <Text color={log.level === 'warn' ? 'yellow' : 'red'} wrap={isErrorsExpanded ? 'wrap' : 'truncate-end'}>
                 [{log.level.toUpperCase()}] {log.message}
               </Text>
-              {isErrorsExpanded && log.context && Object.keys(log.context).length > 0 && (
-                <Box paddingLeft={2}>
-                  <Text color="gray">{JSON.stringify(log.context, null, 2)}</Text>
+              {isErrorsExpanded && (
+                <Box paddingLeft={2} flexDirection="column">
+                  {log.error && (
+                    <Box flexDirection="column" marginBottom={1}>
+                      {(log.error.code || log.error.type) && (
+                        <Text color="redBright" wrap="wrap">
+                          Error Code: {log.error.code || 'UNKNOWN'} {log.error.type ? `(${log.error.type})` : ''}
+                        </Text>
+                      )}
+                      {log.error.message && (
+                        <Text color="redBright" wrap="wrap">
+                          Reason: <Text color="white">{log.error.message}</Text>
+                        </Text>
+                      )}
+                    </Box>
+                  )}
+                  {log.context && Object.keys(log.context).length > 0 && (
+                    <Text color="gray">{JSON.stringify(log.context, null, 2)}</Text>
+                  )}
                 </Box>
               )}
             </Box>

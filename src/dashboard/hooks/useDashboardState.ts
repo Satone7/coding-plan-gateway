@@ -29,6 +29,13 @@ export interface LogEntry {
   timestamp: string;
   level: string;
   message: string;
+  error?: {
+    name: string;
+    message: string;
+    stack?: string;
+    code?: string;
+    type?: string;
+  };
   context?: {
     requestId?: string;
     durationMs?: number;
@@ -38,6 +45,7 @@ export interface LogEntry {
     selectedPlanName?: string;
     totalScore?: number;
     model?: string;
+    statusCode?: number;
     provider?: {
       planName?: string;
       model?: string;
@@ -106,15 +114,22 @@ function processLogEntry(log: LogEntry, setState: React.Dispatch<React.SetStateA
         if (newState.activeRequests[requestId]) {
           newState.activeRequests[requestId].score = context.totalScore;
         }
-      } else if (message === 'Request completed' || message === 'Request failed') {
+      } else if (message === 'Request completed' || message === 'Request failed' || message === 'Request error') {
         const activeReq = newState.activeRequests[requestId];
+        
+        const isFailed = message === 'Request failed' || message === 'Request error' || (message === 'Request completed' && context.statusCode && context.statusCode >= 400);
+        const wasAlreadyFailed = activeReq?.status === 'failed';
+
         // Update status instead of removing immediately
         if (activeReq) {
-          activeReq.status = message === 'Request completed' ? 'completed' : 'failed';
+          // If we already marked it as failed from a previous 'Request error' log, don't overwrite with 'completed'
+          if (activeReq.status !== 'failed' || isFailed) {
+            activeReq.status = isFailed ? 'failed' : 'completed';
+          }
           activeReq.endTime = Date.now();
         }
         
-        if (message === 'Request completed') {
+        if (message === 'Request completed' && !isFailed) {
           newState.completedRequests++;
           
           const tokens = context.tokens?.total || 0;
@@ -148,7 +163,7 @@ function processLogEntry(log: LogEntry, setState: React.Dispatch<React.SetStateA
               tokens: prevUsage.tokens + tokens,
             };
           }
-        } else {
+        } else if (isFailed && !wasAlreadyFailed) {
           newState.failedRequests++;
         }
       }
