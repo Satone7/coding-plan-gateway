@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { render, Box, Text } from 'ink';
+import { render, Box, Text, useStdout } from 'ink';
 import { Table } from './components/Table';
 import { useDashboardState } from './hooks/useDashboardState';
 import { loadAuthConfig } from '../config/auth-config';
@@ -16,6 +16,22 @@ logger.warn = () => {};
 const Dashboard = () => {
   const state = useDashboardState();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
+  const { stdout } = useStdout();
+  const [size, setSize] = useState({ columns: stdout.columns, rows: stdout.rows });
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const onResize = () => setSize({ columns: stdout.columns, rows: stdout.rows });
+    stdout.on('resize', onResize);
+    return () => {
+      stdout.off('resize', onResize);
+    };
+  }, [stdout]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     // Load API Keys
@@ -41,59 +57,110 @@ const Dashboard = () => {
   }, []);
 
   // Format data for Table
-  const planUsageData = Object.values(state.planUsages).map(usage => ({
-    Plan: usage.planName,
+  const planUsageData = Object.entries(state.planUsages).map(([planName, usage]) => ({
+    Plan: planName,
     Requests: usage.requests,
-    Tokens: usage.tokens,
-    Errors: usage.errors
+    Tokens: usage.tokens
   }));
 
-  const apiKeyData = apiKeys.map(key => ({
-    Name: key.name,
-    Prefix: key.prefix,
-    Status: key.status,
-    Created: new Date(key.createdAt).toLocaleDateString(),
-    'Last Used': key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : 'Never'
+  const modelUsageData = Object.entries(state.modelUsages).map(([modelName, usage]) => ({
+    Model: modelName,
+    Requests: usage.requests,
+    Tokens: usage.tokens
   }));
+
+  const apiKeyUsageData = Object.entries(state.apiKeyUsages).map(([keyName, usage]) => ({
+    'API Key': keyName,
+    Requests: usage.requests,
+    Tokens: usage.tokens
+  }));
+
+  const activeRequests = Object.values(state.activeRequests);
 
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1} borderStyle="round" borderColor="cyan">
+    <Box width={size.columns} height={size.rows} flexDirection="column" paddingX={1} borderStyle="round" borderColor="cyan">
       <Box marginBottom={1} justifyContent="center">
         <Text bold color="cyan">🚀 CODING PLAN GATEWAY DASHBOARD 🚀</Text>
       </Box>
 
+      {/* Summary Stats */}
       <Box flexDirection="row" marginBottom={1} justifyContent="space-between">
-        <Box flexDirection="column" width="45%" borderStyle="single" borderColor="yellow" paddingX={1}>
-          <Box marginBottom={1}><Text bold color="yellow">📊 Request Status</Text></Box>
-          <Text>🟢 Active:    <Text color="green">{state.activeRequests}</Text></Text>
-          <Text>✅ Completed: <Text color="blue">{state.completedRequests}</Text></Text>
-          <Text>❌ Failed:    <Text color="red">{state.failedRequests}</Text></Text>
-        </Box>
-        
-        <Box flexDirection="column" width="45%" borderStyle="single" borderColor="magenta" paddingX={1}>
-          <Box marginBottom={1}><Text bold color="magenta">⏱️  Average Latency</Text></Box>
-          <Text>🚪 Gateway:  <Text color="cyan">{state.phaseDurations.gatewayLatency.toFixed(2)}ms</Text></Text>
-          <Text>☁️  Provider: <Text color="cyan">{state.phaseDurations.providerLatency.toFixed(2)}ms</Text></Text>
-          <Text>⚡ Total:    <Text color="cyan">{state.phaseDurations.totalLatency.toFixed(2)}ms</Text></Text>
+        <Box flexDirection="column" width="100%" borderStyle="single" borderColor="blue" paddingX={1}>
+          <Box marginBottom={1}><Text bold color="blue">📊 Summary</Text></Box>
+          <Box flexDirection="row" justifyContent="space-between">
+            <Text>🟢 Active: <Text color="green">{activeRequests.length}</Text></Text>
+            <Text>✅ Completed: <Text color="blue">{state.completedRequests}</Text></Text>
+            <Text>❌ Failed: <Text color="red">{state.failedRequests}</Text></Text>
+          </Box>
         </Box>
       </Box>
 
-      <Box flexDirection="column" marginBottom={1}>
-        <Text bold color="blue">📈 Plan Usage</Text>
-        {planUsageData.length > 0 ? (
-          <Box><Table data={planUsageData} /></Box>
+      {/* Active Requests */}
+      <Box flexDirection="column" borderStyle="single" borderColor="yellow" paddingX={1} marginBottom={1} minHeight={4}>
+        <Box marginBottom={1}><Text bold color="yellow">⏳ Active Requests</Text></Box>
+        {activeRequests.length > 0 ? (
+          activeRequests.map(req => {
+            const duration = Math.floor((now - req.startTime) / 1000);
+            return (
+              <Box key={req.id} flexDirection="row" marginBottom={0}>
+                <Box width={6}><Text color="green">{duration}s</Text></Box>
+                <Box width={15}><Text color="cyan">{req.apiKey || 'Auth...'}</Text></Box>
+                <Box width={20}><Text color="blue">{req.planName || 'Routing...'}</Text></Box>
+                <Box width={10}><Text color="magenta">{req.score !== undefined ? req.score.toFixed(2) : '-'}</Text></Box>
+                <Box flexGrow={1}><Text wrap="truncate-end">{req.url}</Text></Box>
+              </Box>
+            );
+          })
         ) : (
-          <Box marginY={1}><Text color="gray">No plan usage data available yet.</Text></Box>
+          <Text color="gray">No active requests.</Text>
         )}
       </Box>
 
-      <Box flexDirection="column">
-        <Text bold color="green">🔑 API Keys</Text>
-        {apiKeyData.length > 0 ? (
-          <Box><Table data={apiKeyData} /></Box>
+      {/* Recent Errors Panel */}
+      <Box flexDirection="column" borderStyle="single" borderColor="red" paddingX={1} marginBottom={1} minHeight={3}>
+        <Box marginBottom={1}><Text bold color="red">🚨 Recent Errors & Warnings</Text></Box>
+        {state.recentErrors.length > 0 ? (
+          state.recentErrors.map((log, i) => (
+            <Box key={i}>
+              <Text color={log.level === 'warn' ? 'yellow' : 'red'}>
+                [{log.timestamp}] {log.message}
+              </Text>
+            </Box>
+          ))
         ) : (
-          <Box marginY={1}><Text color="gray">No API keys configured.</Text></Box>
+          <Text color="gray">No recent errors.</Text>
         )}
+      </Box>
+
+      {/* Multi-dimensional Stats */}
+      <Box flexDirection="column" borderStyle="single" borderColor="magenta" paddingX={1} marginBottom={1} flexGrow={1}>
+        <Box marginBottom={1}><Text bold color="magenta">📈 Usage Statistics</Text></Box>
+        <Box flexDirection="row" justifyContent="space-between">
+          <Box flexDirection="column" width="32%">
+            <Text bold color="blue">By Plan</Text>
+            {planUsageData.length > 0 ? (
+              <Table data={planUsageData} />
+            ) : (
+              <Text color="gray">No data</Text>
+            )}
+          </Box>
+          <Box flexDirection="column" width="32%">
+            <Text bold color="cyan">By Model</Text>
+            {modelUsageData.length > 0 ? (
+              <Table data={modelUsageData} />
+            ) : (
+              <Text color="gray">No data</Text>
+            )}
+          </Box>
+          <Box flexDirection="column" width="32%">
+            <Text bold color="green">By API Key</Text>
+            {apiKeyUsageData.length > 0 ? (
+              <Table data={apiKeyUsageData} />
+            ) : (
+              <Text color="gray">No data</Text>
+            )}
+          </Box>
+        </Box>
       </Box>
     </Box>
   );
