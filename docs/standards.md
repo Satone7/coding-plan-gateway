@@ -397,7 +397,7 @@ plans:
       limit: number
       used: number
       period: daily | monthly | total
-    timeout: number (ms, optional)
+    timeout: number (seconds, optional)
 ```
 
 ### 6.3 Future Database Naming (if added)

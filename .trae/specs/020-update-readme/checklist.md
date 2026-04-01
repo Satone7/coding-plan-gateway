@@ -1,0 +1,4 @@
+- [x] `README.md` 的 Features 列表包含了所有新特性。
+- [x] `README.md` 的 Configuration 部分展示了 `loadBalancing` 和 `modelAliases` 的用法。
+- [x] `README.md` 的 CLI 使用说明准确无误。
+- [x] 所有说明均符合当前项目代码实现。

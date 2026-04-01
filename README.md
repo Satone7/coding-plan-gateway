@@ -6,10 +6,13 @@ A load balancer for managing multiple AI coding plan subscriptions. Routes reque
 
 - **Multi-provider support**: Manage multiple AI coding plans (Kimi, Claude, OpenAI, etc.)
 - **Dual API compatibility**: Exposes both OpenAI and Anthropic compatible endpoints
-- **Intelligent routing**: Automatically selects plans based on model availability and quota
+- **Intelligent routing**: Case-insensitive model matching and automatic plan selection based on model availability
+- **Advanced Load Balancing**: Multi-factor scoring strategies (quota-priority, round-robin, weighted, etc.) based on RPM, expiration, and remaining quota
+- **Model Aliasing**: Configurable aliases to map shorthand names (e.g., `gpt-4`) to canonical models
 - **Quota management**: Track and prioritize usage across plans
 - **Circuit breaker**: Automatic failover when providers fail
 - **Streaming support**: Full SSE streaming for chat completions
+- **Observability**: Request latency tracing with stage-by-stage timing and color-coded logging for concurrent requests
 - **CLI tool**: Built-in `cpg` command-line tool for API key management, usage reports, and TUI dashboard
 - **TUI Dashboard**: Real-time terminal UI for monitoring active requests, plan usage, and gateway latency
 
@@ -100,11 +103,22 @@ curl http://localhost:8080/api/v1/models
 | `CONFIG_PATH` | No | `./config.yaml` | Path to plans config file |
 | `IPC_SOCKET_PATH` | No | `/tmp/coding-plan-gateway.sock` | Path for IPC dashboard socket |
 
-### Plan Configuration
+### Gateway Configuration
 
-Plans are configured in `config.yaml` (copied from `config.yaml.example` during initialization):
+The gateway is configured in `config.yaml` (copied from `config.yaml.example` during initialization). It supports load balancing rules, model aliases, and plan configurations:
 
 ```yaml
+loadBalancing:
+  strategy: "quota-priority" # quota-priority, round-robin, weighted-round-robin, random
+  factorWeights:             # For quota-priority strategy (must sum to 1.0)
+    expiration: 0.4
+    rpm: 0.4
+    quota: 0.2
+
+modelAliases:
+  "gpt-4": "gpt-4-turbo"
+  "claude-3": "claude-3-5-sonnet-20241022"
+
 plans:
   - name: "Plan Name"
     baseUrl: "https://api.provider.com/v1"
@@ -115,8 +129,9 @@ plans:
     quota:
       limit: 1000        # Maximum requests
       period: "monthly"  # daily, monthly, or total
-    timeout: 30000       # Request timeout in ms (optional)
+    timeout: 30          # Request timeout in seconds (optional)
     status: "active"     # active or paused (optional)
+    weight: 1            # Used for weighted-round-robin strategy (optional)
 ```
 
 ## Usage Examples
@@ -253,10 +268,14 @@ npm run cpg -- --help
 
 ### Commands
 
+*Note: In the examples below, `cpg` refers to running the CLI tool. Depending on your environment, you may need to use `npm run cpg --` or `node bin/cpg` instead.*
+
 #### TUI Dashboard
 
 ```bash
 # Launch the real-time TUI dashboard
+npm run dashboard
+# Or via CLI
 cpg dashboard
 ```
 
