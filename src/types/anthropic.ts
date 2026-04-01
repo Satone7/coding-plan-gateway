@@ -104,6 +104,31 @@ export interface AnthropicMessageRequest {
 }
 
 /**
+ * Anthropic messages count tokens request.
+ */
+export interface AnthropicCountTokensRequest {
+  /** Model identifier */
+  model: string;
+
+  /** Conversation messages */
+  messages: AnthropicMessage[];
+
+  /** System prompt - can be a string or array of content blocks */
+  system?: string | AnthropicSystemBlock[];
+
+  /** Allow additional fields for pass-through support */
+  [key: string]: unknown;
+}
+
+/**
+ * Anthropic messages count tokens response.
+ */
+export interface AnthropicCountTokensResponse {
+  /** Input tokens */
+  input_tokens: number;
+}
+
+/**
  * Anthropic messages API response.
  */
 export interface AnthropicMessageResponse {

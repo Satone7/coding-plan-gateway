@@ -14,6 +14,8 @@ import type {
 import type {
   AnthropicMessageRequest,
   AnthropicMessageResponse,
+  AnthropicCountTokensRequest,
+  AnthropicCountTokensResponse,
 } from '@/types/anthropic';
 import { logger } from '@/utils/logger';
 import { DEFAULT_USER_AGENT } from '@/config/defaults';
@@ -279,6 +281,51 @@ export class RequestProxy {
     response.durationMs = Date.now() - startTime;
 
     logger.info('Anthropic request completed', {
+      requestId: options.requestId,
+      statusCode: response.statusCode,
+      durationMs: response.durationMs,
+    });
+
+    return response;
+  }
+
+  /**
+   * Forward an Anthropic-format count tokens request to the upstream provider.
+   */
+  async forwardAnthropicCountTokensRequest(
+    request: AnthropicCountTokensRequest,
+    options: ProxyRequestOptions
+  ): Promise<UpstreamResponse<AnthropicCountTokensResponse>> {
+    const basePath = options.baseUrl.endsWith('/')
+      ? options.baseUrl.slice(0, -1)
+      : options.baseUrl;
+    
+    // Support both baseUrl with and without /v1
+    const urlPath = basePath.endsWith('/v1') ? '/messages/count_tokens' : '/v1/messages/count_tokens';
+    const url = new URL(`${basePath}${urlPath}`);
+    const startTime = Date.now();
+
+    logger.debug('Forwarding Anthropic count tokens request', {
+      requestId: options.requestId,
+      url: url.toString(),
+      model: request.model,
+    });
+
+    const response = await this.makeRequest<AnthropicCountTokensResponse>({
+      url,
+      method: 'POST',
+      apiKey: options.apiKey,
+      body: request,
+      timeout: options.timeout ?? 30,
+      extraHeaders: {
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+    });
+
+    response.durationMs = Date.now() - startTime;
+
+    logger.info('Anthropic count tokens request completed', {
       requestId: options.requestId,
       statusCode: response.statusCode,
       durationMs: response.durationMs,
