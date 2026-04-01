@@ -41,8 +41,8 @@ RUN mkdir -p /app/config /app/data && \
     chown -R gateway:nodejs /app/config /app/data /app/config.yaml
 
 # Copy CLI executable
-COPY bin/cpg ./bin/cpg
-RUN chmod +x bin/cpg
+COPY --chown=gateway:nodejs bin/cpg ./bin/cpg
+RUN chmod +rx bin/cpg
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist

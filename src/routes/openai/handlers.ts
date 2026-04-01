@@ -139,11 +139,17 @@ async function attemptFailover(
   body: ValidatedChatCompletion,
   requestId: string,
   plan: CodingPlan,
-  request: FastifyRequest
+  request: FastifyRequest,
+  canonicalName?: string
 ): Promise<{ durationMs: number; statusCode: number; data: unknown } | null> {
   const apiKey = await fetchApiKey(services.repository, plan.id, request);
   if (!apiKey) {
     return null;
+  }
+
+  // Use the canonical name for the upstream request to avoid model name validation errors
+  if (canonicalName) {
+    body.model = canonicalName;
   }
 
   startStage(request, 'upstreamRequest');
@@ -228,6 +234,11 @@ export function createOpenAIHandlers(
         alternatives: routingResult.alternativePlans.length,
       });
 
+      // Update the request body to use the canonical name for upstream request
+      if (routingResult.canonicalName) {
+        body.model = routingResult.canonicalName;
+      }
+
       // Handle streaming
       if (body.stream) {
         startStage(request, 'upstreamRequest');
@@ -281,7 +292,7 @@ export function createOpenAIHandlers(
           }
 
           logger.info('Attempting failover', { requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id });
-          const result = await attemptFailover(services, body, requestId, altPlan, request);
+          const result = await attemptFailover(services, body, requestId, altPlan, request, routingResult.canonicalName);
           if (result) {
             recordMetrics(request, altPlan, model, result);
             return result.data as ChatCompletionResponse;

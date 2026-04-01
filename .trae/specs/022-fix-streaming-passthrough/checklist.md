@@ -1,0 +1,4 @@
+- [x] `makeStreamingRequest` 不再对 `Buffer` 转换为全量字符串，也不按行使用正则表达式过滤数据。
+- [x] 使用 `pipe()` 将上游的二进制响应流完整、无修饰地透传给了下游。
+- [x] 经过透传后的响应中完整保留了 Anthropic 原始的 `event: message_delta` 等事件头，修复了 Claude Code token 统计功能。
+- [x] 流式请求处理结束时（`end` / `close`），正常向网关日志输出了流式代理成功的提示与耗时。
