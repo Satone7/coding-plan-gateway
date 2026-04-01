@@ -346,6 +346,8 @@ export class RequestProxy {
       const isHttps = options.url.protocol === 'https:';
       const requestFn = isHttps ? httpsRequest : httpRequest;
       const headers = buildHeaders(options.apiKey, options.extraHeaders);
+      const bodyStr = JSON.stringify(options.body);
+      headers['Content-Length'] = Buffer.byteLength(bodyStr).toString();
 
       const req = requestFn(
         options.url,
@@ -354,7 +356,7 @@ export class RequestProxy {
       );
 
       setupErrorHandlers(req, reject);
-      req.write(JSON.stringify(options.body));
+      req.write(bodyStr);
       req.end();
     });
   }
@@ -367,6 +369,8 @@ export class RequestProxy {
       const isHttps = options.url.protocol === 'https:';
       const requestFn = isHttps ? httpsRequest : httpRequest;
       const headers = buildHeaders(options.apiKey, options.extraHeaders, true);
+      const bodyStr = JSON.stringify(options.body);
+      headers['Content-Length'] = Buffer.byteLength(bodyStr).toString();
 
       const req = requestFn(
         options.url,
@@ -399,7 +403,7 @@ export class RequestProxy {
       );
 
       setupErrorHandlers(req, reject);
-      req.write(JSON.stringify(options.body));
+      req.write(bodyStr);
       req.end();
     });
   }
