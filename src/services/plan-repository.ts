@@ -173,6 +173,7 @@ export class FilePlanRepository implements IPlanRepository {
       expiresOn: finalExpiresOn,
       expiresAt: finalExpiresAt,
       weight: input.weight,
+      enable: input.enable ?? true,
       createdAt: now,
       updatedAt: now,
     };
@@ -219,6 +220,7 @@ export class FilePlanRepository implements IPlanRepository {
       expiresOn: updates.expiresOn !== undefined ? updates.expiresOn : existing.expiresOn,
       expiresAt: updates.expiresAt !== undefined ? updates.expiresAt : existing.expiresAt,
       weight: updates.weight !== undefined ? updates.weight : existing.weight,
+      enable: updates.enable !== undefined ? updates.enable : existing.enable,
       updatedAt: now,
     };
 
@@ -440,6 +442,7 @@ export class FilePlanRepository implements IPlanRepository {
       expiresOn: effectiveExpiresOn,
       expiresAt: effectiveExpiresAt,
       weight: config.weight,
+      enable: config.enable ?? true,
       createdAt: now,
       updatedAt: now,
     };
@@ -473,6 +476,7 @@ export class FilePlanRepository implements IPlanRepository {
       timeout: plan.timeout,
       status: persistableStatus,
       weight: plan.weight,
+      enable: plan.enable,
     };
   }
 

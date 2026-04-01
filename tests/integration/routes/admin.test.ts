@@ -474,6 +474,7 @@ describe('Admin Routes', () => {
         quota: { limit: 500, period: 'monthly' },
         timeout: 45,
         status: 'active',
+        enable: true,
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
       });

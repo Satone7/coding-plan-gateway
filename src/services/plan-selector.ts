@@ -175,7 +175,7 @@ export class PlanSelector {
    * @returns Only active plans
    */
   filterActivePlans(plans: CodingPlan[]): CodingPlan[] {
-    return plans.filter((plan) => plan.status === 'active');
+    return plans.filter((plan) => plan.status === 'active' && plan.enable !== false);
   }
 
   /**
@@ -277,7 +277,7 @@ export class PlanSelector {
    */
   isPlanAvailable(plan: CodingPlan, quotaState?: QuotaState): boolean {
     // Check status
-    if (plan.status !== 'active') {
+    if (plan.status !== 'active' || plan.enable === false) {
       return false;
     }
 

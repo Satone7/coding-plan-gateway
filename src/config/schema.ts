@@ -78,6 +78,7 @@ export const planConfigSchema = z.object({
   expiresOn: z.number().int().min(1).max(31).optional(),
   expiresAt: z.string().datetime().optional(),
   weight: z.number().int().min(1).max(100).optional(),
+  enable: z.boolean().optional().default(true),
 });
 
 /**
