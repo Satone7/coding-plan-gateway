@@ -136,6 +136,21 @@ plans:
 
 ## Usage Examples
 
+### Interactive Configuration
+
+You can use the built-in CLI tool to easily configure the gateway interactively:
+
+```bash
+# Launch the interactive configuration wizard
+cpg onboard
+```
+
+The wizard allows you to:
+- Add, update, or remove Plans (API Keys, Models, Quotas)
+- Configure Load Balancing Strategies
+- Set up Model Aliases
+- Automatically backs up your old configuration file before saving
+
 ### Configure Claude Code
 
 ```bash
@@ -317,6 +332,9 @@ cpg usage-report --json
 #### Plan Management
 
 ```bash
+# Launch interactive TUI configuration wizard
+cpg onboard
+
 # List all plans with usage summary
 cpg plan list
 
