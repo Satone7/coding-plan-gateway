@@ -50,10 +50,20 @@ export interface AnthropicSystemImageBlock {
   };
 }
 
+export interface AnthropicSystemDocumentBlock {
+  type: 'document';
+  source: {
+    type: 'base64';
+    media_type: string;
+    data: string;
+  };
+  cache_control?: { type: 'ephemeral' };
+}
+
 /**
  * Union type for all system prompt content blocks.
  */
-export type AnthropicSystemBlock = AnthropicSystemTextBlock | AnthropicSystemImageBlock;
+export type AnthropicSystemBlock = AnthropicSystemTextBlock | AnthropicSystemImageBlock | AnthropicSystemDocumentBlock | Record<string, unknown>;
 
 /**
  * Anthropic message structure.

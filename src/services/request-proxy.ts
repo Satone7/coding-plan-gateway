@@ -310,6 +310,7 @@ export class RequestProxy {
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
+        'x-api-key': options.apiKey,
       },
     });
 
@@ -355,6 +356,7 @@ export class RequestProxy {
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
+        'x-api-key': options.apiKey,
       },
     });
 
@@ -408,6 +410,7 @@ export class RequestProxy {
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
+        'x-api-key': options.apiKey,
       },
       reply,
       onComplete: (tokenUsage) => {

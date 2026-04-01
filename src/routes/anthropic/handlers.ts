@@ -34,7 +34,7 @@ import type { CodingPlan } from '@/types';
  * Schema for system prompt content blocks.
  */
 const systemBlockSchema = z.object({
-  type: z.enum(['text', 'image']),
+  type: z.string(),
 }).passthrough();
 
 /**
@@ -65,7 +65,7 @@ const messageRequestSchema = z.object({
  */
 const countTokensRequestSchema = z.object({
   model: z.string().min(1),
-  messages: z.array(z.any()).min(1),
+  messages: z.array(z.any()),
   system: z.union([
     z.string(),
     z.array(systemBlockSchema),
@@ -420,6 +420,14 @@ export function createAnthropicHandlers(
         body.model = routingResult.canonicalName;
       }
 
+      attachProviderMetrics(request, {
+        planId: plan.id,
+        planName: plan.name,
+        model,
+        durationMs: 0,
+        statusCode: 0,
+      });
+
       startStage(request, 'upstreamRequest');
       try {
         const response = await proxy.forwardAnthropicCountTokensRequest(body, {
@@ -427,6 +435,16 @@ export function createAnthropicHandlers(
         });
         endStage(request, 'upstreamRequest');
         // Do not mark circuit breaker success/failure for count_tokens to avoid skewing stats
+        
+        attachProviderMetrics(request, {
+          planId: plan.id,
+          planName: plan.name,
+          model,
+          durationMs: response.durationMs,
+          statusCode: response.statusCode,
+          providerResponseTimeMs: response.durationMs,
+        });
+        
         return response.data as AnthropicCountTokensResponse;
       } catch (error) {
         endStage(request, 'upstreamRequest');
@@ -458,6 +476,16 @@ export function createAnthropicHandlers(
               baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId
             });
             endStage(request, 'upstreamRequest');
+            
+            attachProviderMetrics(request, {
+              planId: altPlan.id,
+              planName: altPlan.name,
+              model,
+              durationMs: result.durationMs,
+              statusCode: result.statusCode,
+              providerResponseTimeMs: result.durationMs,
+            });
+            
             return result.data as AnthropicCountTokensResponse;
           } catch (altError) {
             endStage(request, 'upstreamRequest');
