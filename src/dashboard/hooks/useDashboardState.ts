@@ -8,10 +8,19 @@ export interface PlanUsage {
   errors: number;
 }
 
-export interface RequestPhaseDurations {
-  gatewayLatency: number;
-  providerLatency: number;
-  totalLatency: number;
+export interface DimensionUsage {
+  requests: number;
+  tokens: number;
+}
+
+export interface ActiveRequest {
+  id: string;
+  url: string;
+  startTime: number;
+  apiKey?: string;
+  planName?: string;
+  score?: number;
+  model?: string;
 }
 
 export interface LogEntry {
@@ -22,8 +31,14 @@ export interface LogEntry {
     requestId?: string;
     durationMs?: number;
     providerResponseTimeMs?: number;
+    url?: string;
+    keyName?: string;
+    selectedPlanName?: string;
+    totalScore?: number;
+    model?: string;
     provider?: {
       planName?: string;
+      model?: string;
     };
     tokens?: {
       total?: number;
@@ -32,12 +47,14 @@ export interface LogEntry {
 }
 
 export interface DashboardState {
-  activeRequests: number;
+  activeRequests: Record<string, ActiveRequest>;
   completedRequests: number;
   failedRequests: number;
-  phaseDurations: RequestPhaseDurations;
-  planUsages: Record<string, PlanUsage>;
+  planUsages: Record<string, DimensionUsage>;
+  modelUsages: Record<string, DimensionUsage>;
+  apiKeyUsages: Record<string, DimensionUsage>;
   recentLogs: LogEntry[];
+  recentErrors: LogEntry[];
 }
 
 const SOCKET_PATH = process.env.IPC_SOCKET_PATH || '/tmp/coding-plan-gateway.sock';
@@ -48,71 +65,86 @@ function processLogEntry(log: LogEntry, setState: React.Dispatch<React.SetStateA
   setState((prevState) => {
     const newState = {
       ...prevState,
-      phaseDurations: { ...prevState.phaseDurations },
+      activeRequests: { ...prevState.activeRequests },
       planUsages: { ...prevState.planUsages },
+      modelUsages: { ...prevState.modelUsages },
+      apiKeyUsages: { ...prevState.apiKeyUsages },
+      recentLogs: [log, ...prevState.recentLogs].slice(0, 100),
+      recentErrors: [...prevState.recentErrors],
     };
 
-    // Keep only last 100 logs
-    newState.recentLogs = [log, ...prevState.recentLogs].slice(0, 100);
+    if (log.level === 'warn' || log.level === 'error' || log.level === 'fatal') {
+      newState.recentErrors = [log, ...prevState.recentErrors].slice(0, 5);
+    }
 
     const message = log.message;
     const context = log.context || {};
+    const requestId = context.requestId;
 
-    if (message === 'Request started') {
-      newState.activeRequests++;
-    } else if (message === 'Request completed') {
-      // Make sure activeRequests doesn't drop below 0
-      newState.activeRequests = Math.max(0, newState.activeRequests - 1);
-      newState.completedRequests++;
-
-      // Update Latencies (Moving Average)
-      if (typeof context.durationMs === 'number') {
-        const total = context.durationMs;
-        const provider = context.providerResponseTimeMs || total;
-        const gateway = Math.max(0, total - provider);
-
-        const n = newState.completedRequests;
-        newState.phaseDurations.totalLatency =
-          (newState.phaseDurations.totalLatency * (n - 1) + total) / n;
-        newState.phaseDurations.providerLatency =
-          (newState.phaseDurations.providerLatency * (n - 1) + provider) / n;
-        newState.phaseDurations.gatewayLatency =
-          (newState.phaseDurations.gatewayLatency * (n - 1) + gateway) / n;
-      }
-
-      // Update Plan Usage
-      if (context.provider && context.provider.planName) {
-        const planName = context.provider.planName;
-        const prevUsage = newState.planUsages[planName] || {
-          planName,
-          requests: 0,
-          tokens: 0,
-          errors: 0,
+    if (requestId) {
+      if (message === 'Request started') {
+        newState.activeRequests[requestId] = {
+          id: requestId,
+          url: context.url || 'Unknown',
+          startTime: Date.now(),
         };
-
-        newState.planUsages[planName] = {
-          ...prevUsage,
-          requests: prevUsage.requests + 1,
-          tokens: prevUsage.tokens + (context.tokens?.total || 0),
-        };
-      }
-    } else if (message === 'Request failed') {
-      newState.activeRequests = Math.max(0, newState.activeRequests - 1);
-      newState.failedRequests++;
-
-      if (context.provider && context.provider.planName) {
-        const planName = context.provider.planName;
-        const prevUsage = newState.planUsages[planName] || {
-          planName,
-          requests: 0,
-          tokens: 0,
-          errors: 0,
-        };
-
-        newState.planUsages[planName] = {
-          ...prevUsage,
-          errors: prevUsage.errors + 1,
-        };
+      } else if (message === 'Request authenticated') {
+        if (newState.activeRequests[requestId]) {
+          newState.activeRequests[requestId].apiKey = context.keyName;
+        }
+      } else if (message === 'Request routed to plan') {
+        if (newState.activeRequests[requestId]) {
+          newState.activeRequests[requestId].planName = context.selectedPlanName;
+          if (context.model) {
+            newState.activeRequests[requestId].model = context.model;
+          }
+        }
+      } else if (message === 'Selected plan with multi-factor score') {
+        if (newState.activeRequests[requestId]) {
+          newState.activeRequests[requestId].score = context.totalScore;
+        }
+      } else if (message === 'Request completed' || message === 'Request failed') {
+        const activeReq = newState.activeRequests[requestId];
+        // Remove from active requests
+        delete newState.activeRequests[requestId];
+        
+        if (message === 'Request completed') {
+          newState.completedRequests++;
+          
+          const tokens = context.tokens?.total || 0;
+          
+          // Update Plan Usage
+          if (context.provider && context.provider.planName) {
+            const planName = context.provider.planName;
+            const prevUsage = newState.planUsages[planName] || { requests: 0, tokens: 0 };
+            newState.planUsages[planName] = {
+              requests: prevUsage.requests + 1,
+              tokens: prevUsage.tokens + tokens,
+            };
+          }
+          
+          // Update Model Usage
+          if (context.provider && context.provider.model) {
+            const model = context.provider.model;
+            const prevUsage = newState.modelUsages[model] || { requests: 0, tokens: 0 };
+            newState.modelUsages[model] = {
+              requests: prevUsage.requests + 1,
+              tokens: prevUsage.tokens + tokens,
+            };
+          }
+          
+          // Update API Key Usage
+          if (activeReq && activeReq.apiKey) {
+            const apiKey = activeReq.apiKey;
+            const prevUsage = newState.apiKeyUsages[apiKey] || { requests: 0, tokens: 0 };
+            newState.apiKeyUsages[apiKey] = {
+              requests: prevUsage.requests + 1,
+              tokens: prevUsage.tokens + tokens,
+            };
+          }
+        } else {
+          newState.failedRequests++;
+        }
       }
     }
 
@@ -123,16 +155,14 @@ function processLogEntry(log: LogEntry, setState: React.Dispatch<React.SetStateA
 // eslint-disable-next-line max-lines-per-function
 export function useDashboardState(): DashboardState {
   const [state, setState] = useState<DashboardState>({
-    activeRequests: 0,
+    activeRequests: {},
     completedRequests: 0,
     failedRequests: 0,
-    phaseDurations: {
-      gatewayLatency: 0,
-      providerLatency: 0,
-      totalLatency: 0,
-    },
     planUsages: {},
+    modelUsages: {},
+    apiKeyUsages: {},
     recentLogs: [],
+    recentErrors: [],
   });
 
   useEffect(() => {
