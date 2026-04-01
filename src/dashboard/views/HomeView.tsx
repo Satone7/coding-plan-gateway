@@ -32,6 +32,8 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
           <Box flexDirection="row" marginBottom={0}>
             <Box width={3}><Text color="gray" bold>St</Text></Box>
             <Text color="gray">│ </Text>
+            <Box width={10}><Text color="gray" bold>Req ID</Text></Box>
+            <Text color="gray">│ </Text>
             <Box width={5}><Text color="gray" bold>Time</Text></Box>
             <Text color="gray">│ </Text>
             <Box width={10}><Text color="gray" bold>API Key</Text></Box>
@@ -54,6 +56,8 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
             return (
               <Box key={req.id} flexDirection="row">
                 <Box width={3}><Text>{statusIcon}</Text></Box>
+                <Text color="gray">│ </Text>
+                <Box width={10}><Text color="white" wrap="truncate-end">{req.id}</Text></Box>
                 <Text color="gray">│ </Text>
                 <Box width={5}><Text color="green">{duration}s</Text></Box>
                 <Text color="gray">│ </Text>
