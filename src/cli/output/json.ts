@@ -182,6 +182,7 @@ export class JsonFormatter implements OutputFormatter {
       ];
     } else {
       helpData.commands = [
+        { name: 'dashboard', description: 'Launch the real-time TUI dashboard' },
         { name: 'key', description: 'Manage API keys' },
         { name: 'usage-report', description: 'View usage reports' },
         { name: 'plan', description: 'Manage plans and view plan usage' },

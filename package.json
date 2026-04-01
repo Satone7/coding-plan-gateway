@@ -8,7 +8,8 @@
     "cpg": "./bin/cpg"
   },
   "scripts": {
-    "build": "tsc && tsc-alias",
+    "build": "tsc && tsc-alias && npm run build:dashboard",
+    "build:dashboard": "esbuild src/dashboard/index.tsx --bundle --platform=node --format=esm --outfile=dist/dashboard.mjs --external:react --external:ink --external:bcrypt --external:proper-lockfile",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "vitest run",
@@ -33,7 +34,7 @@
     "e2e:reset": "bash scripts/e2e/reset.sh",
     "e2e:logs": "docker-compose -f docker-compose.e2e.yml logs -f",
     "e2e:status": "bash scripts/e2e/status.sh",
-    "dashboard": "esbuild src/dashboard/index.tsx --bundle --platform=node --format=esm --outfile=dist/dashboard.mjs --external:react --external:ink --external:bcrypt --external:proper-lockfile && node dist/dashboard.mjs"
+    "dashboard": "npm run build:dashboard && node dist/dashboard.mjs"
   },
   "keywords": [
     "ai",
