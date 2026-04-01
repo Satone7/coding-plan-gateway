@@ -1,0 +1,140 @@
+# Docker Compose: SSH Key Authentication
+# Usage: docker-compose -f docker-compose.ssh.yml up -d
+#
+# This configuration uses SSH key authentication for Git operations.
+# Recommended for production environments and enhanced security.
+
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: ../../..
+      dockerfile: docker/autoupdate/Dockerfile.autoupdate
+    image: coding-plan-gateway:autoupdate
+    container_name: cpg-gateway-ssh
+
+    environment:
+      # Auto-update configuration
+      - AUTOUPDATE_ENABLED=true
+      - AUTOUPDATE_BRANCH=master
+      - AUTOUPDATE_GIT_URL=${AUTOUPDATE_GIT_URL:?Error: AUTOUPDATE_GIT_URL not set}
+      # No token needed for SSH authentication
+      - AUTOUPDATE_SSH_KEY_PATH=/root/.ssh/id_rsa
+      - AUTOUPDATE_MAX_RETRIES=3
+      - AUTOUPDATE_BACKUP_ENABLED=true
+
+      # Health check configuration
+      - AUTOUPDATE_HEALTH_URL=http://localhost:8080/health
+      - AUTOUPDATE_HEALTH_TIMEOUT=30
+      - AUTOUPDATE_HEALTH_RETRIES=15
+
+      # Logging
+      - LOG_LEVEL=info
+
+      # Application configuration
+      - NODE_ENV=production
+      - PORT=8080
+
+    volumes:
+      # Configuration file (read-only)
+      - ./config.yaml:/app/config.yaml:ro
+
+      # SSH key for Git authentication (read-only)
+      # Generate key with: ssh-keygen -t ed25519 -C "cpg-autoupdate" -f ~/.ssh/cpg_autoupdate
+      # Add public key to GitHub/GitLab deploy keys
+      - ${SSH_KEY_PATH:-~/.ssh/id_rsa}:/root/.ssh/id_rsa:ro
+
+      # SSH known hosts (optional but recommended for security)
+      # Generate with: ssh-keyscan github.com > ~/.ssh/known_hosts
+      - ${SSH_KNOWN_HOSTS_PATH:-~/.ssh/known_hosts}:/root/.ssh/known_hosts:ro
+
+      # Persistent data for build metadata and status
+      - gateway-data:/data
+
+    ports:
+      - "8080:8080"
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+    restart: unless-stopped
+
+    # Resource limits (adjust based on your environment)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+volumes:
+  gateway-data:
+    driver: local
+
+# ============================================================================
+# Setup Instructions:
+# ============================================================================
+#
+# 1. Generate SSH key pair (if not exists):
+#
+#    ssh-keygen -t ed25519 -C "cpg-autoupdate" -f ~/.ssh/cpg_autoupdate
+#
+# 2. Add public key to repository deploy keys:
+#
+#    cat ~/.ssh/cpg_autoupdate.pub
+#    # Copy the output and add to GitHub/GitLab repository settings
+#
+# 3. Generate known_hosts file for security:
+#
+#    ssh-keyscan github.com > ~/.ssh/known_hosts
+#    # For GitLab: ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
+#
+# 4. Create a .env file with your configuration:
+#
+#    AUTOUPDATE_GIT_URL=git@github.com:your-org/coding-plan-gateway.git
+#    SSH_KEY_PATH=~/.ssh/cpg_autoupdate
+#    SSH_KNOWN_HOSTS_PATH=~/.ssh/known_hosts
+#
+# 5. Create a config.yaml file:
+#
+#    plans:
+#      - id: plan-1
+#        name: My Plan
+#        baseUrl: https://api.example.com
+#        apiKey: encrypted-api-key-here
+#        models: [model-1, model-2]
+#        quota:
+#          limit: 1000
+#          used: 0
+#          period: daily
+#
+# 6. Start the service:
+#
+#    docker-compose -f docker-compose.ssh.yml up -d
+#
+# 7. View logs:
+#
+#    docker-compose -f docker-compose.ssh.yml logs -f
+#
+# 8. Trigger manual update:
+#
+#    docker-compose -f docker-compose.ssh.yml kill -s SIGUSR1 gateway
+#
+# ============================================================================
+# Security Notes:
+# ============================================================================
+#
+# - SSH key is mounted read-only (:ro)
+# - Use a dedicated deploy key with read-only access
+# - Protect your SSH private key with proper file permissions (0600)
+# - Consider using known_hosts file to prevent MITM attacks
+# - Rotate SSH keys periodically
+#
+# ============================================================================

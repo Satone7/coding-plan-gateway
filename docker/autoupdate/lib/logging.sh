@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+# logging.sh - Structured JSON logging library for auto-update scripts
+# Version: 1.0.0
+# Usage: source this file and use log_* functions
+
+set -euo pipefail
+
+# Log levels
+declare -r LOG_LEVEL_DEBUG=0
+declare -r LOG_LEVEL_INFO=1
+declare -r LOG_LEVEL_WARN=2
+declare -r LOG_LEVEL_ERROR=3
+declare -r LOG_LEVEL_CRITICAL=4
+
+# Current log level (default: INFO)
+declare -g LOG_LEVEL="${LOG_LEVEL:-1}"
+
+# ANSI color codes for terminal output
+declare -r COLOR_RESET='\033[0m'
+declare -r COLOR_DEBUG='\033[36m'   # Cyan
+declare -r COLOR_INFO='\033[32m'    # Green
+declare -r COLOR_WARN='\033[33m'    # Yellow
+declare -r COLOR_ERROR='\033[31m'   # Red
+declare -r COLOR_CRITICAL='\033[35m' # Magenta
+
+# Log event codes (consistent with design.md)
+declare -r EVENT_UPDATE_CHECK_START='UPDATE_CHECK_START'
+declare -r EVENT_UPDATE_CHECK_COMPLETE='UPDATE_CHECK_COMPLETE'
+declare -r EVENT_UPDATE_FETCH_START='UPDATE_FETCH_START'
+declare -r EVENT_UPDATE_FETCH_COMPLETE='UPDATE_FETCH_COMPLETE'
+declare -r EVENT_UPDATE_BUILD_START='UPDATE_BUILD_START'
+declare -r EVENT_UPDATE_BUILD_COMPLETE='UPDATE_BUILD_COMPLETE'
+declare -r EVENT_UPDATE_ROLLBACK='UPDATE_ROLLBACK'
+declare -r EVENT_UPDATE_ERROR='UPDATE_ERROR'
+declare -r EVENT_SERVICE_START='SERVICE_START'
+declare -r EVENT_SERVICE_STOP='SERVICE_STOP'
+
+# Get current timestamp in ISO8601 format
+_timestamp() {
+  date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+# Sanitize sensitive values (tokens, keys, passwords)
+_sanitize() {
+  local value="${1:-}"
+  # Replace tokens, passwords, keys with placeholder
+  if [[ "$value" =~ (token|password|key|secret|credential) ]]; then
+    echo "[REDACTED]"
+  else
+    echo "$value"
+  fi
+}
+
+# Build JSON log entry
+_build_json() {
+  local level="${1:-}"
+  local event="${2:-}"
+  local message="${3:-}"
+  local details="${4:-}"
+
+  local timestamp
+  timestamp=$(_timestamp)
+
+  # Build JSON object
+  local json="{\"level\":\"${level}\",\"timestamp\":\"${timestamp}\",\"event\":\"${event}\",\"message\":\"${message}\""
+
+  if [[ -n "${details}" ]]; then
+    json="${json},${details}"
+  fi
+
+  json="${json}}"
+  echo "$json"
+}
+
+# Output log with color if terminal
+_output() {
+  local level="${1:-}"
+  local json="${2:-}"
+  local color="${3:-}"
+
+  # Check if stdout is a terminal
+  if [[ -t 1 ]]; then
+    echo -e "${color}${json}${COLOR_RESET}"
+  else
+    echo "$json"
+  fi
+}
+
+# Core logging function
+_log() {
+  local level_num="${1:-}"
+  local level_name="${2:-}"
+  local event="${3:-}"
+  local message="${4:-}"
+  local details="${5:-}"
+  local color="${6:-}"
+
+  # Check if this level should be logged
+  if [[ "$level_num" -ge "$LOG_LEVEL" ]]; then
+    local json
+    json=$(_build_json "$level_name" "$event" "$message" "$details")
+    _output "$level_name" "$json" "$color"
+  fi
+}
+
+# Public logging functions
+
+log_debug() {
+  local event="${1:-}"
+  local message="${2:-}"
+  local details="${3:-}"
+  _log "$LOG_LEVEL_DEBUG" "debug" "$event" "$message" "$details" "$COLOR_DEBUG"
+}
+
+log_info() {
+  local event="${1:-}"
+  local message="${2:-}"
+  local details="${3:-}"
+  _log "$LOG_LEVEL_INFO" "info" "$event" "$message" "$details" "$COLOR_INFO"
+}
+
+log_warn() {
+  local event="${1:-}"
+  local message="${2:-}"
+  local details="${3:-}"
+  _log "$LOG_LEVEL_WARN" "warn" "$event" "$message" "$details" "$COLOR_WARN"
+}
+
+log_error() {
+  local event="${1:-}"
+  local message="${2:-}"
+  local details="${3:-}"
+  _log "$LOG_LEVEL_ERROR" "error" "$event" "$message" "$details" "$COLOR_ERROR"
+}
+
+log_critical() {
+  local event="${1:-}"
+  local message="${2:-}"
+  local details="${3:-}"
+  _log "$LOG_LEVEL_CRITICAL" "critical" "$event" "$message" "$details" "$COLOR_CRITICAL"
+}
+
+# Convenience function to build details JSON string
+# Usage: build_details key1 value1 key2 value2 ...
+build_details() {
+  local details=""
+  local first=true
+
+  while [[ $# -gt 0 ]]; do
+    local key="${1:-}"
+    local value="${2:-}"
+
+    if [[ -n "${key}" && -n "${value}" ]]; then
+      # Sanitize sensitive values
+      value=$(_sanitize "$value")
+
+      if [[ "$first" == "true" ]]; then
+        details="${details}\"${key}\":\"${value}\""
+        first=false
+      else
+        details="${details},\"${key}\":\"${value}\""
+      fi
+    fi
+
+    shift 2
+  done
+
+  echo "$details"
+}
+
+# Log error with full context
+log_error_context() {
+  local event="${1:-}"
+  local message="${2:-}"
+  local error_code="${3:-}"
+  local error_details="${4:-}"
+
+  local details
+  details=$(build_details "errorCode" "$error_code" "errorDetails" "$error_details")
+
+  log_error "$event" "$message" "$details"
+}
+
+# Set log level from environment or string
+set_log_level() {
+  local level="${1:-info}"
+
+  case "$level" in
+    debug|DEBUG)
+      LOG_LEVEL="$LOG_LEVEL_DEBUG"
+      ;;
+    info|INFO)
+      LOG_LEVEL="$LOG_LEVEL_INFO"
+      ;;
+    warn|WARN|warning|WARNING)
+      LOG_LEVEL="$LOG_LEVEL_WARN"
+      ;;
+    error|ERROR)
+      LOG_LEVEL="$LOG_LEVEL_ERROR"
+      ;;
+    critical|CRITICAL)
+      LOG_LEVEL="$LOG_LEVEL_CRITICAL"
+      ;;
+    *)
+      LOG_LEVEL="$LOG_LEVEL_INFO"
+      ;;
+  esac
+}
+
+# Initialize logging from environment
+init_logging() {
+  local env_level="${LOG_LEVEL:-info}"
+  set_log_level "$env_level"
+}
+
+# Export functions for use in other scripts
+export -f log_debug log_info log_warn log_error log_critical
+export -f build_details log_error_context set_log_level init_logging
+export -f _timestamp _sanitize _build_json _output _log
