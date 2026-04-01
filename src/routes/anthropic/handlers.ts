@@ -248,6 +248,16 @@ export function createAnthropicHandlers(
         body.model = routingResult.canonicalName;
       }
 
+      // Attach provider metrics early so onResponse hook always has plan/model info
+      // (non-streaming will overwrite with full metrics via recordMetrics)
+      attachProviderMetrics(request, {
+        planId: plan.id,
+        planName: plan.name,
+        model,
+        durationMs: 0,
+        statusCode: 0,
+      });
+
       // Handle streaming
       if (body.stream) {
         startStage(request, 'upstreamRequest');
