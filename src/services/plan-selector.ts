@@ -329,6 +329,19 @@ function quotaPriorityStrategy(context: SelectionContext): CodingPlan | undefine
   // Calculate scores for all plans
   const scores = plans.map((plan) => calculatePlanScore(plan, quotaStates, rpmTracker, weights));
 
+  // Log score details for all candidate plans
+  for (const score of scores) {
+    const plan = plans.find((p) => p.id === score.planId);
+    if (plan) {
+      logger.debug('Candidate plan multi-factor score details', {
+        planId: plan.id,
+        planName: plan.name,
+        totalScore: score.totalScore,
+        components: score.components,
+      });
+    }
+  }
+
   // Sort by total score descending
   scores.sort((a, b) => b.totalScore - a.totalScore);
 
