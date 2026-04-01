@@ -1,0 +1,27 @@
+diff --git a/specs/016-docker-auto-update/spec.md b/specs/016-docker-auto-update/spec.md
+index 49cd93d..8724bc6 100644
+--- a/specs/016-docker-auto-update/spec.md
++++ b/specs/016-docker-auto-update/spec.md
+@@ -94,3 +94,10 @@
+ - 项目的编译过程通过 package.json 中定义的脚本（如 build）执行，并且编译成功后会生成可运行的产物
+ - 容器运行的目标环境支持文件系统操作（拉取代码、写入编译产物）
+ - 服务的启动命令是确定且可重复的，可以通过统一的入口脚本启动
++
++## Clarifications
++
++### Session 2026-03-31
++
++- **Q**: Git 认证方式应选择哪种实现方案？  
++  **A**: 同时支持 HTTPS Token 和 SSH Key 两种方式（选项 C）——HTTPS Token 适合 CI/CD 自动化，SSH Key 适合企业环境，两种方式覆盖绝大多数使用场景
+
+From 784d1ecf509c57d511fa3c812573f879993ada0a Mon Sep 17 00:00:00 2001
+From: pren <satone7@foxmail.com>
+Date: Tue, 31 Mar 2026 17:28:55 +0800
+Subject: [PATCH 3/7] docs: clarify requirements for docker auto-update
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+---
+ specs/016-docker-auto-update/design.md | 98 ++++++++++++++++++++++++++
+ 1 file changed, 98 insertions(+)
+ create mode 100644 specs/016-docker-auto-update/design.md
+

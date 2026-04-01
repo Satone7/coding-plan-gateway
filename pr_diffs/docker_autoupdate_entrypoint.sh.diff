@@ -1,0 +1,629 @@
+diff --git a/docker/autoupdate/entrypoint.sh b/docker/autoupdate/entrypoint.sh
+new file mode 100755
+index 0000000..936e544
+--- /dev/null
++++ b/docker/autoupdate/entrypoint.sh
+@@ -0,0 +1,622 @@
++#!/usr/bin/env bash
++# entrypoint.sh - Auto-update entrypoint script
++# Version: 1.0.0
++# Usage: entrypoint.sh [command]
++#
++# Commands:
++#   (none)     - Run auto-update and start service
++#   check      - Check for updates only
++#   manual     - Trigger manual update (used via signal handler)
++#   rollback   - Rollback to previous build and restart
++#   status     - Show current update status
++
++set -euo pipefail
++
++# Base paths
++readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++readonly APP_DIR="/app"
++readonly LIB_DIR="${SCRIPT_DIR}/lib"
++
++# Source all libraries
++source "${LIB_DIR}/logging.sh"
++source "${LIB_DIR}/git.sh"
++source "${LIB_DIR}/build.sh"
++source "${LIB_DIR}/health.sh"
++source "${LIB_DIR}/rollback.sh"
++
++# Configuration with defaults
++readonly AUTOUPDATE_ENABLED="${AUTOUPDATE_ENABLED:-true}"
++readonly AUTOUPDATE_BRANCH="${AUTOUPDATE_BRANCH:-master}"
++readonly AUTOUPDATE_CHECK_INTERVAL="${AUTOUPDATE_CHECK_INTERVAL:-0}"
++readonly AUTOUPDATE_GIT_URL="${AUTOUPDATE_GIT_URL:-}"
++readonly AUTOUPDATE_GIT_TOKEN="${AUTOUPDATE_GIT_TOKEN:-}"
++readonly AUTOUPDATE_SSH_KEY_PATH="${AUTOUPDATE_SSH_KEY_PATH:-/root/.ssh/id_rsa}"
++readonly AUTOUPDATE_MAX_RETRIES="${AUTOUPDATE_MAX_RETRIES:-3}"
++readonly AUTOUPDATE_BACKUP_ENABLED="${AUTOUPDATE_BACKUP_ENABLED:-true}"
++readonly AUTOUPDATE_HEALTH_URL="${AUTOUPDATE_HEALTH_URL:-http://localhost:8080/health}"
++
++# State tracking
++declare -g UPDATE_IN_PROGRESS=false
++declare -g SERVICE_PID=""
++declare -g CURRENT_COMMIT=""
++declare -g REMOTE_COMMIT=""
++declare -g UPDATE_STATUS="idle"
++declare -g CONSECUTIVE_FAILURES=0
++
++# Initialize logging
++init_logging
++
++log_info "UPDATE_INIT" "Auto-update entrypoint initialized" \
++  "{\"version\":\"1.0.0\",\"enabled\":$AUTOUPDATE_ENABLED}"
++
++# ============================================================================
++# SIGNAL HANDLERS
++# ============================================================================
++
++# Signal handler for manual update trigger (SIGUSR1)
++signal_manual_update() {
++  log_info "UPDATE_SIGNAL" "Received SIGUSR1, triggering manual update check"
++
++  if [[ "$UPDATE_IN_PROGRESS" == "true" ]]; then
++    log_warn "UPDATE_SIGNAL" "Update already in progress, ignoring manual trigger"
++    return
++  fi
++
++  trigger_manual_update
++}
++
++# Signal handler for graceful shutdown (SIGTERM)
++signal_graceful_shutdown() {
++  log_info "UPDATE_SIGNAL" "Received SIGTERM, initiating graceful shutdown"
++
++  if [[ -n "$SERVICE_PID" ]] && kill -0 "$SERVICE_PID" 2>/dev/null; then
++    log_info "UPDATE_SHUTDOWN" "Stopping service (PID: $SERVICE_PID)"
++    kill -TERM "$SERVICE_PID" 2>/dev/null || true
++
++    # Wait for service to stop
++    local timeout=30
++    local count=0
++    while [[ $count -lt $timeout ]] && kill -0 "$SERVICE_PID" 2>/dev/null; do
++      sleep 1
++      count=$((count + 1))
++    done
++  fi
++
++  log_info "UPDATE_SHUTDOWN" "Shutdown complete"
++  exit 0
++}
++
++# Setup signal handlers
++setup_signals() {
++  trap 'signal_manual_update' SIGUSR1
++  trap 'signal_graceful_shutdown' SIGTERM SIGINT
++  log_debug "UPDATE_INIT" "Signal handlers registered"
++}
++
++# ============================================================================
++# UPDATE CHECK FLOW (T008)
++# ============================================================================
++
++check_for_updates() {
++  log_info "UPDATE_CHECK_START" "Starting update check flow"
++
++  UPDATE_STATUS="checking"
++  rollback_save_status "$UPDATE_STATUS" "$CURRENT_COMMIT" "$REMOTE_COMMIT"
++
++  # Pre-update health checks
++  if ! health_pre_update_check; then
++    log_warn "UPDATE_CHECK" "Pre-update health checks failed, skipping update"
++    UPDATE_STATUS="failed"
++    return 1
++  fi
++
++  # Verify git configuration
++  if ! git_verify_config "$AUTOUPDATE_GIT_URL" "$AUTOUPDATE_BRANCH"; then
++    log_error "UPDATE_CHECK" "Git configuration invalid"
++    UPDATE_STATUS="failed"
++    return 1
++  fi
++
++  # Get current commit
++  CURRENT_COMMIT=$(git_get_local_commit "$APP_DIR")
++  log_info "UPDATE_CHECK" "Current commit" "{\"commit\":\"${CURRENT_COMMIT:0:8}\"}"
++
++  # Check for updates
++  local update_status
++  set +e
++  git_check_updates "$AUTOUPDATE_BRANCH" "$APP_DIR"
++  update_status=$?
++  set -e
++
++  REMOTE_COMMIT=$(git_get_remote_commit "$AUTOUPDATE_BRANCH")
++
++  case $update_status in
++    5)  # GIT_STATUS_NO_UPDATE
++      log_info "UPDATE_CHECK_COMPLETE" "No updates available"
++      UPDATE_STATUS="idle"
++      rollback_save_status "$UPDATE_STATUS" "$CURRENT_COMMIT" "$REMOTE_COMMIT"
++      return 0
++      ;;
++    6)  # GIT_STATUS_UPDATE_AVAILABLE
++      log_info "UPDATE_CHECK_COMPLETE" "Updates available"
++      UPDATE_STATUS="updates_available"
++      rollback_save_status "$UPDATE_STATUS" "$CURRENT_COMMIT" "$REMOTE_COMMIT"
++      return 0
++      ;;
++    *)
++      log_error "UPDATE_CHECK" "Update check failed" "{\"status\":$update_status}"
++      UPDATE_STATUS="failed"
++      return 1
++      ;;
++  esac
++}
++
++# ============================================================================
++# RETRY LOGIC WITH EXPONENTIAL BACKOFF (T015)
++# ============================================================================
++
++# Retry a command with exponential backoff
++# Usage: retry_with_backoff <max_retries> <base_delay> <description> <command> [args...]
++retry_with_backoff() {
++  local max_retries="${1:-3}"
++  local base_delay="${2:-5}"
++  local description="${3:-operation}"
++  shift 3
++
++  local retry_count=0
++  local exit_code=0
++  local delay="$base_delay"
++
++  while [[ $retry_count -lt $max_retries ]]; do
++    # Attempt the command
++    set +e
++    "$@"
++    exit_code=$?
++    set -e
++
++    if [[ $exit_code -eq 0 ]]; then
++      # Success
++      if [[ $retry_count -gt 0 ]]; then
++        log_info "UPDATE_RETRY" "${description} succeeded after ${retry_count} retries"
++      fi
++      return 0
++    fi
++
++    retry_count=$((retry_count + 1))
++
++    if [[ $retry_count -lt $max_retries ]]; then
++      # Calculate next delay with exponential backoff
++      delay=$((base_delay * (2 ** (retry_count - 1))))
++
++      # Cap at 60 seconds
++      if [[ $delay -gt 60 ]]; then
++        delay=60
++      fi
++
++      local details
++      details=$(build_details "attempt" "$retry_count" "maxRetries" "$max_retries" "nextDelay" "$delay")
++      log_warn "UPDATE_RETRY" "${description} failed, retrying with backoff" "$details"
++
++      sleep "$delay"
++    fi
++  done
++
++  log_error "UPDATE_RETRY" "${description} failed after ${max_retries} retries" "{\"exitCode\":$exit_code}"
++  return $exit_code
++}
++
++# Check if error is transient (retryable)
++is_transient_error() {
++  local error_code="${1:-}"
++
++  case "$error_code" in
++    fetch_failed|network_timeout|build_timeout)
++      return 0  # Retryable
++      ;;
++    validation_failed|build_failed|swap_failed|prepare_failed|deps_failed)
++      return 1  # Not retryable
++      ;;
++    *)
++      return 1  # Unknown errors are not retryable
++      ;;
++  esac
++}
++
++# ============================================================================
++# BUILD AND DEPLOY FLOW (T009)
++# ============================================================================
++
++apply_updates() {
++  log_info "UPDATE_APPLY_START" "Starting update application"
++
++  UPDATE_IN_PROGRESS=true
++  UPDATE_STATUS="updating"
++  rollback_save_status "$UPDATE_STATUS" "$CURRENT_COMMIT" "$REMOTE_COMMIT"
++
++  # Create backup of current build
++  if [[ "$AUTOUPDATE_BACKUP_ENABLED" == "true" ]]; then
++    if ! rollback_backup_current; then
++      log_warn "UPDATE_APPLY" "Failed to create backup, continuing anyway"
++    fi
++  fi
++
++  # Fetch updates with retry on transient network failures
++  log_info "UPDATE_FETCH_START" "Fetching updates from remote"
++  if ! retry_with_backoff "$AUTOUPDATE_MAX_RETRIES" 5 "git fetch" git_fetch_updates "$AUTOUPDATE_BRANCH" "$APP_DIR"; then
++    log_error "UPDATE_APPLY" "Failed to fetch updates after retries"
++    handle_update_failure "fetch_failed"
++    return 1
++  fi
++
++  # Prepare new build directory
++  if ! rollback_prepare_new_build; then
++    log_error "UPDATE_APPLY" "Failed to prepare new build directory"
++    handle_update_failure "prepare_failed"
++    return 1
++  fi
++
++  # Build in temporary directory
++  log_info "UPDATE_BUILD_START" "Building new version"
++  if ! build_install_deps "$APP_DIR" false; then
++    log_error "UPDATE_APPLY" "Failed to install dependencies"
++    handle_update_failure "deps_failed"
++    return 1
++  fi
++
++  if ! build_compile "$APP_DIR"; then
++    log_error "UPDATE_APPLY" "Failed to compile application"
++    handle_update_failure "build_failed"
++    return 1
++  fi
++
++  # Validate build output
++  if ! build_validate_output "$APP_DIR" "dist"; then
++    log_error "UPDATE_APPLY" "Build output validation failed"
++    handle_update_failure "validation_failed"
++    return 1
++  fi
++
++  # Perform atomic swap
++  log_info "UPDATE_SWAP" "Swapping builds atomically"
++  if ! rollback_swap_builds; then
++    log_error "UPDATE_APPLY" "Build swap failed"
++    handle_update_failure "swap_failed"
++    return 1
++  fi
++
++  # Save build metadata
++  rollback_save_build_metadata "$REMOTE_COMMIT" "$APP_DIR/dist"
++
++  log_info "UPDATE_APPLY_COMPLETE" "Update applied successfully"
++  UPDATE_STATUS="success"
++  CONSECUTIVE_FAILURES=0
++  rollback_save_status "$UPDATE_STATUS" "$REMOTE_COMMIT" "$REMOTE_COMMIT"
++
++  return 0
++}
++
++# ============================================================================
++# ERROR HANDLING AND ROLLBACK (T010)
++# ============================================================================
++
++handle_update_failure() {
++  local error_code="${1:-unknown}"
++  local error_details="${2:-}"
++
++  log_error "UPDATE_ERROR" "Update failed" "{\"errorCode\":\"$error_code\",\"details\":\"$error_details\"}"
++
++  UPDATE_STATUS="failed"
++  CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
++
++  rollback_mark_rollback_needed
++  rollback_save_status "$UPDATE_STATUS" "$CURRENT_COMMIT" "$REMOTE_COMMIT" "$error_code"
++
++  # Attempt rollback
++  if rollback_backup_exists; then
++    log_info "UPDATE_ROLLBACK" "Attempting rollback to previous build"
++    if rollback_restore_backup; then
++      log_info "UPDATE_ROLLBACK" "Rollback completed, service will start with previous build"
++    else
++      log_error "UPDATE_ROLLBACK" "Rollback failed, continuing with current state"
++    fi
++  else
++    log_warn "UPDATE_ROLLBACK" "No backup available for rollback"
++  fi
++
++  UPDATE_IN_PROGRESS=false
++
++  # Check retry count
++  if [[ $CONSECUTIVE_FAILURES -ge $AUTOUPDATE_MAX_RETRIES ]]; then
++    log_critical "UPDATE_RETRY" "Maximum retries exceeded" "{\"failures\":$CONSECUTIVE_FAILURES}"
++    # Disable auto-update to prevent loops
++    return 1
++  fi
++}
++
++# Trigger manual update
++trigger_manual_update() {
++  log_info "UPDATE_MANUAL" "Manual update triggered"
++
++  if [[ "$UPDATE_IN_PROGRESS" == "true" ]]; then
++    log_warn "UPDATE_MANUAL" "Update already in progress"
++    return 1
++  fi
++
++  # Check for updates
++  if ! check_for_updates; then
++    log_warn "UPDATE_MANUAL" "Update check failed"
++    return 1
++  fi
++
++  # If updates available, apply them
++  if [[ "$UPDATE_STATUS" == "updates_available" ]]; then
++    # Stop current service
++    stop_service
++
++    # Apply updates
++    if apply_updates; then
++      # Restart service
++      start_service
++    else
++      log_error "UPDATE_MANUAL" "Update application failed"
++      # Try to restart with current build
++      start_service
++    fi
++  else
++    log_info "UPDATE_MANUAL" "No updates available"
++  fi
++}
++
++# ============================================================================
++# SERVICE MANAGEMENT
++# ============================================================================
++
++start_service() {
++  log_info "UPDATE_SERVICE_START" "Starting service"
++
++  # Verify build exists
++  if [[ ! -d "$APP_DIR/dist" ]]; then
++    log_error "UPDATE_SERVICE" "Build directory not found" "{\"path\":\"$APP_DIR/dist\"}"
++
++    # Try rollback
++    if rollback_backup_exists; then
++      log_info "UPDATE_SERVICE" "Attempting rollback before start"
++      rollback_restore_backup
++    else
++      log_critical "UPDATE_SERVICE" "No build available, cannot start"
++      return 1
++    fi
++  fi
++
++  # Clear rollback marker
++  rollback_clear_marker
++
++  # Start the service in background
++  log_info "UPDATE_SERVICE_START" "Launching application"
++
++  cd "$APP_DIR" || exit 1
++
++  # Start service and capture PID
++  node dist/index.js &
++  SERVICE_PID=$!
++
++  log_info "UPDATE_SERVICE_START" "Service started" "{\"pid\":$SERVICE_PID}"
++
++  # Wait for service to be healthy with retry on transient failures
++  if retry_with_backoff 3 3 "health check" health_wait_for_healthy "$AUTOUPDATE_HEALTH_URL" 30 2; then
++    log_info "UPDATE_SERVICE_START" "Service is healthy"
++    UPDATE_STATUS="running"
++    rollback_save_status "$UPDATE_STATUS" "$CURRENT_COMMIT" "$REMOTE_COMMIT"
++  else
++    log_error "UPDATE_SERVICE" "Service failed health check"
++
++    # Kill the service
++    kill -TERM "$SERVICE_PID" 2>/dev/null || true
++    SERVICE_PID=""
++
++    # Attempt rollback and restart
++    if rollback_backup_exists && [[ "$CURRENT_COMMIT" != "$REMOTE_COMMIT" ]]; then
++      log_info "UPDATE_SERVICE" "Attempting rollback and restart"
++      rollback_restore_backup
++
++      # Try starting again
++      cd "$APP_DIR" || exit 1
++      node dist/index.js &
++      SERVICE_PID=$!
++
++      if health_wait_for_healthy "$AUTOUPDATE_HEALTH_URL" 30 2; then
++        log_info "UPDATE_SERVICE_START" "Service started after rollback"
++        UPDATE_STATUS="running_rollback"
++      else
++        log_critical "UPDATE_SERVICE" "Service failed to start even after rollback"
++        return 1
++      fi
++    else
++      return 1
++    fi
++  fi
++
++  # Wait for service process
++  wait "$SERVICE_PID" || true
++
++  log_info "UPDATE_SERVICE_STOP" "Service process exited"
++  SERVICE_PID=""
++}
++
++stop_service() {
++  if [[ -n "$SERVICE_PID" ]] && kill -0 "$SERVICE_PID" 2>/dev/null; then
++    log_info "UPDATE_SERVICE_STOP" "Stopping service" "{\"pid\":$SERVICE_PID}"
++    kill -TERM "$SERVICE_PID" 2>/dev/null || true
++
++    local timeout=30
++    local count=0
++    while [[ $count -lt $timeout ]] && kill -0 "$SERVICE_PID" 2>/dev/null; do
++      sleep 1
++      count=$((count + 1))
++    done
++
++    if kill -0 "$SERVICE_PID" 2>/dev/null; then
++      log_warn "UPDATE_SERVICE_STOP" "Service did not stop gracefully, forcing"
++      kill -KILL "$SERVICE_PID" 2>/dev/null || true
++    fi
++
++    SERVICE_PID=""
++  fi
++}
++
++# ============================================================================
++# MAIN UPDATE FLOW (T007)
++# ============================================================================
++
++main_update_flow() {
++  log_info "UPDATE_MAIN_START" "Starting main update flow"
++
++  # Check if auto-update is enabled
++  if [[ "$AUTOUPDATE_ENABLED" != "true" ]]; then
++    log_info "UPDATE_MAIN" "Auto-update disabled, starting service directly"
++    start_service
++    return $?
++  fi
++
++  # Check if rollback is needed (from previous crash)
++  if rollback_is_needed; then
++    log_warn "UPDATE_MAIN" "Previous update requires rollback"
++    rollback_restore_backup
++    rollback_clear_marker
++  fi
++
++  # Check for updates
++  if ! check_for_updates; then
++    log_warn "UPDATE_MAIN" "Update check failed, starting with current build"
++    start_service
++    return $?
++  fi
++
++  # If no updates, start service
++  if [[ "$UPDATE_STATUS" != "updates_available" ]]; then
++    log_info "UPDATE_MAIN" "No updates, starting service"
++    start_service
++    return $?
++  fi
++
++  # Updates available - apply them
++  log_info "UPDATE_MAIN" "Applying available updates"
++  if apply_updates; then
++    log_info "UPDATE_MAIN" "Updates applied, starting service"
++    start_service
++  else
++    log_warn "UPDATE_MAIN" "Update failed, starting with current build"
++    start_service
++  fi
++}
++
++# ============================================================================
++# COMMAND HANDLING
++# ============================================================================
++
++show_status() {
++  local status_data
++  status_data=$(rollback_load_status)
++
++  echo "=== Auto-Update Status ==="
++  echo "Status: $UPDATE_STATUS"
++  echo "Current Commit: ${CURRENT_COMMIT:0:8}"
++  echo "Remote Commit: ${REMOTE_COMMIT:0:8}"
++  echo "Consecutive Failures: $CONSECUTIVE_FAILURES"
++  echo ""
++  echo "=== Configuration ==="
++  echo "Enabled: $AUTOUPDATE_ENABLED"
++  echo "Branch: $AUTOUPDATE_BRANCH"
++  echo "Git URL: ${AUTOUPDATE_GIT_URL:+[configured]}"
++  echo "Health URL: $AUTOUPDATE_HEALTH_URL"
++  echo ""
++  echo "=== Status File ==="
++  echo "$status_data" | head -20
++}
++
++show_help() {
++  cat << 'EOF'
++Auto-Update Entrypoint
++
++Usage: entrypoint.sh [command]
++
++Commands:
++  (none)     Run auto-update and start service
++  check      Check for updates only
++  manual     Trigger manual update
++  rollback   Rollback to previous build
++  status     Show current status
++  help       Show this help message
++
++Environment Variables:
++  AUTOUPDATE_ENABLED       Enable/disable auto-update (default: true)
++  AUTOUPDATE_BRANCH        Git branch to track (default: master)
++  AUTOUPDATE_GIT_URL       Git repository URL
++  AUTOUPDATE_GIT_TOKEN     HTTPS authentication token
++  AUTOUPDATE_SSH_KEY_PATH  SSH key path (default: /root/.ssh/id_rsa)
++  AUTOUPDATE_MAX_RETRIES   Maximum retry attempts (default: 3)
++  AUTOUPDATE_HEALTH_URL    Health check URL (default: http://localhost:8080/health)
++  LOG_LEVEL                Log level: debug, info, warn, error (default: info)
++
++Signals:
++  SIGUSR1    Trigger manual update check
++  SIGTERM    Graceful shutdown
++
++Examples:
++  # Start with auto-update
++  AUTOUPDATE_GIT_URL=https://github.com/org/repo.git entrypoint.sh
++
++  # Check for updates only
++  entrypoint.sh check
++
++  # Show status
++  entrypoint.sh status
++EOF
++}
++
++# ============================================================================
++# MAIN ENTRYPOINT
++# ============================================================================
++
++main() {
++  local command="${1:-}"
++
++  # Setup signal handlers
++  setup_signals
++
++  case "$command" in
++    check)
++      check_for_updates
++      exit $?
++      ;;
++    manual)
++      trigger_manual_update
++      exit $?
++      ;;
++    rollback)
++      rollback_restore_backup
++      exit $?
++      ;;
++    status)
++      show_status
++      exit 0
++      ;;
++    help|--help|-h)
++      show_help
++      exit 0
++      ;;
++    "")
++      # Default: run main update flow
++      main_update_flow
++      exit $?
++      ;;
++    *)
++      log_error "UPDATE_INIT" "Unknown command: $command"
++      show_help
++      exit 1
++      ;;
++  esac
++}
++
++# Run main function
++main "$@"
+\ No newline at end of file

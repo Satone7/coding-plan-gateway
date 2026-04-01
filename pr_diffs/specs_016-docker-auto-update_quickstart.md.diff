@@ -1,0 +1,240 @@
+diff --git a/specs/016-docker-auto-update/quickstart.md b/specs/016-docker-auto-update/quickstart.md
+new file mode 100644
+index 0000000..b8fd94e
+--- /dev/null
++++ b/specs/016-docker-auto-update/quickstart.md
+@@ -0,0 +1,234 @@
++# Quick Start: Docker Auto-Update
++
++**Version**: 1.0.0  
++**Date**: 2026-03-31
++
++## Overview
++
++This guide helps you quickly set up and use the Docker auto-update feature for the Coding Plan Gateway.
++
++## Prerequisites
++
++- Docker 20.10+
++- Git repository access (HTTPS token or SSH key)
++- Container registry access (if pulling from registry)
++
++## Quick Start (5 minutes)
++
++### 1. Configure Environment Variables
++
++Create a `.env` file:
++
++```bash
++# Enable auto-update
++AUTOUPDATE_ENABLED=true
++AUTOUPDATE_BRANCH=master
++AUTOUPDATE_GIT_URL=https://github.com/your-org/coding-plan-gateway.git
++
++# HTTPS Token authentication (recommended for CI/CD)
++AUTOUPDATE_GIT_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
++
++# OR SSH Key authentication (recommended for production)
++# Mount SSH key as volume: -v ~/.ssh/id_rsa:/root/.ssh/id_rsa:ro
++
++# Optional settings
++AUTOUPDATE_MAX_RETRIES=3
++AUTOUPDATE_BACKUP_ENABLED=true
++```
++
++### 2. Build Docker Image
++
++```bash
++# Build the image
++docker build -t coding-plan-gateway:autoupdate .
++
++# Tag for registry (optional)
++docker tag coding-plan-gateway:autoupdate registry.example.com/cpg:autoupdate
++```
++
++### 3. Run Container
++
++```bash
++# Run with auto-update enabled
++docker run -d \
++  --name cpg-gateway \
++  --env-file .env \
++  -p 8080:8080 \
++  -v $(pwd)/config.yaml:/app/config.yaml:ro \
++  coding-plan-gateway:autoupdate
++```
++
++### 4. Verify Auto-Update
++
++Check logs to see auto-update in action:
++
++```bash
++# View container logs
++docker logs -f cpg-gateway
++```
++
++Expected output:
++```
++[2026-03-31T10:00:00Z] INFO: Auto-update enabled
++[2026-03-31T10:00:01Z] INFO: Checking for updates on branch: master
++[2026-03-31T10:00:02Z] INFO: Current commit: abc123def456
++[2026-03-31T10:00:03Z] INFO: Remote commit: abc123def456
++[2026-03-31T10:00:03Z] INFO: No updates available, starting with current version
++[2026-03-31T10:00:04Z] INFO: Gateway service started on port 8080
++```
++
++## Configuration Reference
++
++### Environment Variables
++
++| Variable | Default | Required | Description |
++|----------|---------|----------|-------------|
++| AUTOUPDATE_ENABLED | `true` | No | Enable/disable auto-update |
++| AUTOUPDATE_BRANCH | `master` | No | Git branch to track |
++| AUTOUPDATE_GIT_URL | - | Yes* | Git repository URL |
++| AUTOUPDATE_GIT_TOKEN | - | Yes* | HTTPS token for auth |
++| AUTOUPDATE_SSH_KEY_PATH | `/root/.ssh/id_rsa` | No | SSH key path |
++| AUTOUPDATE_MAX_RETRIES | `3` | No | Max retry attempts |
++| AUTOUPDATE_BACKUP_ENABLED | `true` | No | Enable build backup |
++
++\* Either `AUTOUPDATE_GIT_URL` + `AUTOUPDATE_GIT_TOKEN` (HTTPS) OR SSH key volume mount required.
++
++## Advanced Usage
++
++### SSH Key Authentication
++
++For production environments, SSH key authentication is recommended:
++
++```bash
++# Generate SSH key (if not exists)
++ssh-keygen -t ed25519 -C "cpg-autoupdate" -f ~/.ssh/cpg_autoupdate
++
++# Add public key to Git repository deploy keys
++cat ~/.ssh/cpg_autoupdate.pub
++
++# Run container with SSH key mounted
++docker run -d \
++  --name cpg-gateway \
++  -e AUTOUPDATE_ENABLED=true \
++  -e AUTOUPDATE_GIT_URL=git@github.com:your-org/coding-plan-gateway.git \
++  -e AUTOUPDATE_SSH_KEY_PATH=/root/.ssh/id_rsa \
++  -v ~/.ssh/cpg_autoupdate:/root/.ssh/id_rsa:ro \
++  -p 8080:8080 \
++  coding-plan-gateway:autoupdate
++```
++
++### Docker Compose
++
++```yaml
++version: '3.8'
++
++services:
++  gateway:
++    image: coding-plan-gateway:autoupdate
++    environment:
++      - AUTOUPDATE_ENABLED=true
++      - AUTOUPDATE_BRANCH=master
++      - AUTOUPDATE_GIT_URL=${GIT_URL}
++      - AUTOUPDATE_GIT_TOKEN=${GIT_TOKEN}
++      - AUTOUPDATE_MAX_RETRIES=3
++    volumes:
++      - ./config.yaml:/app/config.yaml:ro
++      - gateway-data:/app/data
++    ports:
++      - "8080:8080"
++    restart: unless-stopped
++
++volumes:
++  gateway-data:
++```
++
++### Kubernetes
++
++```yaml
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: coding-plan-gateway
++spec:
++  replicas: 1
++  selector:
++    matchLabels:
++      app: cpg-gateway
++  template:
++    metadata:
++      labels:
++        app: cpg-gateway
++    spec:
++      containers:
++      - name: gateway
++        image: registry.example.com/coding-plan-gateway:autoupdate
++        env:
++        - name: AUTOUPDATE_ENABLED
++          value: "true"
++        - name: AUTOUPDATE_BRANCH
++          value: "master"
++        - name: AUTOUPDATE_GIT_URL
++          valueFrom:
++            secretKeyRef:
++              name: git-credentials
++              key: url
++        - name: AUTOUPDATE_GIT_TOKEN
++          valueFrom:
++            secretKeyRef:
++              name: git-credentials
++              key: token
++        ports:
++        - containerPort: 8080
++        volumeMounts:
++        - name: config
++          mountPath: /app/config.yaml
++          subPath: config.yaml
++      volumes:
++      - name: config
++        configMap:
++          name: gateway-config
++```
++
++## Troubleshooting
++
++### Common Issues
++
++1. **Authentication Failed**
++   - Check `AUTOUPDATE_GIT_TOKEN` is set correctly
++   - Verify token has read access to repository
++   - For SSH: ensure key is mounted at correct path
++
++2. **Network Timeout**
++   - Check container has internet access
++   - Verify Git host is reachable from container
++   - Increase timeout if needed (environment-specific)
++
++3. **Build Fails**
++   - Check `npm run build` works locally
++   - Verify all dependencies in package.json
++   - Check Node.js version compatibility
++
++4. **Service Doesn't Start**
++   - Check logs: `docker logs cpg-gateway`
++   - Verify config.yaml is mounted correctly
++   - Check port 8080 is not already in use
++
++### Debug Mode
++
++Enable debug logging:
++
++```bash
++docker run -d \
++  --name cpg-gateway \
++  -e AUTOUPDATE_ENABLED=true \
++  -e AUTOUPDATE_GIT_URL=... \
++  -e LOG_LEVEL=debug \
++  -p 8080:8080 \
++  coding-plan-gateway:autoupdate
++```
++
++## References
++
++- [Docker Auto-Update Design](../design.md)
++- [API Contract](./auto-update-api.yaml)
++- [Coding Plan Gateway Documentation](../../docs/)

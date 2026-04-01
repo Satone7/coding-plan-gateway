@@ -1,0 +1,142 @@
+diff --git a/specs/016-docker-auto-update/data-model.md b/specs/016-docker-auto-update/data-model.md
+new file mode 100644
+index 0000000..12a2da1
+--- /dev/null
++++ b/specs/016-docker-auto-update/data-model.md
+@@ -0,0 +1,136 @@
++# Data Model: Docker Auto-Update
++
++**Date**: 2026-03-31  
++**Status**: Draft
++
++## Entities
++
++### UpdateConfig
++
++Configuration entity for auto-update behavior.
++
++| Field | Type | Default | Description |
++|-------|------|---------|-------------|
++| enabled | boolean | true | Enable/disable auto-update |
++| branch | string | "master" | Git branch to track |
++| checkInterval | number | 0 | Periodic check interval in seconds (0=only at startup) |
++| gitUrl | string | - | Git repository URL |
++| gitToken | string | - | HTTPS token for authentication |
++| sshKeyPath | string | "/root/.ssh/id_rsa" | SSH key path |
++| maxRetries | number | 3 | Maximum retry attempts on failure |
++| backupEnabled | boolean | true | Enable backup of last known good build |
++
++### UpdateStatus
++
++Runtime status tracking for update operations.
++
++| Field | Type | Description |
++|-------|------|-------------|
++| lastCheckTime | ISO8601 | Timestamp of last update check |
++| lastSuccessfulUpdate | ISO8601 | Timestamp of last successful update |
++| currentCommit | string | Current deployed commit hash |
++| remoteCommit | string | Latest commit hash from remote |
++| updateInProgress | boolean | Whether an update is currently running |
++| consecutiveFailures | number | Count of consecutive update failures |
++| status | enum | Current status: idle, checking, updating, failed, success |
++
++### BuildArtifact
++
++Information about a compiled build.
++
++| Field | Type | Description |
++|-------|------|-------------|
++| commitHash | string | Git commit hash this build was created from |
++| buildTime | ISO8601 | Timestamp when build was created |
++| path | string | Path to build artifacts (e.g., /app/dist) |
++| size | number | Total size of build artifacts in bytes |
++| checksum | string | SHA256 checksum of build artifacts |
++| isValid | boolean | Whether this build passed validation |
++
++## State Transitions
++
++### Update Process State Machine
++
++```
++                    ┌─────────┐
++         ┌─────────│  IDLE   │◄──────────────────┐
++         │         └────┬────┘                   │
++         │              │ check triggered      │
++         │              ▼                      │
++         │         ┌──────────┐   no updates    │
++         │         │ CHECKING │─────────────────┘
++         │         └────┬─────┘
++         │              │ updates found
++         │              ▼
++         │         ┌──────────┐
++         └────────►│ UPDATING │
++         rollback  └────┬─────┘
++                      │ build success
++                      ▼
++              ┌──────────────┐
++              │    SUCCESS   │◄────────────────┐
++              └──────┬───────┘                 │
++                     │ start service          │
++                     ▼                        │ restart/update
++              ┌──────────────┐                │
++              │   RUNNING    │────────────────┘
++              └──────────────┘
++
++              ┌──────────────┐
++              │    FAILED    │
++              └──────────────┘
++```
++
++## Validation Rules
++
++### UpdateConfig Validation
++
++- `enabled` must be boolean
++- `branch` must be non-empty string, max 255 chars
++- `checkInterval` must be non-negative integer, 0 or >= 60 (minimum 1 minute)
++- `gitUrl` must be valid Git URL format (https:// or git@)
++- `sshKeyPath` must be absolute path if provided
++- `maxRetries` must be positive integer, max 10
++
++### UpdateStatus Validation
++
++- `lastCheckTime` and `lastSuccessfulUpdate` must be valid ISO8601 timestamps
++- `currentCommit` and `remoteCommit` must be valid 40-char hex SHA
++- `consecutiveFailures` must be non-negative integer
++- `status` must be one of: idle, checking, updating, failed, success
++
++### BuildArtifact Validation
++
++- `commitHash` must be valid 40-char hex SHA
++- `buildTime` must be valid ISO8601 timestamp
++- `path` must be absolute path within /app
++- `size` must be non-negative integer
++- `checksum` must be valid 64-char hex SHA256
++
++## Persistence
++
++### Update Status File
++
++```
++/data/update-status.json
++```
++
++Stores the current UpdateStatus entity. Written atomically using write-to-temp-then-rename pattern.
++
++### Build History
++
++```
++/data/builds/
++├── current -> /data/builds/build-20260331-104500-ab12cd34
++├── build-20260331-104500-ab12cd34/
++│   ├── dist/          # Compiled artifacts
++│   ├── meta.json      # BuildArtifact data
++│   └── manifest.txt   # File listing with checksums
++└── build-20260331-094200-ef56gh78/
++    └── ...
++```
++
++### Configuration
++
++All configuration via environment variables (no separate config file for auto-update). See UpdateConfig entity for complete list.
++

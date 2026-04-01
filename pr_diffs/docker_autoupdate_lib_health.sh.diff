@@ -1,0 +1,262 @@
+diff --git a/docker/autoupdate/lib/health.sh b/docker/autoupdate/lib/health.sh
+new file mode 100755
+index 0000000..5f9cfcd
+--- /dev/null
++++ b/docker/autoupdate/lib/health.sh
+@@ -0,0 +1,255 @@
++#!/usr/bin/env bash
++# health.sh - Health check library for auto-update
++# Version: 1.0.0
++# Usage: source this file and use health_* functions
++
++set -euo pipefail
++
++# Source logging library
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++# shellcheck source=./logging.sh
++source "${SCRIPT_DIR}/logging.sh"
++
++# Configuration
++declare -g AUTOUPDATE_HEALTH_URL="${AUTOUPDATE_HEALTH_URL:-http://localhost:8080/health}"
++declare -g AUTOUPDATE_HEALTH_TIMEOUT="${AUTOUPDATE_HEALTH_TIMEOUT:-30}"
++declare -g AUTOUPDATE_HEALTH_INTERVAL="${AUTOUPDATE_HEALTH_INTERVAL:-2}"
++declare -g AUTOUPDATE_HEALTH_RETRIES="${AUTOUPDATE_HEALTH_RETRIES:-15}"
++
++# Status codes
++declare -r HEALTH_STATUS_OK=0
++declare -r HEALTH_STATUS_UNHEALTHY=1
++declare -r HEALTH_STATUS_TIMEOUT=2
++declare -r HEALTH_STATUS_NO_RESPONSE=3
++declare -r HEALTH_STATUS_UNKNOWN=4
++
++# Check if curl or wget is available
++health_check_http_client() {
++  if command -v curl &> /dev/null; then
++    echo "curl"
++    return 0
++  elif command -v wget &> /dev/null; then
++    echo "wget"
++    return 0
++  else
++    log_error "UPDATE_ERROR" "Neither curl nor wget is available"
++    return 1
++  fi
++}
++
++# Make HTTP GET request using available tool
++http_get() {
++  local url="${1:-}"
++  local timeout="${2:-5}"
++
++  local client
++  if ! client=$(health_check_http_client); then
++    return 1
++  fi
++
++  if [[ "$client" == "curl" ]]; then
++    curl -s -o /dev/null -w "%{http_code}" --max-time "$timeout" "$url" 2>/dev/null || echo "000"
++  else
++    # wget
++    wget -q --timeout="$timeout" --tries=1 -O /dev/null "$url" 2>&1 && echo "200" || echo "000"
++  fi
++}
++
++# Check if service is healthy
++health_check() {
++  local url="${1:-$AUTOUPDATE_HEALTH_URL}"
++  local timeout="${2:-$AUTOUPDATE_HEALTH_TIMEOUT}"
++
++  log_debug "UPDATE_HEALTH_CHECK" "Checking service health" "{\"url\":\"$url\"}"
++
++  local http_code
++  http_code=$(http_get "$url" "$timeout")
++
++  if [[ "$http_code" == "200" ]]; then
++    return $HEALTH_STATUS_OK
++  elif [[ "$http_code" == "000" ]]; then
++    return $HEALTH_STATUS_NO_RESPONSE
++  else
++    return $HEALTH_STATUS_UNHEALTHY
++  fi
++}
++
++# Wait for service to become healthy with retries
++health_wait_for_healthy() {
++  local url="${1:-$AUTOUPDATE_HEALTH_URL}"
++  local max_retries="${2:-$AUTOUPDATE_HEALTH_RETRIES}"
++  local interval="${3:-$AUTOUPDATE_HEALTH_INTERVAL}"
++
++  log_info "UPDATE_HEALTH_WAIT" "Waiting for service to become healthy" \
++    "{\"maxRetries\":$max_retries,\"interval\":$interval,\"url\":\"$url\"}"
++
++  local retries=0
++
++  while [[ $retries -lt $max_retries ]]; do
++    if health_check "$url" "$interval"; then
++      local details
++      details=$(build_details "retries" "$retries" "url" "$url")
++      log_info "UPDATE_HEALTH_SUCCESS" "Service is healthy" "$details"
++      return $HEALTH_STATUS_OK
++    fi
++
++    retries=$((retries + 1))
++
++    if [[ $retries -lt $max_retries ]]; then
++      log_debug "UPDATE_HEALTH_WAIT" "Service not yet healthy, retrying" \
++        "{\"retry\":$retries,\"maxRetries\":$max_retries}"
++      sleep "$interval"
++    fi
++  done
++
++  log_error "UPDATE_HEALTH_TIMEOUT" "Service failed to become healthy" \
++    "{\"retries\":$max_retries,\"url\":\"$url\"}"
++  return $HEALTH_STATUS_TIMEOUT
++}
++
++# Check if service is ready (separate from health check - may include dependency checks)
++health_check_ready() {
++  local url="${1:-http://localhost:8080/ready}"
++  local timeout="${2:-5}"
++
++  log_debug "UPDATE_READY_CHECK" "Checking service readiness"
++
++  local http_code
++  http_code=$(http_get "$url" "$timeout")
++
++  if [[ "$http_code" == "200" ]]; then
++    return $HEALTH_STATUS_OK
++  else
++    return $HEALTH_STATUS_UNHEALTHY
++  fi
++}
++
++# Check if a specific port is accepting connections
++health_check_port() {
++  local port="${1:-8080}"
++  local host="${2:-localhost}"
++  local timeout="${3:-5}"
++
++  if command -v nc &> /dev/null; then
++    nc -z -w "$timeout" "$host" "$port" 2>/dev/null
++    return $?
++  elif command -v bash &> /dev/null; then
++    timeout "$timeout" bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null
++    return $?
++  else
++    log_warn "UPDATE_HEALTH_CHECK" "No tool available to check port"
++    return 1
++  fi
++}
++
++# Check if process is running
++health_check_process() {
++  local process_name="${1:-}"
++
++  if [[ -z "$process_name" ]]; then
++    return 1
++  fi
++
++  pgrep -f "$process_name" > /dev/null 2>&1
++  return $?
++}
++
++# Verify service can respond to basic request (customizable)
++health_verify_service() {
++  local url="${1:-$AUTOUPDATE_HEALTH_URL}"
++  local expected_code="${2:-200}"
++  local timeout="${3:-10}"
++
++  log_info "UPDATE_HEALTH_VERIFY" "Verifying service response"
++
++  local http_code
++  http_code=$(http_get "$url" "$timeout")
++
++  local details
++  details=$(build_details "expectedCode" "$expected_code" "actualCode" "$http_code")
++
++  if [[ "$http_code" == "$expected_code" ]]; then
++    log_info "UPDATE_HEALTH_VERIFY" "Service verification passed" "$details"
++    return $HEALTH_STATUS_OK
++  else
++    log_error "UPDATE_HEALTH_VERIFY" "Service verification failed" "$details"
++    return $HEALTH_STATUS_UNHEALTHY
++  fi
++}
++
++# Check disk space
++health_check_disk() {
++  local min_space_mb="${1:-100}"
++  local path="${2:-/}"
++
++  local available_kb
++  available_kb=$(df "$path" | tail -1 | awk '{print $4}')
++  local available_mb=$((available_kb / 1024))
++
++  local details
++  details=$(build_details "availableMb" "$available_mb" "requiredMb" "$min_space_mb")
++
++  if [[ "$available_mb" -ge "$min_space_mb" ]]; then
++    log_debug "UPDATE_HEALTH_DISK" "Disk space sufficient" "$details"
++    return $HEALTH_STATUS_OK
++  else
++    log_error "UPDATE_HEALTH_DISK" "Insufficient disk space" "$details"
++    return $HEALTH_STATUS_UNHEALTHY
++  fi
++}
++
++# Check memory availability
++health_check_memory() {
++  local min_mem_mb="${1:-100}"
++
++  local available_kb
++  if [[ -f /proc/meminfo ]]; then
++    available_kb=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
++  else
++    # Fallback for systems without /proc
++    log_warn "UPDATE_HEALTH_MEMORY" "Cannot determine memory on this system"
++    return $HEALTH_STATUS_OK
++  fi
++
++  local available_mb=$((available_kb / 1024))
++
++  local details
++  details=$(build_details "availableMb" "$available_mb" "requiredMb" "$min_space_mb")
++
++  if [[ "$available_mb" -ge "$min_mem_mb" ]]; then
++    log_debug "UPDATE_HEALTH_MEMORY" "Memory sufficient" "$details"
++    return $HEALTH_STATUS_OK
++  else
++    log_error "UPDATE_HEALTH_MEMORY" "Insufficient memory" "$details"
++    return $HEALTH_STATUS_UNHEALTHY
++  fi
++}
++
++# Full pre-update health check
++health_pre_update_check() {
++  log_info "UPDATE_HEALTH_PRE" "Running pre-update health checks"
++
++  local failed=0
++
++  if ! health_check_disk 500 /app; then
++    failed=1
++  fi
++
++  if ! health_check_memory 256; then
++    failed=1
++  fi
++
++  if [[ $failed -eq 0 ]]; then
++    log_info "UPDATE_HEALTH_PRE" "Pre-update health checks passed"
++    return $HEALTH_STATUS_OK
++  else
++    log_error "UPDATE_HEALTH_PRE" "Pre-update health checks failed"
++    return $HEALTH_STATUS_UNHEALTHY
++  fi
++}
++
++# Export functions
++export -f health_check_http_client http_get health_check health_wait_for_healthy
++export -f health_check_ready health_check_port health_check_process
++export -f health_verify_service health_check_disk health_check_memory
++export -f health_pre_update_check
+\ No newline at end of file

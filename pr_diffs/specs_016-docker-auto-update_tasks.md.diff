@@ -1,0 +1,99 @@
+diff --git a/specs/016-docker-auto-update/tasks.md b/specs/016-docker-auto-update/tasks.md
+index f73ebc2..2087e76 100644
+--- a/specs/016-docker-auto-update/tasks.md
++++ b/specs/016-docker-auto-update/tasks.md
+@@ -60,8 +60,8 @@ Phase 6: Polish
+ 
+ ### Tasks
+ 
+-- [ ] T001 Create directory structure in docker/autoupdate/ with lib/ subdirectory per project structure
+-- [ ] T002 Create shared logging library docker/autoupdate/lib/logging.sh with structured JSON output
++- [X] T001 Create directory structure in docker/autoupdate/ with lib/ subdirectory per project structure
++- [X] T002 Create shared logging library docker/autoupdate/lib/logging.sh with structured JSON output
+ 
+ ---
+ 
+@@ -71,10 +71,10 @@ Phase 6: Polish
+ 
+ ### Tasks
+ 
+-- [ ] T003 Create git operations library docker/autoupdate/lib/git.sh supporting HTTPS token and SSH key auth
+-- [ ] T004 Create build automation library docker/autoupdate/lib/build.sh for npm ci and npm run build
+-- [ ] T005 Create health check library docker/autoupdate/lib/health.sh for service readiness verification
+-- [ ] T006 Create backup/rollback library docker/autoupdate/lib/rollback.sh for atomic build swaps
++- [X] T003 Create git operations library docker/autoupdate/lib/git.sh supporting HTTPS token and SSH key auth
++- [X] T004 Create build automation library docker/autoupdate/lib/build.sh for npm ci and npm run build
++- [X] T005 Create health check library docker/autoupdate/lib/health.sh for service readiness verification
++- [X] T006 Create backup/rollback library docker/autoupdate/lib/rollback.sh for atomic build swaps
+ 
+ ---
+ 
+@@ -89,11 +89,11 @@ Phase 6: Polish
+ 
+ ### Tasks
+ 
+-- [ ] T007 [US1] Create main entrypoint script docker/autoupdate/entrypoint.sh that orchestrates update flow
+-- [ ] T008 [US1] Implement update check flow in entrypoint comparing local and remote commits
+-- [ ] T009 [US1] Implement build and deploy flow triggering npm build and atomic swap on success
+-- [ ] T010 [US1] Implement error handling and rollback catching failures and restoring backup
+-- [ ] T011 [US1] Create extended Dockerfile docker/autoupdate/Dockerfile.autoupdate based on existing production Dockerfile
++- [X] T007 [US1] Create main entrypoint script docker/autoupdate/entrypoint.sh that orchestrates update flow
++- [X] T008 [US1] Implement update check flow in entrypoint comparing local and remote commits
++- [X] T009 [US1] Implement build and deploy flow triggering npm build and atomic swap on success
++- [X] T010 [US1] Implement error handling and rollback catching failures and restoring backup
++- [X] T011 [US1] Create extended Dockerfile docker/autoupdate/Dockerfile.autoupdate based on existing production Dockerfile
+ 
+ ---
+ 
+@@ -107,8 +107,8 @@ Phase 6: Polish
+ 
+ ### Tasks
+ 
+-- [ ] T012 [US2] Add signal handler for manual trigger in entrypoint.sh listening for SIGUSR1
+-- [ ] T013 [US2] Create manual check script scripts/autoupdate-check.sh for CLI-based manual trigger
++- [X] T012 [US2] Add signal handler for manual trigger in entrypoint.sh listening for SIGUSR1
++- [X] T013 [US2] Create manual check script scripts/autoupdate-check.sh for CLI-based manual trigger
+ 
+ ---
+ 
+@@ -123,8 +123,8 @@ Phase 6: Polish
+ 
+ ### Tasks
+ 
+-- [ ] T014 [US3] Implement health verification in health.sh verifying service responds before confirming update success
+-- [ ] T015 [US3] Add retry logic with exponential backoff in entrypoint.sh for transient failures like network timeouts
++- [X] T014 [US3] Implement health verification in health.sh verifying service responds before confirming update success
++- [X] T015 [US3] Add retry logic with exponential backoff in entrypoint.sh for transient failures like network timeouts
+ 
+ ---
+ 
+@@ -134,9 +134,9 @@ Phase 6: Polish
+ 
+ ### Tasks
+ 
+-- [ ] T016 Create comprehensive documentation in docker/autoupdate/README.md with architecture and troubleshooting
+-- [ ] T017 Create example docker-compose files docker/autoupdate/examples/docker-compose.{https,ssh}.yml
+-- [ ] T018 Final integration testing running full update cycle in test environment
++- [X] T016 Create comprehensive documentation in docker/autoupdate/README.md with architecture and troubleshooting
++- [X] T017 Create example docker-compose files docker/autoupdate/examples/docker-compose.{https,ssh}.yml
++- [X] T018 Final integration testing running full update cycle in test environment
+ 
+ ---
+ 
+
+From bceb5ca49b41b207e2aa96aa288de793d01f9b8a Mon Sep 17 00:00:00 2001
+From: pren <satone7@foxmail.com>
+Date: Wed, 1 Apr 2026 13:25:18 +0800
+Subject: [PATCH 7/7] docs: add docker auto-update documentation to README
+
+Add comprehensive documentation section covering:
+- Quick start with example docker-compose files
+- Configuration options and environment variables
+- Manual update trigger commands
+- Testing instructions
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+---
+ README.md | 52 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 52 insertions(+)
+

@@ -1,0 +1,112 @@
+diff --git a/docker/autoupdate/examples/docker-compose.https.yml b/docker/autoupdate/examples/docker-compose.https.yml
+new file mode 100644
+index 0000000..7c51d98
+--- /dev/null
++++ b/docker/autoupdate/examples/docker-compose.https.yml
+@@ -0,0 +1,105 @@
++# Docker Compose: HTTPS Token Authentication
++# Usage: docker-compose -f docker-compose.https.yml up -d
++#
++# This configuration uses HTTPS with a personal access token for authentication.
++# Recommended for CI/CD environments and simple deployments.
++
++version: '3.8'
++
++services:
++  gateway:
++    build:
++      context: ../../..
++      dockerfile: docker/autoupdate/Dockerfile.autoupdate
++    image: coding-plan-gateway:autoupdate
++    container_name: cpg-gateway-https
++
++    environment:
++      # Auto-update configuration
++      - AUTOUPDATE_ENABLED=true
++      - AUTOUPDATE_BRANCH=master
++      - AUTOUPDATE_GIT_URL=${AUTOUPDATE_GIT_URL:?Error: AUTOUPDATE_GIT_URL not set}
++      - AUTOUPDATE_GIT_TOKEN=${AUTOUPDATE_GIT_TOKEN:?Error: AUTOUPDATE_GIT_TOKEN not set}
++      - AUTOUPDATE_MAX_RETRIES=3
++      - AUTOUPDATE_BACKUP_ENABLED=true
++
++      # Health check configuration
++      - AUTOUPDATE_HEALTH_URL=http://localhost:8080/health
++      - AUTOUPDATE_HEALTH_TIMEOUT=30
++      - AUTOUPDATE_HEALTH_RETRIES=15
++
++      # Logging
++      - LOG_LEVEL=info
++
++      # Application configuration
++      - NODE_ENV=production
++      - PORT=8080
++
++    volumes:
++      # Configuration file (read-only)
++      - ./config.yaml:/app/config.yaml:ro
++
++      # Persistent data for build metadata and status
++      - gateway-data:/data
++
++    ports:
++      - "8080:8080"
++
++    healthcheck:
++      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
++      interval: 30s
++      timeout: 5s
++      start_period: 10s
++      retries: 3
++
++    restart: unless-stopped
++
++    # Resource limits (adjust based on your environment)
++    deploy:
++      resources:
++        limits:
++          cpus: '1.0'
++          memory: 512M
++        reservations:
++          cpus: '0.25'
++          memory: 128M
++
++volumes:
++  gateway-data:
++    driver: local
++
++# ============================================================================
++# Setup Instructions:
++# ============================================================================
++#
++# 1. Create a .env file with your configuration:
++#
++#    AUTOUPDATE_GIT_URL=https://github.com/your-org/coding-plan-gateway.git
++#    AUTOUPDATE_GIT_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
++#
++# 2. Create a config.yaml file:
++#
++#    plans:
++#      - id: plan-1
++#        name: My Plan
++#        baseUrl: https://api.example.com
++#        apiKey: encrypted-api-key-here
++#        models: [model-1, model-2]
++#        quota:
++#          limit: 1000
++#          used: 0
++#          period: daily
++#
++# 3. Start the service:
++#
++#    docker-compose -f docker-compose.https.yml up -d
++#
++# 4. View logs:
++#
++#    docker-compose -f docker-compose.https.yml logs -f
++#
++# 5. Trigger manual update:
++#
++#    docker-compose -f docker-compose.https.yml kill -s SIGUSR1 gateway
++#
++# ============================================================================
+\ No newline at end of file

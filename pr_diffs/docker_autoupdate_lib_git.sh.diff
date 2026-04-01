@@ -1,0 +1,283 @@
+diff --git a/docker/autoupdate/lib/git.sh b/docker/autoupdate/lib/git.sh
+new file mode 100755
+index 0000000..f4acfa6
+--- /dev/null
++++ b/docker/autoupdate/lib/git.sh
+@@ -0,0 +1,276 @@
++#!/usr/bin/env bash
++# git.sh - Git operations library for auto-update
++# Version: 1.0.0
++# Usage: source this file and use git_* functions
++
++set -euo pipefail
++
++# Source logging library
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++# shellcheck source=./logging.sh
++source "${SCRIPT_DIR}/logging.sh"
++
++# Configuration with defaults
++declare -g AUTOUPDATE_GIT_URL="${AUTOUPDATE_GIT_URL:-}"
++declare -g AUTOUPDATE_BRANCH="${AUTOUPDATE_BRANCH:-master}"
++declare -g AUTOUPDATE_GIT_TOKEN="${AUTOUPDATE_GIT_TOKEN:-}"
++declare -g AUTOUPDATE_SSH_KEY_PATH="${AUTOUPDATE_SSH_KEY_PATH:-/root/.ssh/id_rsa}"
++declare -g AUTOUPDATE_GIT_TIMEOUT="${AUTOUPDATE_GIT_TIMEOUT:-30}"
++
++# Status codes
++declare -r GIT_STATUS_OK=0
++declare -r GIT_STATUS_AUTH_FAILED=1
++declare -r GIT_STATUS_NETWORK_ERROR=2
++declare -r GIT_STATUS_TIMEOUT=3
++declare -r GIT_STATUS_INVALID_URL=4
++declare -r GIT_STATUS_NO_UPDATE=5
++declare -r GIT_STATUS_UPDATE_AVAILABLE=6
++
++# Verify git is installed
++git_check_installed() {
++  if ! command -v git &> /dev/null; then
++    log_error "UPDATE_ERROR" "Git is not installed" "{\"error\":\"git_not_found\"}"
++    return 1
++  fi
++  return 0
++}
++
++# Set up SSH authentication
++git_setup_ssh() {
++  local ssh_key_path="${1:-$AUTOUPDATE_SSH_KEY_PATH}"
++
++  if [[ -f "$ssh_key_path" ]]; then
++    # Set proper permissions on SSH key
++    chmod 600 "$ssh_key_path"
++
++    # Configure SSH to use the key
++    export GIT_SSH_COMMAND="ssh -i $ssh_key_path -o StrictHostKeyChecking=accept-new"
++
++    local details
++    details=$(build_details "sshKeyPath" "$ssh_key_path")
++    log_info "UPDATE_SSH_SETUP" "SSH authentication configured" "$details"
++    return 0
++  else
++    log_warn "UPDATE_SSH_SETUP" "SSH key not found at $ssh_key_path"
++    return 1
++  fi
++}
++
++# Build authenticated Git URL
++git_build_url() {
++  local url="${1:-$AUTOUPDATE_GIT_URL}"
++  local token="${2:-$AUTOUPDATE_GIT_TOKEN}"
++
++  if [[ -z "$url" ]]; then
++    log_error "UPDATE_ERROR" "Git URL not configured" "{\"error\":\"missing_git_url\"}"
++    return 1
++  fi
++
++  # If HTTPS URL and token provided, embed token in URL
++  if [[ "$url" =~ ^https:// ]] && [[ -n "$token" ]]; then
++    # Strip any existing credentials from URL
++    local clean_url
++    clean_url=$(echo "$url" | sed -E 's|https://[^@]+@|https://|')
++
++    # Add token to URL
++    local domain
++    domain=$(echo "$clean_url" | sed -E 's|https://([^/]+)/.*|\1|')
++    local path
++    path=$(echo "$clean_url" | sed -E 's|https://[^/]+(/.*)|\1|')
++
++    echo "https://oauth2:${token}@${domain}${path}"
++    return 0
++  fi
++
++  # Return URL as-is for SSH or HTTPS without token
++  echo "$url"
++  return 0
++}
++
++# Get remote HEAD commit hash without full clone
++git_get_remote_commit() {
++  local branch="${1:-$AUTOUPDATE_BRANCH}"
++  local url="${2:-$AUTOUPDATE_GIT_URL}"
++
++  if [[ -z "$url" ]]; then
++    log_error "UPDATE_ERROR" "Git URL not configured" "{\"error\":\"missing_git_url\"}"
++    return $GIT_STATUS_INVALID_URL
++  fi
++
++  # Build authenticated URL
++  local auth_url
++  if ! auth_url=$(git_build_url "$url" "$AUTOUPDATE_GIT_TOKEN"); then
++    return $GIT_STATUS_INVALID_URL
++  fi
++
++  log_info "UPDATE_CHECK_START" "Checking remote commit" "{\"branch\":\"$branch\"}"
++
++  # Attempt to get remote HEAD with timeout
++  local remote_commit
++  local exit_code=0
++
++  set +e
++  remote_commit=$(timeout "$AUTOUPDATE_GIT_TIMEOUT" git ls-remote --heads "$auth_url" "$branch" 2>/dev/null | cut -f1)
++  exit_code=$?
++  set -e
++
++  if [[ $exit_code -eq 124 ]]; then
++    log_error "UPDATE_ERROR" "Git ls-remote timed out" "{\"timeout\":$AUTOUPDATE_GIT_TIMEOUT}"
++    return $GIT_STATUS_TIMEOUT
++  elif [[ $exit_code -ne 0 ]] || [[ -z "$remote_commit" ]]; then
++    log_error "UPDATE_ERROR" "Failed to get remote commit" "{\"exitCode\":$exit_code}"
++    return $GIT_STATUS_NETWORK_ERROR
++  fi
++
++  # Validate commit hash format (40 character hex)
++  if [[ ! "$remote_commit" =~ ^[a-f0-9]{40}$ ]]; then
++    log_error "UPDATE_ERROR" "Invalid commit hash format" "{\"commit\":\"${remote_commit:0:8}...\"}"
++    return $GIT_STATUS_NETWORK_ERROR
++  fi
++
++  echo "$remote_commit"
++  return $GIT_STATUS_OK
++}
++
++# Get current local commit hash
++git_get_local_commit() {
++  local work_dir="${1:-/app}"
++
++  if [[ ! -d "$work_dir/.git" ]]; then
++    log_warn "UPDATE_CHECK" "No local git repository found" "{\"path\":\"$work_dir\"}"
++    echo ""
++    return 1
++  fi
++
++  cd "$work_dir" || return 1
++
++  local local_commit
++  local_commit=$(git rev-parse HEAD 2>/dev/null || echo "")
++
++  echo "$local_commit"
++  return 0
++}
++
++# Compare local and remote commits
++git_check_updates() {
++  local branch="${1:-$AUTOUPDATE_BRANCH}"
++  local work_dir="${2:-/app}"
++
++  log_info "UPDATE_CHECK_START" "Starting update check" "{\"branch\":\"$branch\"}"
++
++  # Get remote commit
++  local remote_commit
++  remote_commit=$(git_get_remote_commit "$branch")
++  local remote_status=$?
++
++  if [[ $remote_status -ne $GIT_STATUS_OK ]]; then
++    return $remote_status
++  fi
++
++  # Get local commit
++  local local_commit
++  local_commit=$(git_get_local_commit "$work_dir")
++
++  local details
++  details=$(build_details \
++    "localCommit" "${local_commit:0:8}" \
++    "remoteCommit" "${remote_commit:0:8}" \
++    "branch" "$branch")
++
++  log_info "UPDATE_CHECK_COMPLETE" "Update check complete" "$details"
++
++  if [[ "$local_commit" == "$remote_commit" ]]; then
++    log_info "UPDATE_CHECK_COMPLETE" "No updates available" "$details"
++    return $GIT_STATUS_NO_UPDATE
++  else
++    log_info "UPDATE_CHECK_COMPLETE" "Updates available" "$details"
++    return $GIT_STATUS_UPDATE_AVAILABLE
++  fi
++}
++
++# Fetch latest code from remote
++git_fetch_updates() {
++  local branch="${1:-$AUTOUPDATE_BRANCH}"
++  local work_dir="${2:-/app}"
++
++  log_info "UPDATE_FETCH_START" "Fetching updates" "{\"branch\":\"$branch\"}"
++
++  cd "$work_dir" || return $GIT_STATUS_NETWORK_ERROR
++
++  # Build authenticated URL
++  local auth_url
++  if ! auth_url=$(git_build_url "$AUTOUPDATE_GIT_URL" "$AUTOUPDATE_GIT_TOKEN"); then
++    return $GIT_STATUS_INVALID_URL
++  fi
++
++  # Fetch from remote
++  local exit_code=0
++  set +e
++  timeout "$AUTOUPDATE_GIT_TIMEOUT" git fetch "$auth_url" "$branch" 2>/dev/null
++  exit_code=$?
++  set -e
++
++  if [[ $exit_code -eq 124 ]]; then
++    log_error "UPDATE_ERROR" "Git fetch timed out"
++    return $GIT_STATUS_TIMEOUT
++  elif [[ $exit_code -ne 0 ]]; then
++    log_error "UPDATE_ERROR" "Git fetch failed" "{\"exitCode\":$exit_code}"
++    return $GIT_STATUS_NETWORK_ERROR
++  fi
++
++  # Reset to fetched branch (hard reset to match remote)
++  set +e
++  git reset --hard "FETCH_HEAD" 2>/dev/null
++  exit_code=$?
++  set -e
++
++  if [[ $exit_code -ne 0 ]]; then
++    log_error "UPDATE_ERROR" "Git reset failed" "{\"exitCode\":$exit_code}"
++    return $GIT_STATUS_NETWORK_ERROR
++  fi
++
++  log_info "UPDATE_FETCH_COMPLETE" "Updates fetched successfully"
++  return $GIT_STATUS_OK
++}
++
++# Verify git configuration is valid
++git_verify_config() {
++  local url="${1:-$AUTOUPDATE_GIT_URL}"
++  local branch="${2:-$AUTOUPDATE_BRANCH}"
++
++  log_debug "UPDATE_CONFIG_VERIFY" "Verifying git configuration"
++
++  if [[ -z "$url" ]]; then
++    log_error "UPDATE_ERROR" "AUTOUPDATE_GIT_URL is not set"
++    return $GIT_STATUS_INVALID_URL
++  fi
++
++  if [[ -z "$branch" ]]; then
++    log_error "UPDATE_ERROR" "AUTOUPDATE_BRANCH is not set"
++    return 1
++  fi
++
++  # Check if SSH or HTTPS
++  if [[ "$url" =~ ^git@ ]]; then
++    # SSH URL - verify key exists
++    if [[ ! -f "$AUTOUPDATE_SSH_KEY_PATH" ]]; then
++      log_warn "UPDATE_CONFIG_VERIFY" "SSH URL but key not found" "{\"keyPath\":\"$AUTOUPDATE_SSH_KEY_PATH\"}"
++    fi
++  elif [[ "$url" =~ ^https:// ]]; then
++    # HTTPS URL - check for token if private repo
++    if [[ -z "$AUTOUPDATE_GIT_TOKEN" ]]; then
++      log_warn "UPDATE_CONFIG_VERIFY" "HTTPS URL but no token configured"
++    fi
++  else
++    log_error "UPDATE_ERROR" "Invalid Git URL format" "{\"url\":\"${url:0:20}...\"}"
++    return $GIT_STATUS_INVALID_URL
++  fi
++
++  log_info "UPDATE_CONFIG_VERIFY" "Git configuration valid"
++  return 0
++}
++
++# Export functions
++export -f git_check_installed git_setup_ssh git_build_url
++export -f git_get_remote_commit git_get_local_commit git_check_updates
++export -f git_fetch_updates git_verify_config
+\ No newline at end of file

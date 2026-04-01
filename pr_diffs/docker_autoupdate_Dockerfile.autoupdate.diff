@@ -1,0 +1,186 @@
+diff --git a/docker/autoupdate/Dockerfile.autoupdate b/docker/autoupdate/Dockerfile.autoupdate
+new file mode 100644
+index 0000000..8074ffd
+--- /dev/null
++++ b/docker/autoupdate/Dockerfile.autoupdate
+@@ -0,0 +1,179 @@
++# Docker Auto-Update Image
++# Extends the standard production image with auto-update capabilities
++# Version: 1.0.0
++
++# Build stage - same as standard
++FROM node:20-alpine AS builder
++
++WORKDIR /app
++
++# Copy package files
++COPY package*.json ./
++COPY tsconfig.json ./
++
++# Install dependencies (dev deps needed for build)
++RUN npm ci --only=production=false
++
++# Copy source code
++COPY src/ ./src/
++
++# Build TypeScript
++RUN npm run build
++
++# ============================================================================
++# Production stage with auto-update capabilities
++# ============================================================================
++FROM node:20-alpine AS production
++
++WORKDIR /app
++
++# Install required packages:
++# - dumb-init: For proper signal handling
++# - git: For pulling updates
++# - openssh-client: For SSH key authentication
++# - curl: For health checks
++# - bash: For entrypoint scripts
++# - coreutils: For timeout command
++RUN apk add --no-cache \
++    dumb-init \
++    git \
++    openssh-client \
++    curl \
++    bash \
++    coreutils \
++    && rm -rf /var/cache/apk/*
++
++# Configure git
++RUN git config --global advice.detachedHead false \
++    && git config --global init.defaultBranch master
++
++# Create non-root user for service runtime
++RUN addgroup -g 1001 -S nodejs && \
++    adduser -S gateway -u 1001 -G nodejs
++
++# Copy package files and install production dependencies
++COPY package*.json ./
++RUN npm ci --only=production && npm cache clean --force
++
++# Copy built files from builder
++COPY --from=builder /app/dist ./dist
++
++# Copy CLI executable
++COPY bin/cpg ./bin/cpg
++RUN chmod +x bin/cpg
++
++# Create directories with proper permissions
++RUN mkdir -p /app/config /app/data /root/.ssh && \
++    touch /app/config.yaml && \
++    chmod 644 /app/config.yaml && \
++    chown -R gateway:nodejs /app
++
++# ============================================================================
++# Auto-Update Components
++# ============================================================================
++
++# Copy auto-update scripts
++COPY docker/autoupdate/entrypoint.sh /app/entrypoint.sh
++COPY docker/autoupdate/lib/ /app/autoupdate/lib/
++
++# Make scripts executable
++RUN chmod +x /app/entrypoint.sh /app/autoupdate/lib/*.sh
++
++# Create SSH directory with proper permissions
++RUN mkdir -p /root/.ssh && \
++    chmod 700 /root/.ssh
++
++# Create known_hosts file
++RUN touch /root/.ssh/known_hosts && \
++    chmod 644 /root/.ssh/known_hosts
++
++# ============================================================================
++# Configuration
++# ============================================================================
++
++# Add CLI to PATH
++ENV PATH="/app/bin:${PATH}"
++
++# Auto-update configuration defaults
++ENV AUTOUPDATE_ENABLED=true
++ENV AUTOUPDATE_BRANCH=master
++ENV AUTOUPDATE_CHECK_INTERVAL=0
++ENV AUTOUPDATE_MAX_RETRIES=3
++ENV AUTOUPDATE_BACKUP_ENABLED=true
++ENV AUTOUPDATE_HEALTH_URL=http://localhost:8080/health
++ENV AUTOUPDATE_GIT_TIMEOUT=30
++ENV AUTOUPDATE_BUILD_TIMEOUT=300
++ENV AUTOUPDATE_HEALTH_TIMEOUT=30
++ENV AUTOUPDATE_HEALTH_INTERVAL=2
++ENV AUTOUPDATE_HEALTH_RETRIES=15
++ENV AUTOUPDATE_NODE_VERSION=20
++ENV AUTOUPDATE_BACKUP_DIR=/app/dist.backup
++ENV AUTOUPDATE_NEW_BUILD_DIR=/app/dist.new
++ENV AUTOUPDATE_DATA_DIR=/data
++ENV LOG_LEVEL=info
++
++# Application configuration
++ENV NODE_ENV=production
++ENV PORT=8080
++
++# ============================================================================
++# Metadata and Labels
++# ============================================================================
++
++LABEL \
++    org.opencontainers.image.title="Coding Plan Gateway (Auto-Update)" \
++    org.opencontainers.image.description="Load balancer for AI coding plans with automatic update capabilities" \
++    org.opencontainers.image.version="1.0.0" \
++    org.opencontainers.image.vendor="Coding Plan Gateway" \
++    auto-update.enabled="true" \
++    auto-update.branch="${AUTOUPDATE_BRANCH}" \
++    auto-update.version="1.0.0"
++
++# ============================================================================
++# Runtime Configuration
++# ============================================================================
++
++# Expose port
++EXPOSE 8080
++
++# Health check
++HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
++    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
++
++# Volume for persistent data and SSH keys
++VOLUME ["/data", "/root/.ssh"]
++
++# Use dumb-init for proper signal handling
++# Entrypoint is the auto-update orchestrator
++ENTRYPOINT ["dumb-init", "--"]
++CMD ["/app/entrypoint.sh"]
++
++# ============================================================================
++# Build Notes:
++# ============================================================================
++#
++# Build command:
++#   docker build -f docker/autoupdate/Dockerfile.autoupdate -t cpg:autoupdate .
++#
++# Run with auto-update:
++#   docker run -d \
++#     --name cpg-gateway \
++#     -e AUTOUPDATE_GIT_URL=https://github.com/org/repo.git \
++#     -e AUTOUPDATE_GIT_TOKEN=<token> \
++#     -e AUTOUPDATE_BRANCH=master \
++#     -p 8080:8080 \
++#     cpg:autoupdate
++#
++# Run with SSH authentication:
++#   docker run -d \
++#     --name cpg-gateway \
++#     -e AUTOUPDATE_GIT_URL=git@github.com:org/repo.git \
++#     -e AUTOUPDATE_SSH_KEY_PATH=/root/.ssh/id_rsa \
++#     -v ~/.ssh/id_rsa:/root/.ssh/id_rsa:ro \
++#     -p 8080:8080 \
++#     cpg:autoupdate
++#
++# Manual update trigger:
++#   docker kill --signal=SIGUSR1 cpg-gateway
++#
++# ============================================================================
+\ No newline at end of file

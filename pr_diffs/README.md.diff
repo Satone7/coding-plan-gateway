@@ -1,0 +1,63 @@
+diff --git a/README.md b/README.md
+index 3ce3a84..cb69714 100644
+--- a/README.md
++++ b/README.md
+@@ -211,6 +211,58 @@ docker-compose up -d
+ docker-compose --profile dev up gateway-dev
+ ```
+ 
++### Auto-Update Deployment
++
++The gateway supports automatic updates when running in Docker. When new commits are pushed to the repository, the container can automatically pull changes, rebuild, and restart with zero downtime.
++
++#### Quick Start
++
++```bash
++# Using HTTPS with GitHub token
++docker-compose -f docker/autoupdate/examples/docker-compose.https.yml up -d
++
++# Using SSH with deploy key
++docker-compose -f docker/autoupdate/examples/docker-compose.ssh.yml up -d
++```
++
++#### Features
++
++- **Automatic polling**: Checks for updates at configurable intervals
++- **Zero-downtime updates**: Atomic build swaps with health verification
++- **Manual trigger**: Update on-demand via `scripts/autoupdate-check.sh`
++- **Rollback support**: Automatic rollback on failed updates
++- **Dual auth support**: GitHub HTTPS token or SSH deploy key
++
++#### Configuration
++
++| Variable | Required | Default | Description |
++|----------|----------|---------|-------------|
++| `UPDATE_INTERVAL` | No | `300` | Check interval in seconds |
++| `GIT_REPO_URL` | Yes | - | Repository URL |
++| `GIT_AUTH_TOKEN` | HTTPS | - | GitHub personal access token |
++| `SSH_PRIVATE_KEY` | SSH | - | SSH deploy key (base64 encoded) |
++| `HEALTH_CHECK_URL` | No | `http://localhost:8080/health` | Health endpoint |
++| `MAX_RETRIES` | No | `3` | Retry attempts for transient failures |
++
++#### Manual Update Trigger
++
++```bash
++# Trigger update check from host
++scripts/autoupdate-check.sh <container_name>
++
++# Or send SIGUSR1 directly
++docker exec <container_name> pkill -SIGUSR1 entrypoint.sh
++```
++
++#### Testing
++
++```bash
++# Run integration tests
++scripts/test-autoupdate.sh
++```
++
++See [docker/autoupdate/README.md](docker/autoupdate/README.md) for detailed documentation.
++
+ ## Development
+ 
+ ### Scripts

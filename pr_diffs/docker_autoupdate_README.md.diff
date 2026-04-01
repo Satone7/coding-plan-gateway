@@ -1,0 +1,290 @@
+diff --git a/docker/autoupdate/README.md b/docker/autoupdate/README.md
+new file mode 100644
+index 0000000..5b39603
+--- /dev/null
++++ b/docker/autoupdate/README.md
+@@ -0,0 +1,283 @@
++# Docker Auto-Update
++
++Automatic update mechanism for Coding Plan Gateway Docker containers. Checks for new commits on startup, pulls updates, rebuilds, and restarts the service.
++
++## Overview
++
++The auto-update system uses a shell-based entrypoint script that orchestrates:
++
++1. **Update Detection**: Compares local and remote git commits
++2. **Code Fetch**: Pulls latest code using HTTPS or SSH authentication
++3. **Build Process**: Runs `npm ci` and `npm run build`
++4. **Atomic Swap**: Swaps builds atomically to minimize downtime
++5. **Health Verification**: Verifies service health before confirming success
++6. **Rollback**: Automatic rollback on build or startup failure
++
++## Architecture
++
++```
++┌─────────────────────────────────────────────────────────────┐
++│                    Docker Container                          │
++│                                                              │
++│  ┌─────────────────┐    ┌──────────────────┐                │
++│  │   entrypoint.sh │───►│  Update Check     │                │
++│  │   (orchestrator)│    │  - git ls-remote  │                │
++│  └────────┬────────┘    │  - compare commit │                │
++│           │             └─────────┬──────────┘                │
++│           │                       │                          │
++│           │           ┌───────────▼───────────┐              │
++│           │           │      No Update       │               │
++│           │           │  → Start existing    │               │
++│           │           └─────────┬───────────┘                │
++│           │                     │                            │
++│           │           ┌─────────▼──────────┐                 │
++│           │           │    Update Found    │                 │
++│           │           │  → git fetch       │                 │
++│           │           │  → npm ci          │                 │
++│           │           │  → npm run build   │                 │
++│           │           └─────────┬──────────┘                 │
++│           │                     │                            │
++│           │           ┌─────────▼──────────┐                 │
++│           └──────────►│   Build Success    │                 │
++│                       │  → Backup old      │                 │
++│                       │  → Swap builds     │                 │
++│                       │  → Start service   │                 │
++│                       └──────────────────┘                  │
++│                                                              │
++│  ┌──────────────────────────────────────────────────┐       │
++│  │  Error Handling (any stage)                      │       │
++│  │  → Log error details                             │       │
++│  │  → Restore backup if exists                      │       │
++│  │  → Start with last known good build              │       │
++│  │  → Retry with exponential backoff                │       │
++│  └──────────────────────────────────────────────────┘       │
++└──────────────────────────────────────────────────────────────┘
++```
++
++## Quick Start
++
++### 1. Build the Image
++
++```bash
++docker build -f docker/autoupdate/Dockerfile.autoupdate -t cpg:autoupdate .
++```
++
++### 2. Run with HTTPS Authentication
++
++```bash
++docker run -d \
++  --name cpg-gateway \
++  -e AUTOUPDATE_GIT_URL=https://github.com/your-org/coding-plan-gateway.git \
++  -e AUTOUPDATE_GIT_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx \
++  -e AUTOUPDATE_BRANCH=master \
++  -p 8080:8080 \
++  -v $(pwd)/config.yaml:/app/config.yaml:ro \
++  cpg:autoupdate
++```
++
++### 3. Run with SSH Authentication
++
++```bash
++docker run -d \
++  --name cpg-gateway \
++  -e AUTOUPDATE_GIT_URL=git@github.com:your-org/coding-plan-gateway.git \
++  -e AUTOUPDATE_SSH_KEY_PATH=/root/.ssh/id_rsa \
++  -v ~/.ssh/id_rsa:/root/.ssh/id_rsa:ro \
++  -p 8080:8080 \
++  -v $(pwd)/config.yaml:/app/config.yaml:ro \
++  cpg:autoupdate
++```
++
++## Configuration
++
++### Environment Variables
++
++| Variable | Default | Description |
++|----------|---------|-------------|
++| `AUTOUPDATE_ENABLED` | `true` | Enable/disable auto-update |
++| `AUTOUPDATE_BRANCH` | `master` | Git branch to track |
++| `AUTOUPDATE_GIT_URL` | - | Git repository URL (required) |
++| `AUTOUPDATE_GIT_TOKEN` | - | HTTPS authentication token |
++| `AUTOUPDATE_SSH_KEY_PATH` | `/root/.ssh/id_rsa` | SSH key path |
++| `AUTOUPDATE_MAX_RETRIES` | `3` | Maximum retry attempts |
++| `AUTOUPDATE_BACKUP_ENABLED` | `true` | Enable build backup |
++| `AUTOUPDATE_HEALTH_URL` | `http://localhost:8080/health` | Health check URL |
++| `AUTOUPDATE_CHECK_INTERVAL` | `0` | Periodic check interval (seconds, 0=startup only) |
++| `LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
++
++### Authentication
++
++#### HTTPS with Token (Recommended for CI/CD)
++
++Set `AUTOUPDATE_GIT_TOKEN` to a personal access token or OAuth token:
++
++```bash
++# GitHub
++echo "ghp_xxxxxxxxxxxxxxxxxxxx"
++
++# GitLab
++echo "glpat-xxxxxxxxxxxxxxxxxxxx"
++```
++
++Token must have `repo` (GitHub) or `read_repository` (GitLab) scope.
++
++#### SSH Key (Recommended for Production)
++
++1. Generate an SSH key (if not exists):
++   ```bash
++   ssh-keygen -t ed25519 -C "cpg-autoupdate" -f ~/.ssh/cpg_autoupdate
++   ```
++
++2. Add public key to repository deploy keys:
++   ```bash
++   cat ~/.ssh/cpg_autoupdate.pub
++   # Copy output to GitHub/GitLab deploy keys
++   ```
++
++3. Mount key as volume:
++   ```bash
++   -v ~/.ssh/cpg_autoupdate:/root/.ssh/id_rsa:ro
++   ```
++
++## Manual Operations
++
++### Trigger Manual Update
++
++Send SIGUSR1 signal to trigger update check:
++
++```bash
++# Using Docker
++docker kill --signal=SIGUSR1 cpg-gateway
++
++# Using autoupdate-check script
++./scripts/autoupdate-check.sh cpg-gateway
++
++# Wait for completion with verbose output
++./scripts/autoupdate-check.sh -v -w -t 60 cpg-gateway
++```
++
++### Check Status
++
++```bash
++docker exec cpg-gateway /app/entrypoint.sh status
++```
++
++### Force Rollback
++
++```bash
++docker exec cpg-gateway /app/entrypoint.sh rollback
++```
++
++### View Logs
++
++```bash
++# Follow logs
++docker logs -f cpg-gateway
++
++# Recent update-related logs
++docker logs cpg-gateway 2>&1 | grep -E "(UPDATE_|SERVICE_)"
++```
++
++## Docker Compose Examples
++
++See [examples/](examples/) directory for complete examples:
++
++- `docker-compose.https.yml` - HTTPS token authentication
++- `docker-compose.ssh.yml` - SSH key authentication
++
++## Troubleshooting
++
++### Authentication Failed
++
++**Symptoms**: `UPDATE_ERROR` with authentication-related messages
++
++**Solutions**:
++1. Verify token/key has read access to repository
++2. Check token hasn't expired
++3. For SSH: ensure key is mounted at correct path
++4. For HTTPS: verify token format (should not include username)
++
++### Network Timeout
++
++**Symptoms**: `UPDATE_ERROR` with timeout messages
++
++**Solutions**:
++1. Check container has internet access
++2. Verify Git host is reachable: `docker exec cpg-gateway curl -I https://github.com`
++3. Increase timeout: `AUTOUPDATE_GIT_TIMEOUT=60`
++4. Check for proxy requirements
++
++### Build Fails
++
++**Symptoms**: `UPDATE_BUILD_FAILED` or validation errors
++
++**Solutions**:
++1. Check build works locally: `npm run build`
++2. Verify all dependencies in `package.json`
++3. Check Node.js version compatibility
++4. Review build logs: `docker logs cpg-gateway 2>&1 | grep -A 10 "UPDATE_BUILD"`
++
++### Service Doesn't Start
++
++**Symptoms**: Container exits immediately or health check fails
++
++**Solutions**:
++1. Check logs: `docker logs cpg-gateway`
++2. Verify `config.yaml` is mounted correctly
++3. Check port availability: `docker exec cpg-gateway netstat -tlnp`
++4. Ensure rollback marker not stuck: `rm /data/rollback-needed`
++
++### Rollback Loop
++
++**Symptoms**: Container continuously rolls back
++
++**Solutions**:
++1. Check for rollback marker: `docker exec cpg-gateway ls -la /data/`
++2. Clear marker if stuck: `docker exec cpg-gateway rm -f /data/rollback-needed`
++3. Check if new build is actually broken
++4. Review health endpoint configuration
++
++## File Structure
++
++```
++docker/autoupdate/
++├── entrypoint.sh              # Main orchestration script
++├── lib/
++│   ├── logging.sh             # Structured JSON logging
++│   ├── git.sh                 # Git operations (HTTPS/SSH)
++│   ├── build.sh               # npm ci/build automation
++│   ├── health.sh              # Health check verification
++│   └── rollback.sh            # Backup and rollback logic
++├── Dockerfile.autoupdate      # Extended production image
++├── README.md                  # This file
++└── examples/
++    ├── docker-compose.https.yml
++    └── docker-compose.ssh.yml
++
++scripts/
++└── autoupdate-check.sh        # CLI trigger script
++```
++
++## Security Considerations
++
++1. **Never log tokens**: Tokens are sanitized before logging
++2. **SSH key permissions**: Keys are set to 0600 on mount
++3. **Build isolation**: Builds happen in temporary directory before swap
++4. **No secrets in images**: Use environment variables or mounts
++5. **Read-only mounts**: Config files mounted as read-only
++
++## Performance
++
++- **Startup (no update)**: < 30 seconds
++- **Full update cycle**: < 2 minutes
++- **Health check interval**: 2 seconds
++- **Rollback time**: < 10 seconds
++- **Disk usage**: Current build + 1 backup
++
++## Integration Testing
++
++See the E2E test specification for integration testing details.
++
++## License
++
++Same as the Coding Plan Gateway project.
+\ No newline at end of file
