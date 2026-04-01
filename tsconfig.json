@@ -20,6 +20,7 @@
     "baseUrl": ".",
     "ignoreDeprecations": "5.0",
     "jsx": "react-jsx",
+    "ignoreDeprecations": "5.0",
     "paths": {
       "@/*": ["src/*"]
     }
