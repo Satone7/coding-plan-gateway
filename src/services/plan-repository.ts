@@ -476,7 +476,7 @@ export class FilePlanRepository implements IPlanRepository {
       timeout: plan.timeout,
       status: persistableStatus,
       weight: plan.weight,
-      enable: plan.enable,
+      enable: plan.enable ?? true,
     };
   }
 
