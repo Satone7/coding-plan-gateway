@@ -213,7 +213,7 @@ export function createAnthropicHandlers(
       });
 
       startStage(request, 'routing');
-      const routingResult = await router.route(model);
+      const routingResult = await router.route(model, requestId);
       endStage(request, 'routing');
       if (!routingResult.selectedPlan) {
         throw createGatewayError('MODEL_NOT_FOUND', `No coding plan supports model '${model}'`, { model, requestId });

@@ -30,6 +30,7 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, columns
         {activeRequests.length > 0 ? (
           activeRequests.map(req => {
             const duration = Math.floor((now - req.startTime) / 1000);
+            const displayUrl = req.url.split('?')[0];
             return (
               <Box key={req.id} flexDirection="row">
                 <Box width={5}><Text color="green">{duration}s</Text></Box>
@@ -42,7 +43,7 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, columns
                 <Text color="gray">│ </Text>
                 <Box width={6}><Text color="magenta">{req.score !== undefined ? req.score.toFixed(2) : '-'}</Text></Box>
                 <Text color="gray">│ </Text>
-                <Box flexGrow={1}><Text wrap="truncate-end">`{req.url}`</Text></Box>
+                <Box flexGrow={1}><Text wrap="truncate-end">{displayUrl}</Text></Box>
               </Box>
             );
           })
