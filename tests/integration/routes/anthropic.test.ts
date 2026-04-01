@@ -496,4 +496,68 @@ describe('Anthropic Routes', () => {
       expect(response.statusCode).not.toBe(400);
     });
   });
+
+  describe('POST /v1/messages/count_tokens', () => {
+    it('should return 400 for invalid request body (missing model)', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages/count_tokens',
+        payload: {
+          messages: [{ role: 'user', content: 'Hello' }],
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('should return 400 for missing messages', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages/count_tokens',
+        payload: {
+          model: 'claude-sonnet-4-6',
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('should return 404 when model is not supported', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages/count_tokens',
+        payload: {
+          model: 'unsupported-model',
+          messages: [{ role: 'user', content: 'Hello' }],
+        },
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({
+        error: {
+          code: 'MODEL_NOT_FOUND',
+        },
+      });
+    });
+
+    it('should accept valid count_tokens request without max_tokens', async () => {
+      await repository.save(
+        createMockPlanInput({
+          models: ['claude-sonnet-4-6'],
+        })
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages/count_tokens',
+        payload: {
+          model: 'claude-sonnet-4-6',
+          messages: [{ role: 'user', content: 'Hello, Claude!' }],
+        },
+      });
+
+      // Will fail because there's no real upstream, but shows proper routing
+      expect([502, 500]).toContain(response.statusCode);
+    });
+  });
 });

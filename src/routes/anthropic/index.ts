@@ -44,6 +44,9 @@ export async function registerAnthropicRoutes(
       // POST /v1/messages - Create message
       fastify.post('/messages', handlers.createMessage);
 
+      // POST /v1/messages/count_tokens - Count tokens
+      fastify.post('/messages/count_tokens', handlers.countTokens);
+
       done();
     },
     { prefix }

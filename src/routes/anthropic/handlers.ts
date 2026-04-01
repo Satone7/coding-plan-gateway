@@ -25,6 +25,8 @@ import {
 import type {
   AnthropicMessageRequest,
   AnthropicMessageResponse,
+  AnthropicCountTokensRequest,
+  AnthropicCountTokensResponse,
 } from '@/types/anthropic';
 import type { CodingPlan } from '@/types';
 
@@ -58,6 +60,19 @@ const messageRequestSchema = z.object({
 }).passthrough();
 
 /**
+ * Anthropic count tokens request schema.
+ * Uses passthrough to preserve unknown fields.
+ */
+const countTokensRequestSchema = z.object({
+  model: z.string().min(1),
+  messages: z.array(z.any()).min(1),
+  system: z.union([
+    z.string(),
+    z.array(systemBlockSchema),
+  ]).optional(),
+}).passthrough();
+
+/**
  * Anthropic handlers interface.
  */
 interface AnthropicHandlers {
@@ -65,6 +80,10 @@ interface AnthropicHandlers {
     request: FastifyRequest<{ Body: AnthropicMessageRequest }>,
     reply: FastifyReply
   ) => Promise<AnthropicMessageResponse | void>;
+  countTokens: (
+    request: FastifyRequest<{ Body: AnthropicCountTokensRequest }>,
+    reply: FastifyReply
+  ) => Promise<AnthropicCountTokensResponse | void>;
   getRouter: () => RequestRouter;
 }
 
@@ -91,6 +110,20 @@ function validateAndParse(request: FastifyRequest<{ Body: AnthropicMessageReques
   // Cast to AnthropicMessageRequest since Zod's inferred type differs from the interface
   // The validation ensures the structure is correct
   return validation.data as AnthropicMessageRequest;
+}
+
+/**
+ * Validate count tokens request and return parsed data.
+ */
+function validateAndParseCountTokens(request: FastifyRequest<{ Body: AnthropicCountTokensRequest }>): AnthropicCountTokensRequest {
+  startStage(request, 'validation');
+  const validation = countTokensRequestSchema.safeParse(request.body);
+  if (!validation.success) {
+    endStage(request, 'validation');
+    throw validation.error;
+  }
+  endStage(request, 'validation');
+  return validation.data as AnthropicCountTokensRequest;
 }
 
 /**
@@ -349,6 +382,96 @@ export function createAnthropicHandlers(
         throw createGatewayError(
           'UPSTREAM_ERROR',
           'All available plans failed to process the request',
+          { requestId, attemptedPlans: [plan.id, ...routingResult.alternativePlans.map(p => p.id)] }
+        );
+      }
+    },
+
+    async countTokens(
+      request: FastifyRequest<{ Body: AnthropicCountTokensRequest }>,
+      reply: FastifyReply
+    ): Promise<AnthropicCountTokensResponse | void> {
+      const requestId = request.id;
+      const body = validateAndParseCountTokens(request);
+      const model = body.model;
+
+      logger.info('Anthropic count tokens request', {
+        requestId, model, messageCount: body.messages.length
+      });
+
+      startStage(request, 'routing');
+      const routingResult = await router.route(model, requestId);
+      endStage(request, 'routing');
+      if (!routingResult.selectedPlan) {
+        throw createGatewayError('MODEL_NOT_FOUND', `No coding plan supports model '${model}'`, { model, requestId });
+      }
+
+      const plan = routingResult.selectedPlan;
+
+      // Note: We don't consume quota for count_tokens as it's generally free/cheap and doesn't generate tokens
+      
+      const apiKey = await fetchApiKey(repository, plan.id, request);
+
+      logger.debug('Selected plan for count tokens request', {
+        requestId, planId: plan.id, planName: plan.name,
+      });
+
+      if (routingResult.canonicalName) {
+        body.model = routingResult.canonicalName;
+      }
+
+      startStage(request, 'upstreamRequest');
+      try {
+        const response = await proxy.forwardAnthropicCountTokensRequest(body, {
+          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+        });
+        endStage(request, 'upstreamRequest');
+        // Do not mark circuit breaker success/failure for count_tokens to avoid skewing stats
+        return response.data as AnthropicCountTokensResponse;
+      } catch (error) {
+        endStage(request, 'upstreamRequest');
+        logger.warn('Count tokens request failed', {
+          requestId,
+          planId: plan.id,
+          planName: plan.name,
+          model,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        // Try alternatives
+        for (const altPlan of routingResult.alternativePlans) {
+          if (!router.getCircuitBreaker().canExecute(altPlan.id)) {
+            continue;
+          }
+
+          logger.info('Attempting failover for count tokens', { requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id });
+          const altApiKey = await fetchApiKey(services.repository, altPlan.id, request);
+          if (!altApiKey) continue;
+
+          if (routingResult.canonicalName) {
+            body.model = routingResult.canonicalName;
+          }
+
+          startStage(request, 'upstreamRequest');
+          try {
+            const result = await proxy.forwardAnthropicCountTokensRequest(body, {
+              baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId
+            });
+            endStage(request, 'upstreamRequest');
+            return result.data as AnthropicCountTokensResponse;
+          } catch (altError) {
+            endStage(request, 'upstreamRequest');
+            logger.warn('Failover count tokens failed', {
+              requestId,
+              failoverPlanId: altPlan.id,
+              error: altError instanceof Error ? altError.message : String(altError),
+            });
+          }
+        }
+
+        throw createGatewayError(
+          'UPSTREAM_ERROR',
+          'All available plans failed to process the count tokens request',
           { requestId, attemptedPlans: [plan.id, ...routingResult.alternativePlans.map(p => p.id)] }
         );
       }
