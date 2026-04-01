@@ -33,19 +33,19 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 
-# Copy built files from builder
-COPY --from=builder /app/dist ./dist
-
-# Copy CLI executable
-COPY bin/cpg ./bin/cpg
-RUN chmod +x bin/cpg
-
 # Create data and config directories with proper permissions
 # Create placeholder config with read permission for all users (will be mounted over)
 RUN mkdir -p /app/config /app/data && \
     touch /app/config.yaml && \
     chmod 644 /app/config.yaml && \
-    chown -R gateway:nodejs /app
+    chown -R gateway:nodejs /app/config /app/data /app/config.yaml
+
+# Copy CLI executable
+COPY bin/cpg ./bin/cpg
+RUN chmod +x bin/cpg
+
+# Copy built files from builder
+COPY --from=builder /app/dist ./dist
 
 # Add CLI to PATH
 ENV PATH="/app/bin:${PATH}"
