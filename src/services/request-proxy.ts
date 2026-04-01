@@ -251,7 +251,10 @@ export class RequestProxy {
     const basePath = options.baseUrl.endsWith('/')
       ? options.baseUrl.slice(0, -1)
       : options.baseUrl;
-    const url = new URL(`${basePath}/v1/messages`);
+    
+    // Support both baseUrl with and without /v1
+    const urlPath = basePath.endsWith('/v1') ? '/messages' : '/v1/messages';
+    const url = new URL(`${basePath}${urlPath}`);
     const startTime = Date.now();
 
     logger.debug('Forwarding Anthropic request', {
@@ -296,7 +299,10 @@ export class RequestProxy {
     const basePath = options.baseUrl.endsWith('/')
       ? options.baseUrl.slice(0, -1)
       : options.baseUrl;
-    const url = new URL(`${basePath}/v1/messages`);
+    
+    // Support both baseUrl with and without /v1
+    const urlPath = basePath.endsWith('/v1') ? '/messages' : '/v1/messages';
+    const url = new URL(`${basePath}${urlPath}`);
     const startTime = Date.now();
 
     logger.debug('Forwarding Anthropic streaming request', {
