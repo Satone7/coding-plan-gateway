@@ -17,7 +17,7 @@ const Dashboard = () => {
   const state = useDashboardState();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const { stdout } = useStdout();
-  const [size, setSize] = useState({ columns: stdout.columns, rows: stdout.rows });
+  const [size, setSize] = useState({ columns: stdout.columns || 80, rows: stdout.rows || 24 });
   const [now, setNow] = useState(Date.now());
   const [isErrorsExpanded, setIsErrorsExpanded] = useState(false);
 
@@ -25,14 +25,16 @@ const Dashboard = () => {
     if (input.toLowerCase() === 'e') {
       setIsErrorsExpanded(prev => !prev);
     }
-  });
+  }, { isActive: Boolean(process.stdin.isTTY) });
 
   useEffect(() => {
-    const onResize = () => setSize({ columns: stdout.columns, rows: stdout.rows });
-    stdout.on('resize', onResize);
-    return () => {
-      stdout.off('resize', onResize);
-    };
+    const onResize = () => setSize({ columns: stdout.columns || 80, rows: stdout.rows || 24 });
+    if (stdout && typeof stdout.on === 'function') {
+      stdout.on('resize', onResize);
+      return () => {
+        stdout.off('resize', onResize);
+      };
+    }
   }, [stdout]);
 
   useEffect(() => {
