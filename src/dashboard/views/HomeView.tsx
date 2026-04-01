@@ -84,8 +84,8 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
         {state.recentErrors.length > 0 ? (
           state.recentErrors.slice(0, isErrorsExpanded ? undefined : 3).map((log, i) => (
             <Box key={i} flexDirection="column">
-              <Text color={log.level === 'warn' ? 'yellow' : 'red'} wrap={isErrorsExpanded ? 'wrap' : 'truncate-end'}>
-                [{log.level.toUpperCase()}] {log.message}
+              <Text color="red" wrap={isErrorsExpanded ? 'wrap' : 'truncate-end'}>
+                [{log.level.toUpperCase()}] {log.message}{log.error ? ` — ${log.error.message}` : ''}{log.context?.statusCode ? ` (${log.context.statusCode})` : ''}
               </Text>
               {isErrorsExpanded && (
                 <Box paddingLeft={2} flexDirection="column">
@@ -94,11 +94,6 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
                       {(log.error.code || log.error.type) && (
                         <Text color="redBright" wrap="wrap">
                           Error Code: {log.error.code || 'UNKNOWN'} {log.error.type ? `(${log.error.type})` : ''}
-                        </Text>
-                      )}
-                      {log.error.message && (
-                        <Text color="redBright" wrap="wrap">
-                          Reason: <Text color="white">{log.error.message}</Text>
                         </Text>
                       )}
                     </Box>
