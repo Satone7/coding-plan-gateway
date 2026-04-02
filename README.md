@@ -11,10 +11,12 @@ A load balancer for managing multiple AI coding plan subscriptions. Routes reque
 - **Model Aliasing**: Configurable aliases to map shorthand names (e.g., `gpt-4`) to canonical models
 - **Quota management**: Track and prioritize usage across plans
 - **Circuit breaker**: Automatic failover when providers fail
-- **Streaming support**: Full SSE streaming for chat completions
+- **Streaming support**: Full SSE streaming for chat completions with provider metrics extraction
+- **Token counting**: Native support for Anthropic `count_tokens` API
 - **Observability**: Request latency tracing with stage-by-stage timing and color-coded logging for concurrent requests
-- **CLI tool**: Built-in `cpg` command-line tool for API key management, usage reports, and TUI dashboard
-- **TUI Dashboard**: Real-time terminal UI for monitoring active requests, plan usage, and gateway latency
+- **CLI tool**: Built-in `cpg` command-line tool for API key management, usage reports, and TUI configuration wizard (with configurable timeout)
+- **TUI Dashboard**: Real-time terminal UI for monitoring active requests, plan usage, inline error display, and gateway latency
+- **Docker Ready**: Optimized Docker build times and robust file permission handling
 
 ## Quick Start
 
@@ -69,6 +71,7 @@ curl http://localhost:8080/api/v1/models
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/v1/messages` | POST | Create message (streaming supported) |
+| `/v1/messages/count_tokens` | POST | Count tokens for Anthropic messages |
 
 ### Admin Endpoints
 
@@ -123,6 +126,7 @@ plans:
   - name: "Plan Name"
     baseUrl: "https://api.provider.com/v1"
     apiKey: "${ENV_VAR}"  # Environment variable reference
+    enable: true          # Whether the plan is enabled (optional, default: true)
     models:
       - "model-1"
       - "model-2"
@@ -146,9 +150,10 @@ cpg onboard
 ```
 
 The wizard allows you to:
-- Add, update, or remove Plans (API Keys, Models, Quotas)
+- Add, update, or remove Plans (API Keys, Models, Quotas, Enable status)
 - Configure Load Balancing Strategies
 - Set up Model Aliases
+- Configure onboard timeout (default: 300s)
 - Automatically backs up your old configuration file before saving
 
 ### Configure Claude Code

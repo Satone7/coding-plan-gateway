@@ -1,0 +1,4 @@
+- [x] 成功识别并列出了所有 README 遗漏的近期 PR/Commit 变更。
+- [x] `README.md` 中的特性列表（Features）已包含所有最新功能。
+- [x] `README.md` 中的配置示例（Configuration）已更新，包含最新添加或修改的配置项。
+- [x] `README.md` 格式规范，阅读体验良好。
