@@ -1,0 +1,5 @@
+- [x] USAGE BY PLAN 中的进度条正确显示为当前 PLAN 在所有 PLAN 总用量中的占比
+- [x] USAGE BY MODEL 中的进度条正确显示为当前 MODEL 在所有 MODEL 总用量中的占比
+- [x] USAGE BY PLAN 中成功显示 RPM 字段
+- [x] USAGE BY PLAN 中 RPM 为 100 时，进度条正确显示为 100%
+- [x] ACTIVE REQUESTS 中，当持续时间超过 PLAN 的 timeout 时间时，请求自动被判定为失败

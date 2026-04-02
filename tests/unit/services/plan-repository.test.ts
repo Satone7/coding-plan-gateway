@@ -124,7 +124,7 @@ describe('PlanRepository', () => {
       expect(result.models).toEqual(input.models);
       expect(result.quota).toEqual(input.quota);
       expect(result.status).toBe('active');
-      expect(result.timeout).toBe(30);
+      expect(result.timeout).toBe(300);
     });
 
     it('should use custom timeout when provided', async () => {

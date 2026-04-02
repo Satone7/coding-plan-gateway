@@ -17,29 +17,40 @@ export function PlansView({ state, columns }: PlansViewProps) {
       <Divider width={columns} title="📊 PLANS USAGE" color="blue" />
       {plans.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
-          {plans.map(([name, usage]) => {
-            // Placeholder metrics for demo
-            const quotaPercent = Math.min(100, Math.round((usage.requests / 1000000) * 100)); 
-            const tokensPercent = Math.min(100, Math.round((usage.tokens / 5000000) * 100)); 
+          {(() => {
+            const totalRequests = Math.max(1, Object.values(state.planUsages).reduce((sum, u) => sum + u.requests, 0));
+            const totalTokens = Math.max(1, Object.values(state.planUsages).reduce((sum, u) => sum + u.tokens, 0));
             
-            return (
-              <Box key={name} flexDirection="row" marginBottom={1}>
-                <Box width={15}><Text bold color="cyan">{name}</Text></Box>
-                <Box flexDirection="column">
-                  <Box flexDirection="row">
-                    <Box width={15}><Text>Requests: </Text></Box>
-                    <Box width={12}><Text color={getColor(quotaPercent)}>{renderBar(quotaPercent, 10)}</Text></Box>
-                    <Text>{formatCompactNumber(usage.requests)} req</Text>
-                  </Box>
-                  <Box flexDirection="row">
-                    <Box width={15}><Text>Tokens: </Text></Box>
-                    <Box width={12}><Text color={getColor(tokensPercent)}>{renderBar(tokensPercent, 10)}</Text></Box>
-                    <Text>{formatCompactNumber(usage.tokens)} tok</Text>
+            return plans.map(([name, usage]) => {
+              const quotaPercent = Math.min(100, Math.round((usage.requests / totalRequests) * 100)); 
+              const tokensPercent = Math.min(100, Math.round((usage.tokens / totalTokens) * 100)); 
+              const rpm = usage.rpm || 0;
+              const rpmPercent = Math.min(100, Math.round((rpm / 100) * 100));
+              
+              return (
+                <Box key={name} flexDirection="row" marginBottom={1}>
+                  <Box width={15}><Text bold color="cyan">{name}</Text></Box>
+                  <Box flexDirection="column">
+                    <Box flexDirection="row">
+                      <Box width={15}><Text>Requests: </Text></Box>
+                      <Box width={12}><Text color={getColor(quotaPercent)}>{renderBar(quotaPercent, 10)}</Text></Box>
+                      <Text>{formatCompactNumber(usage.requests)} req</Text>
+                    </Box>
+                    <Box flexDirection="row">
+                      <Box width={15}><Text>Tokens: </Text></Box>
+                      <Box width={12}><Text color={getColor(tokensPercent)}>{renderBar(tokensPercent, 10)}</Text></Box>
+                      <Text>{formatCompactNumber(usage.tokens)} tok</Text>
+                    </Box>
+                    <Box flexDirection="row">
+                      <Box width={15}><Text>RPM: </Text></Box>
+                      <Box width={12}><Text color={getColor(rpmPercent)}>{renderBar(rpmPercent, 10)}</Text></Box>
+                      <Text color="cyan">{rpm} RPM</Text>
+                    </Box>
                   </Box>
                 </Box>
-              </Box>
-            );
-          })}
+              );
+            });
+          })()}
         </Box>
       ) : (
         <Text color="gray">  No plans found.</Text>
