@@ -214,7 +214,7 @@ export function useDashboardState(): DashboardState {
             delete newActive[id];
             changed = true;
           } else if (req.status === 'active') {
-            const timeout = req.timeout || 60000;
+            const timeout = req.timeout ? req.timeout * 1000 : 60000;
             if (now - req.startTime > timeout) {
               newActive[id] = {
                 ...req,
