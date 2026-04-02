@@ -498,7 +498,7 @@ export function createAnthropicHandlers(
           planId: plan.id,
           planName: plan.name,
           model,
-          durationMs: Date.now() - (request.startTime || Date.now()),
+          durationMs: request.startTime ? Date.now() - request.startTime : 0,
           statusCode: errStatusCode,
         });
 
@@ -549,7 +549,7 @@ export function createAnthropicHandlers(
               planId: altPlan.id,
               planName: altPlan.name,
               model,
-              durationMs: Date.now() - (request.startTime || Date.now()),
+              durationMs: request.startTime ? Date.now() - request.startTime : 0,
               statusCode: altErrStatusCode,
             });
 
@@ -572,7 +572,7 @@ export function createAnthropicHandlers(
           planId: plan.id,
           planName: plan.name,
           model,
-          durationMs: Date.now() - (request.startTime || Date.now()),
+          durationMs: request.startTime ? Date.now() - request.startTime : 0,
           statusCode: 200,
         });
 
