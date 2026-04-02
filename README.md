@@ -8,13 +8,14 @@ A load balancer for managing multiple AI coding plan subscriptions. Routes reque
 - **Dual API compatibility**: Exposes both OpenAI and Anthropic compatible endpoints
 - **Intelligent routing**: Case-insensitive model matching and automatic plan selection based on model availability
 - **Advanced Load Balancing**: Multi-factor scoring strategies (quota-priority, round-robin, weighted, etc.) based on RPM, expiration, and remaining quota
-- **Model Aliasing**: Configurable aliases to map shorthand names (e.g., `gpt-4`) to canonical models
 - **Quota management**: Track and prioritize usage across plans
 - **Circuit breaker**: Automatic failover when providers fail
-- **Streaming support**: Full SSE streaming for chat completions
+- **Streaming support**: Full SSE streaming for chat completions with provider metrics extraction
+- **Token counting**: Native support for Anthropic `count_tokens` API
 - **Observability**: Request latency tracing with stage-by-stage timing and color-coded logging for concurrent requests
-- **CLI tool**: Built-in `cpg` command-line tool for API key management, usage reports, and TUI dashboard
-- **TUI Dashboard**: Real-time terminal UI for monitoring active requests, plan usage, and gateway latency
+- **CLI tool**: Built-in `cpg` command-line tool for API key management, usage reports, and TUI configuration wizard (with configurable timeout)
+- **TUI Dashboard**: Real-time terminal UI for monitoring active requests, plan usage, inline error display, and gateway latency
+- **Docker Ready**: Optimized Docker build times and robust file permission handling
 
 ## Quick Start
 
@@ -69,6 +70,7 @@ curl http://localhost:8080/api/v1/models
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/v1/messages` | POST | Create message (streaming supported) |
+| `/v1/messages/count_tokens` | POST | Count tokens for Anthropic messages |
 
 ### Admin Endpoints
 
@@ -105,7 +107,14 @@ curl http://localhost:8080/api/v1/models
 
 ### Gateway Configuration
 
-The gateway is configured in `config.yaml` (copied from `config.yaml.example` during initialization). It supports load balancing rules, model aliases, and plan configurations:
+The gateway is configured via `config.yaml`. **We highly recommend using the interactive CLI tool to manage your configuration instead of editing this file manually.**
+
+> If deployed via Docker, you can run the configuration wizard inside the container:
+> ```bash
+> sudo docker exec -it coding-plan-gateway cpg onboard
+> ```
+
+The configuration supports load balancing rules and plan configurations:
 
 ```yaml
 loadBalancing:
@@ -115,14 +124,11 @@ loadBalancing:
     rpm: 0.4
     quota: 0.2
 
-modelAliases:
-  "gpt-4": "gpt-4-turbo"
-  "claude-3": "claude-3-5-sonnet-20241022"
-
 plans:
   - name: "Plan Name"
     baseUrl: "https://api.provider.com/v1"
     apiKey: "${ENV_VAR}"  # Environment variable reference
+    enable: true          # Whether the plan is enabled (optional, default: true)
     models:
       - "model-1"
       - "model-2"
@@ -146,9 +152,9 @@ cpg onboard
 ```
 
 The wizard allows you to:
-- Add, update, or remove Plans (API Keys, Models, Quotas)
+- Add, update, or remove Plans (API Keys, Models, Quotas, Enable status)
 - Configure Load Balancing Strategies
-- Set up Model Aliases
+- Configure onboard timeout (default: 300s)
 - Automatically backs up your old configuration file before saving
 
 ### Configure Claude Code
@@ -164,33 +170,11 @@ export OPENAI_BASE_URL=http://localhost:8080/v1
 export OPENAI_API_KEY=dummy  # Gateway doesn't validate this
 ```
 
-### Chat Completion Example
+## Deployment
 
-```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "claude-sonnet-4-6",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "stream": true
-  }'
-```
+We highly recommend deploying the Gateway using Docker.
 
-### Add a New Plan
-
-```bash
-curl -X POST http://localhost:8080/api/plans \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Kimi",
-    "baseUrl": "https://api.moonshot.cn/v1",
-    "apiKey": "your-kimi-api-key",
-    "models": ["kimi-k2.5"],
-    "quota": {"limit": 1000, "period": "monthly"}
-  }'
-```
-
-## Docker Deployment
+> **Important**: The `.env` file is not mapped in `docker-compose.yml` by default. If you modify environment variables in `.env`, you should rebuild the image or manually add the mapping to your docker-compose file.
 
 ### Build and Run
 
@@ -287,12 +271,17 @@ npm run cpg -- --help
 
 #### TUI Dashboard
 
+We strongly recommend using the real-time TUI dashboard to monitor the health and status of your gateway.
+
+If deployed via Docker, you can attach to the dashboard using:
+
 ```bash
-# Launch the real-time TUI dashboard
-npm run dashboard
-# Or via CLI
-cpg dashboard
+sudo docker exec -it coding-plan-gateway cpg dashboard
 ```
+
+![TUI Dashboard](https://raw.githubusercontent.com/Satone7/coding-plan-gateway/main/docs/dashboard.png)
+
+*(You can also run it locally via `npm run dashboard` or `cpg dashboard`)*
 
 #### API Key Management
 
