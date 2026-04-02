@@ -107,7 +107,14 @@ curl http://localhost:8080/api/v1/models
 
 ### Gateway Configuration
 
-The gateway is configured in `config.yaml` (copied from `config.yaml.example` during initialization). It supports load balancing rules and plan configurations:
+The gateway is configured via `config.yaml`. **We highly recommend using the interactive CLI tool to manage your configuration instead of editing this file manually.**
+
+> If deployed via Docker, you can run the configuration wizard inside the container:
+> ```bash
+> sudo docker exec -it coding-plan-gateway cpg onboard
+> ```
+
+The configuration supports load balancing rules and plan configurations:
 
 ```yaml
 loadBalancing:
@@ -163,33 +170,11 @@ export OPENAI_BASE_URL=http://localhost:8080/v1
 export OPENAI_API_KEY=dummy  # Gateway doesn't validate this
 ```
 
-### Chat Completion Example
+## Deployment
 
-```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "claude-sonnet-4-6",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "stream": true
-  }'
-```
+We highly recommend deploying the Gateway using Docker.
 
-### Add a New Plan
-
-```bash
-curl -X POST http://localhost:8080/api/plans \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Kimi",
-    "baseUrl": "https://api.moonshot.cn/v1",
-    "apiKey": "your-kimi-api-key",
-    "models": ["kimi-k2.5"],
-    "quota": {"limit": 1000, "period": "monthly"}
-  }'
-```
-
-## Docker Deployment
+> **Important**: The `.env` file is not mapped in `docker-compose.yml` by default. If you modify environment variables in `.env`, you should rebuild the image or manually add the mapping to your docker-compose file.
 
 ### Build and Run
 
@@ -286,12 +271,17 @@ npm run cpg -- --help
 
 #### TUI Dashboard
 
+We strongly recommend using the real-time TUI dashboard to monitor the health and status of your gateway.
+
+If deployed via Docker, you can attach to the dashboard using:
+
 ```bash
-# Launch the real-time TUI dashboard
-npm run dashboard
-# Or via CLI
-cpg dashboard
+sudo docker exec -it coding-plan-gateway cpg dashboard
 ```
+
+![TUI Dashboard](https://raw.githubusercontent.com/Satone7/coding-plan-gateway/main/docs/dashboard.png)
+
+*(You can also run it locally via `npm run dashboard` or `cpg dashboard`)*
 
 #### API Key Management
 
