@@ -83,7 +83,7 @@ function processLogEntry(log: LogEntry, setState: React.Dispatch<React.SetStateA
       recentErrors: [...prevState.recentErrors],
     };
 
-    if (log.level === 'warn' || log.level === 'error' || log.level === 'fatal') {
+    if (log.level === 'error' || log.level === 'fatal') {
       newState.recentErrors = [log, ...prevState.recentErrors].slice(0, 5);
     }
 
