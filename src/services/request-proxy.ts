@@ -113,9 +113,13 @@ function buildHeaders(
 ): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`,
     'User-Agent': DEFAULT_USER_AGENT,
   };
+
+  // Add Authorization header only if x-api-key is not provided in extraHeaders
+  if (!extraHeaders || !('x-api-key' in extraHeaders)) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
 
   if (isStreaming) {
     headers.Accept = 'text/event-stream';

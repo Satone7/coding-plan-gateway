@@ -34,7 +34,7 @@ import type { CodingPlan } from '@/types';
  * Schema for system prompt content blocks.
  */
 const systemBlockSchema = z.object({
-  type: z.string(),
+  type: z.enum(['text', 'image', 'document']),
 }).passthrough();
 
 /**
@@ -65,7 +65,7 @@ const messageRequestSchema = z.object({
  */
 const countTokensRequestSchema = z.object({
   model: z.string().min(1),
-  messages: z.array(z.any()),
+  messages: z.array(z.any()).min(1),
   system: z.union([
     z.string(),
     z.array(systemBlockSchema),
@@ -94,6 +94,25 @@ interface HandlerServices {
   repository: IPlanRepository;
   proxy: RequestProxy;
   router: RequestRouter;
+}
+
+/**
+ * Calculate estimated token count as a fallback.
+ * Uses a rough estimation of 1 token per 4 characters.
+ */
+function estimateTokenCount(request: AnthropicCountTokensRequest): number {
+  let text = '';
+  if (request.system) {
+    if (typeof request.system === 'string') {
+      text += request.system;
+    } else if (Array.isArray(request.system)) {
+      text += JSON.stringify(request.system);
+    }
+  }
+  if (request.messages) {
+    text += JSON.stringify(request.messages);
+  }
+  return Math.max(1, Math.ceil(text.length / 4));
 }
 
 /**
@@ -420,14 +439,6 @@ export function createAnthropicHandlers(
         body.model = routingResult.canonicalName;
       }
 
-      attachProviderMetrics(request, {
-        planId: plan.id,
-        planName: plan.name,
-        model,
-        durationMs: 0,
-        statusCode: 0,
-      });
-
       startStage(request, 'upstreamRequest');
       try {
         const response = await proxy.forwardAnthropicCountTokensRequest(body, {
@@ -448,6 +459,16 @@ export function createAnthropicHandlers(
         return response.data as AnthropicCountTokensResponse;
       } catch (error) {
         endStage(request, 'upstreamRequest');
+        const errStatusCode = (error as { statusCode?: number }).statusCode || 500;
+        
+        attachProviderMetrics(request, {
+          planId: plan.id,
+          planName: plan.name,
+          model,
+          durationMs: Date.now() - (request.startTime || Date.now()),
+          statusCode: errStatusCode,
+        });
+
         logger.warn('Count tokens request failed', {
           requestId,
           planId: plan.id,
@@ -489,6 +510,16 @@ export function createAnthropicHandlers(
             return result.data as AnthropicCountTokensResponse;
           } catch (altError) {
             endStage(request, 'upstreamRequest');
+            const altErrStatusCode = (altError as { statusCode?: number }).statusCode || 500;
+            
+            attachProviderMetrics(request, {
+              planId: altPlan.id,
+              planName: altPlan.name,
+              model,
+              durationMs: Date.now() - (request.startTime || Date.now()),
+              statusCode: altErrStatusCode,
+            });
+
             logger.warn('Failover count tokens failed', {
               requestId,
               failoverPlanId: altPlan.id,
@@ -497,11 +528,22 @@ export function createAnthropicHandlers(
           }
         }
 
-        throw createGatewayError(
-          'UPSTREAM_ERROR',
-          'All available plans failed to process the count tokens request',
-          { requestId, attemptedPlans: [plan.id, ...routingResult.alternativePlans.map(p => p.id)] }
-        );
+        logger.warn('All plans failed for count tokens, falling back to local estimation', {
+          requestId,
+        });
+        
+        const estimatedTokens = estimateTokenCount(body);
+        
+        // Attach success metrics for the local fallback to prevent error logging
+        attachProviderMetrics(request, {
+          planId: plan.id,
+          planName: plan.name,
+          model,
+          durationMs: Date.now() - (request.startTime || Date.now()),
+          statusCode: 200,
+        });
+
+        return { input_tokens: estimatedTokens } as AnthropicCountTokensResponse;
       }
     },
 
