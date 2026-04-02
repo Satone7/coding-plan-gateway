@@ -8,7 +8,6 @@ A load balancer for managing multiple AI coding plan subscriptions. Routes reque
 - **Dual API compatibility**: Exposes both OpenAI and Anthropic compatible endpoints
 - **Intelligent routing**: Case-insensitive model matching and automatic plan selection based on model availability
 - **Advanced Load Balancing**: Multi-factor scoring strategies (quota-priority, round-robin, weighted, etc.) based on RPM, expiration, and remaining quota
-- **Model Aliasing**: Configurable aliases to map shorthand names (e.g., `gpt-4`) to canonical models
 - **Quota management**: Track and prioritize usage across plans
 - **Circuit breaker**: Automatic failover when providers fail
 - **Streaming support**: Full SSE streaming for chat completions with provider metrics extraction
@@ -108,7 +107,7 @@ curl http://localhost:8080/api/v1/models
 
 ### Gateway Configuration
 
-The gateway is configured in `config.yaml` (copied from `config.yaml.example` during initialization). It supports load balancing rules, model aliases, and plan configurations:
+The gateway is configured in `config.yaml` (copied from `config.yaml.example` during initialization). It supports load balancing rules and plan configurations:
 
 ```yaml
 loadBalancing:
@@ -117,10 +116,6 @@ loadBalancing:
     expiration: 0.4
     rpm: 0.4
     quota: 0.2
-
-modelAliases:
-  "gpt-4": "gpt-4-turbo"
-  "claude-3": "claude-3-5-sonnet-20241022"
 
 plans:
   - name: "Plan Name"
@@ -152,7 +147,6 @@ cpg onboard
 The wizard allows you to:
 - Add, update, or remove Plans (API Keys, Models, Quotas, Enable status)
 - Configure Load Balancing Strategies
-- Set up Model Aliases
 - Configure onboard timeout (default: 300s)
 - Automatically backs up your old configuration file before saving
 
