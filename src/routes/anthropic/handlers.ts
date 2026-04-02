@@ -100,9 +100,13 @@ interface HandlerServices {
 /**
  * Calculate estimated token count as a fallback.
  * Uses @anthropic-ai/tokenizer to calculate token usage for text.
+ * Images are roughly estimated at 1000 tokens per image.
+ * Documents are roughly estimated at 1 token per 4 characters of base64 data.
  */
 function estimateTokenCount(request: AnthropicCountTokensRequest): number {
   let text = '';
+  let additionalTokens = 0;
+  
   if (request.system) {
     if (typeof request.system === 'string') {
       text += request.system + '\n';
@@ -110,6 +114,10 @@ function estimateTokenCount(request: AnthropicCountTokensRequest): number {
       for (const block of request.system) {
         if (block.type === 'text' && typeof block.text === 'string') {
           text += block.text + '\n';
+        } else if (block.type === 'image') {
+          additionalTokens += 1000;
+        } else if (block.type === 'document' && typeof block.source?.data === 'string') {
+          additionalTokens += Math.ceil(block.source.data.length / 4);
         }
       }
     }
@@ -122,6 +130,10 @@ function estimateTokenCount(request: AnthropicCountTokensRequest): number {
         for (const block of msg.content) {
           if (block.type === 'text' && typeof block.text === 'string') {
             text += block.text + '\n';
+          } else if (block.type === 'image') {
+            additionalTokens += 1000;
+          } else if (block.type === 'document' && typeof block.source?.data === 'string') {
+            additionalTokens += Math.ceil(block.source.data.length / 4);
           }
         }
       }
@@ -129,10 +141,10 @@ function estimateTokenCount(request: AnthropicCountTokensRequest): number {
   }
   
   try {
-    return Math.max(1, countTokens(text));
+    return countTokens(text) + additionalTokens;
   } catch (error) {
     logger.warn('Failed to calculate tokens with tokenizer, falling back to basic estimation', { error });
-    return Math.max(1, Math.ceil(text.length / 4));
+    return Math.ceil(text.length / 4) + additionalTokens;
   }
 }
 
