@@ -279,7 +279,7 @@ If deployed via Docker, you can attach to the dashboard using:
 sudo docker exec -it coding-plan-gateway cpg dashboard
 ```
 
-![TUI Dashboard](https://raw.githubusercontent.com/Satone7/coding-plan-gateway/main/docs/dashboard.png)
+![TUI Dashboard](https://raw.githubusercontent.com/Satone7/coding-plan-gateway/master/docs/dashboard.png)
 
 *(You can also run it locally via `npm run dashboard` or `cpg dashboard`)*
 
