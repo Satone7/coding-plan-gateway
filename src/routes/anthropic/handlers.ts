@@ -22,13 +22,14 @@ import {
   startStage,
   endStage,
 } from '@/middleware/request-timer';
-import type {
+import {
   AnthropicMessageRequest,
   AnthropicMessageResponse,
   AnthropicCountTokensRequest,
   AnthropicCountTokensResponse,
 } from '@/types/anthropic';
 import type { CodingPlan } from '@/types';
+import { countTokens } from '@anthropic-ai/tokenizer';
 
 /**
  * Schema for system prompt content blocks.
@@ -98,21 +99,41 @@ interface HandlerServices {
 
 /**
  * Calculate estimated token count as a fallback.
- * Uses a rough estimation of 1 token per 4 characters.
+ * Uses @anthropic-ai/tokenizer to calculate token usage for text.
  */
 function estimateTokenCount(request: AnthropicCountTokensRequest): number {
   let text = '';
   if (request.system) {
     if (typeof request.system === 'string') {
-      text += request.system;
+      text += request.system + '\n';
     } else if (Array.isArray(request.system)) {
-      text += JSON.stringify(request.system);
+      for (const block of request.system) {
+        if (block.type === 'text' && typeof block.text === 'string') {
+          text += block.text + '\n';
+        }
+      }
     }
   }
-  if (request.messages) {
-    text += JSON.stringify(request.messages);
+  if (request.messages && Array.isArray(request.messages)) {
+    for (const msg of request.messages) {
+      if (typeof msg.content === 'string') {
+        text += msg.content + '\n';
+      } else if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === 'text' && typeof block.text === 'string') {
+            text += block.text + '\n';
+          }
+        }
+      }
+    }
   }
-  return Math.max(1, Math.ceil(text.length / 4));
+  
+  try {
+    return Math.max(1, countTokens(text));
+  } catch (error) {
+    logger.warn('Failed to calculate tokens with tokenizer, falling back to basic estimation', { error });
+    return Math.max(1, Math.ceil(text.length / 4));
+  }
 }
 
 /**
