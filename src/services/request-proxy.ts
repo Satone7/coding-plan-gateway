@@ -63,6 +63,7 @@ interface InternalRequestOptions {
   body: unknown;
   timeout: number;
   extraHeaders?: Record<string, string>;
+  authType?: 'bearer' | 'x-api-key' | 'both';
 }
 
 /**
@@ -108,14 +109,22 @@ function extractStreamTokenUsage(tail: string): StreamTokenUsage | undefined {
  */
 function buildHeaders(
   apiKey: string,
+  authType: 'bearer' | 'x-api-key' | 'both' = 'bearer',
   extraHeaders?: Record<string, string>,
   isStreaming?: boolean
 ): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`,
     'User-Agent': DEFAULT_USER_AGENT,
   };
+
+  // Add authentication headers based on explicitly requested type
+  if (authType === 'bearer' || authType === 'both') {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+  if (authType === 'x-api-key' || authType === 'both') {
+    headers['x-api-key'] = apiKey;
+  }
 
   if (isStreaming) {
     headers.Accept = 'text/event-stream';
@@ -216,6 +225,7 @@ export class RequestProxy {
       apiKey: options.apiKey,
       body: request,
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
+      authType: 'bearer',
     });
 
     response.durationMs = Date.now() - startTime;
@@ -262,6 +272,7 @@ export class RequestProxy {
       apiKey: options.apiKey,
       body: request,
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
+      authType: 'bearer',
       reply,
       onComplete: (tokenUsage) => {
         onChunk('', true);
@@ -307,6 +318,7 @@ export class RequestProxy {
       apiKey: options.apiKey,
       body: request,
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
+      authType: 'x-api-key',
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
@@ -352,6 +364,7 @@ export class RequestProxy {
       apiKey: options.apiKey,
       body: request,
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
+      authType: 'x-api-key',
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
@@ -405,6 +418,7 @@ export class RequestProxy {
       apiKey: options.apiKey,
       body: request,
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
+      authType: 'x-api-key',
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
@@ -432,7 +446,7 @@ export class RequestProxy {
     return new Promise((resolve, reject) => {
       const isHttps = options.url.protocol === 'https:';
       const requestFn = isHttps ? httpsRequest : httpRequest;
-      const headers = buildHeaders(options.apiKey, options.extraHeaders);
+      const headers = buildHeaders(options.apiKey, options.authType || 'bearer', options.extraHeaders);
       const bodyStr = JSON.stringify(options.body);
       headers['Content-Length'] = Buffer.byteLength(bodyStr).toString();
 
@@ -457,7 +471,7 @@ export class RequestProxy {
     return new Promise((resolve, reject) => {
       const isHttps = options.url.protocol === 'https:';
       const requestFn = isHttps ? httpsRequest : httpRequest;
-      const headers = buildHeaders(options.apiKey, options.extraHeaders, true);
+      const headers = buildHeaders(options.apiKey, options.authType || 'bearer', options.extraHeaders, true);
       const bodyStr = JSON.stringify(options.body);
       headers['Content-Length'] = Buffer.byteLength(bodyStr).toString();
 
