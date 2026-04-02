@@ -212,6 +212,7 @@ export class RequestRouter {
       model,
       selectedPlanId: selectedPlan.id,
       selectedPlanName: selectedPlan.name,
+      timeout: selectedPlan.timeout,
       alternativeCount: alternativePlans.length,
     });
 

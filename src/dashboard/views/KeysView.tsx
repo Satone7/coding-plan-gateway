@@ -19,26 +19,29 @@ export function KeysView({ state, apiKeys, columns }: KeysViewProps) {
       <Divider width={columns} title="🔑 API KEYS USAGE" color="green" />
       {keys.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
-          {keys.map(([name, usage]) => {
-            const percent = Math.min(100, Math.round((usage.requests / 100000) * 100)); 
-            
-            return (
-              <Box key={name} flexDirection="row" marginBottom={1}>
-                <Box width={25}><Text bold color="green">{name}</Text></Box>
-                <Box flexDirection="column">
-                  <Box flexDirection="row">
-                    <Box width={15}><Text>Requests: </Text></Box>
-                    <Box width={12}><Text color={getColor(percent)}>{renderBar(percent, 10)}</Text></Box>
-                    <Text>{formatCompactNumber(usage.requests)} req</Text>
-                  </Box>
-                  <Box flexDirection="row">
-                    <Box width={15}><Text>Tokens: </Text></Box>
-                    <Text>{formatCompactNumber(usage.tokens)} tok</Text>
+          {(() => {
+            const totalRequests = Math.max(1, Object.values(state.apiKeyUsages).reduce((sum, u) => sum + u.requests, 0));
+            return keys.map(([name, usage]) => {
+              const percent = Math.min(100, Math.round((usage.requests / totalRequests) * 100)); 
+              
+              return (
+                <Box key={name} flexDirection="row" marginBottom={1}>
+                  <Box width={25}><Text bold color="green">{name}</Text></Box>
+                  <Box flexDirection="column">
+                    <Box flexDirection="row">
+                      <Box width={15}><Text>Requests: </Text></Box>
+                      <Box width={12}><Text color={getColor(percent)}>{renderBar(percent, 10)}</Text></Box>
+                      <Text>{formatCompactNumber(usage.requests)} req</Text>
+                    </Box>
+                    <Box flexDirection="row">
+                      <Box width={15}><Text>Tokens: </Text></Box>
+                      <Text>{formatCompactNumber(usage.tokens)} tok</Text>
+                    </Box>
                   </Box>
                 </Box>
-              </Box>
-            );
-          })}
+              );
+            });
+          })()}
         </Box>
       ) : (
         <Text color="gray">  No API keys usage found.</Text>

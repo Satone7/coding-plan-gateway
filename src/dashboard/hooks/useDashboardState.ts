@@ -11,6 +11,8 @@ export interface PlanUsage {
 export interface DimensionUsage {
   requests: number;
   tokens: number;
+  rpm?: number;
+  _requestTimestamps?: number[];
 }
 
 export interface ActiveRequest {
@@ -21,6 +23,7 @@ export interface ActiveRequest {
   planName?: string;
   score?: number;
   model?: string;
+  timeout?: number;
   status?: 'active' | 'completed' | 'failed';
   endTime?: number;
 }
@@ -46,6 +49,7 @@ export interface LogEntry {
     totalScore?: number;
     model?: string;
     statusCode?: number;
+    timeout?: number;
     provider?: {
       planName?: string;
       model?: string;
@@ -106,6 +110,9 @@ function processLogEntry(log: LogEntry, setState: React.Dispatch<React.SetStateA
       } else if (message === 'Request routed to plan') {
         if (newState.activeRequests[requestId]) {
           newState.activeRequests[requestId].planName = context.selectedPlanName;
+          if (context.timeout !== undefined) {
+            newState.activeRequests[requestId].timeout = context.timeout;
+          }
           if (context.model) {
             newState.activeRequests[requestId].model = context.model;
           }
@@ -138,9 +145,14 @@ function processLogEntry(log: LogEntry, setState: React.Dispatch<React.SetStateA
           if (context.provider && context.provider.planName) {
             const planName = context.provider.planName;
             const prevUsage = newState.planUsages[planName] || { requests: 0, tokens: 0 };
+            const nowTime = Date.now();
+            const timestamps = [...(prevUsage._requestTimestamps || []), nowTime].filter(t => nowTime - t <= 60000);
+            
             newState.planUsages[planName] = {
               requests: prevUsage.requests + 1,
               tokens: prevUsage.tokens + tokens,
+              rpm: timestamps.length,
+              _requestTimestamps: timestamps,
             };
           }
           
@@ -192,6 +204,7 @@ export function useDashboardState(): DashboardState {
         const now = Date.now();
         let changed = false;
         const newActive = { ...prevState.activeRequests };
+        let failedRequestsCount = prevState.failedRequests;
 
         for (const [id, req] of Object.entries(newActive)) {
           if (req.status === 'completed' && req.endTime && now - req.endTime > 5000) {
@@ -200,11 +213,43 @@ export function useDashboardState(): DashboardState {
           } else if (req.status === 'failed' && req.endTime && now - req.endTime > 10000) {
             delete newActive[id];
             changed = true;
+          } else if (req.status === 'active') {
+            const timeout = req.timeout ? req.timeout * 1000 : 60000;
+            if (now - req.startTime > timeout) {
+              newActive[id] = {
+                ...req,
+                status: 'failed',
+                endTime: now
+              };
+              changed = true;
+              failedRequestsCount++;
+            }
           }
         }
 
-        if (changed) {
-          return { ...prevState, activeRequests: newActive };
+        let planUsagesChanged = false;
+        const newPlanUsages = { ...prevState.planUsages };
+        for (const [planName, usage] of Object.entries(newPlanUsages)) {
+          if (usage._requestTimestamps && usage._requestTimestamps.length > 0) {
+            const validTimestamps = usage._requestTimestamps.filter(t => now - t <= 60000);
+            if (validTimestamps.length !== usage._requestTimestamps.length) {
+              newPlanUsages[planName] = {
+                ...usage,
+                rpm: validTimestamps.length,
+                _requestTimestamps: validTimestamps,
+              };
+              planUsagesChanged = true;
+            }
+          }
+        }
+
+        if (changed || planUsagesChanged) {
+          return { 
+            ...prevState, 
+            activeRequests: newActive, 
+            planUsages: newPlanUsages,
+            failedRequests: failedRequestsCount
+          };
         }
         return prevState;
       });

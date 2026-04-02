@@ -114,21 +114,29 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
       <Box flexDirection="column" marginBottom={1}>
         <Divider width={columns} title="📈 USAGE BY PLAN" color="magenta" />
         {topPlans.length > 0 ? (
-          topPlans.map(([name, usage]) => {
-            // Mock quota and tokens percentages if not tracked accurately yet
-            const quotaPercent = Math.min(100, Math.round((usage.requests / 1000000) * 100)); 
-            const tokensPercent = Math.min(100, Math.round((usage.tokens / 5000000) * 100)); 
+          (() => {
+            const totalRequests = Math.max(1, Object.values(state.planUsages).reduce((sum, u) => sum + u.requests, 0));
+            const totalTokens = Math.max(1, Object.values(state.planUsages).reduce((sum, u) => sum + u.tokens, 0));
             
-            return (
-              <Box key={name} flexDirection="row">
-                <Box width={10}><Text>{name}</Text></Box>
-                <Box width={12}><Text color={getColor(quotaPercent)}>{renderBar(quotaPercent, 8)}</Text></Box>
-                <Box width={10}><Text>{formatCompactNumber(usage.requests)} req</Text></Box>
-                <Box width={12}><Text color={getColor(tokensPercent)}>{renderBar(tokensPercent, 8)}</Text></Box>
-                <Box width={15}><Text>{formatCompactNumber(usage.tokens)} tok</Text></Box>
-              </Box>
-            );
-          })
+            return topPlans.map(([name, usage]) => {
+              const quotaPercent = Math.min(100, Math.round((usage.requests / totalRequests) * 100)); 
+              const tokensPercent = Math.min(100, Math.round((usage.tokens / totalTokens) * 100)); 
+              const rpm = usage.rpm || 0;
+              const rpmPercent = Math.min(100, Math.round((rpm / 100) * 100));
+              
+              return (
+                <Box key={name} flexDirection="row">
+                  <Box width={10}><Text>{name}</Text></Box>
+                  <Box width={12}><Text color={getColor(quotaPercent)}>{renderBar(quotaPercent, 8)}</Text></Box>
+                  <Box width={10}><Text>{formatCompactNumber(usage.requests)} req</Text></Box>
+                  <Box width={12}><Text color={getColor(tokensPercent)}>{renderBar(tokensPercent, 8)}</Text></Box>
+                  <Box width={10}><Text>{formatCompactNumber(usage.tokens)} tok</Text></Box>
+                  <Box width={12}><Text color={getColor(rpmPercent)}>{renderBar(rpmPercent, 8)}</Text></Box>
+                  <Box width={10}><Text color="cyan">{rpm} RPM</Text></Box>
+                </Box>
+              );
+            });
+          })()
         ) : (
           <Text color="gray">  No plan usage data.</Text>
         )}
@@ -139,16 +147,19 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
         <Divider width={columns} title="📈 USAGE BY MODEL" color="magenta" />
         {topModels.length > 0 ? (
           <Box flexDirection="row" flexWrap="wrap">
-            {topModels.map(([name, usage]) => {
-              const percent = Math.min(100, Math.round((usage.requests / 500000) * 100)); 
-              return (
-                <Box key={name} marginRight={2}>
-                  <Text>{name} </Text>
-                  <Text color={getColor(percent)}>{renderBar(percent, 6)} </Text>
-                  <Text>{formatCompactNumber(usage.requests)}</Text>
-                </Box>
-              );
-            })}
+            {(() => {
+              const totalRequests = Math.max(1, Object.values(state.modelUsages).reduce((sum, u) => sum + u.requests, 0));
+              return topModels.map(([name, usage]) => {
+                const percent = Math.min(100, Math.round((usage.requests / totalRequests) * 100)); 
+                return (
+                  <Box key={name} marginRight={2}>
+                    <Text>{name} </Text>
+                    <Text color={getColor(percent)}>{renderBar(percent, 6)} </Text>
+                    <Text>{formatCompactNumber(usage.requests)}</Text>
+                  </Box>
+                );
+              });
+            })()}
           </Box>
         ) : (
           <Text color="gray">  No model usage data.</Text>

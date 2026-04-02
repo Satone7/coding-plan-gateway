@@ -17,26 +17,29 @@ export function ModelsView({ state, columns }: ModelsViewProps) {
       <Divider width={columns} title="🤖 MODELS USAGE" color="cyan" />
       {models.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
-          {models.map(([name, usage]) => {
-            const percent = Math.min(100, Math.round((usage.requests / 500000) * 100)); 
-            
-            return (
-              <Box key={name} flexDirection="row" marginBottom={1}>
-                <Box width={20}><Text bold color="yellow">{name}</Text></Box>
-                <Box flexDirection="column">
-                  <Box flexDirection="row">
-                    <Box width={15}><Text>Requests: </Text></Box>
-                    <Box width={12}><Text color={getColor(percent)}>{renderBar(percent, 10)}</Text></Box>
-                    <Text>{formatCompactNumber(usage.requests)} req</Text>
-                  </Box>
-                  <Box flexDirection="row">
-                    <Box width={15}><Text>Tokens: </Text></Box>
-                    <Text>{formatCompactNumber(usage.tokens)} tok</Text>
+          {(() => {
+            const totalRequests = Math.max(1, Object.values(state.modelUsages).reduce((sum, u) => sum + u.requests, 0));
+            return models.map(([name, usage]) => {
+              const percent = Math.min(100, Math.round((usage.requests / totalRequests) * 100)); 
+              
+              return (
+                <Box key={name} flexDirection="row" marginBottom={1}>
+                  <Box width={20}><Text bold color="yellow">{name}</Text></Box>
+                  <Box flexDirection="column">
+                    <Box flexDirection="row">
+                      <Box width={15}><Text>Requests: </Text></Box>
+                      <Box width={12}><Text color={getColor(percent)}>{renderBar(percent, 10)}</Text></Box>
+                      <Text>{formatCompactNumber(usage.requests)} req</Text>
+                    </Box>
+                    <Box flexDirection="row">
+                      <Box width={15}><Text>Tokens: </Text></Box>
+                      <Text>{formatCompactNumber(usage.tokens)} tok</Text>
+                    </Box>
                   </Box>
                 </Box>
-              </Box>
-            );
-          })}
+              );
+            });
+          })()}
         </Box>
       ) : (
         <Text color="gray">  No models found.</Text>
