@@ -31,7 +31,7 @@ export const DEFAULT_QUOTA_SYNC_CONFIG: QuotaSyncConfig = {
 /**
  * Default request timeout in seconds.
  */
-export const DEFAULT_REQUEST_TIMEOUT_SEC = 30; // 30 seconds
+export const DEFAULT_REQUEST_TIMEOUT_SEC = 300; // 300 seconds (5 minutes)
 
 /**
  * Minimum request timeout in seconds.
