@@ -116,8 +116,11 @@ function estimateTokenCount(request: AnthropicCountTokensRequest): number {
           text += block.text + '\n';
         } else if (block.type === 'image') {
           additionalTokens += 1000;
-        } else if (block.type === 'document' && typeof block.source?.data === 'string') {
-          additionalTokens += Math.ceil(block.source.data.length / 4);
+        } else if (block.type === 'document') {
+          const docBlock = block as any;
+          if (typeof docBlock.source?.data === 'string') {
+            additionalTokens += Math.ceil(docBlock.source.data.length / 4);
+          }
         }
       }
     }
@@ -132,8 +135,11 @@ function estimateTokenCount(request: AnthropicCountTokensRequest): number {
             text += block.text + '\n';
           } else if (block.type === 'image') {
             additionalTokens += 1000;
-          } else if (block.type === 'document' && typeof block.source?.data === 'string') {
-            additionalTokens += Math.ceil(block.source.data.length / 4);
+          } else if ((block as any).type === 'document') {
+            const docBlock = block as any;
+            if (typeof docBlock.source?.data === 'string') {
+              additionalTokens += Math.ceil(docBlock.source.data.length / 4);
+            }
           }
         }
       }
