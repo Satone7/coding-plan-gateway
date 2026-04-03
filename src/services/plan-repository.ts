@@ -116,9 +116,22 @@ export class FilePlanRepository implements IPlanRepository {
     await this.ensureLoaded();
     const normalizedModel = model.toLowerCase();
     return Array.from(this.plans.values())
-      .filter((plan) =>
-        plan.models.some((m) => m.toLowerCase() === normalizedModel)
-      )
+      .filter((plan) => {
+        if (plan.models.some((m) => m.toLowerCase() === normalizedModel)) {
+          return true;
+        }
+        if (plan.modelAliases) {
+          for (const [alias, target] of Object.entries(plan.modelAliases)) {
+            if (alias.toLowerCase() === normalizedModel) {
+              const normalizedTarget = target.toLowerCase();
+              if (plan.models.some((m) => m.toLowerCase() === normalizedTarget)) {
+                return true;
+              }
+            }
+          }
+        }
+        return false;
+      })
       .map((p) => this.toPlainObject(p));
   }
 
@@ -174,6 +187,7 @@ export class FilePlanRepository implements IPlanRepository {
       expiresAt: finalExpiresAt,
       weight: input.weight,
       enable: input.enable ?? true,
+      modelAliases: input.modelAliases,
       createdAt: now,
       updatedAt: now,
     };
@@ -221,6 +235,7 @@ export class FilePlanRepository implements IPlanRepository {
       expiresAt: updates.expiresAt !== undefined ? updates.expiresAt : existing.expiresAt,
       weight: updates.weight !== undefined ? updates.weight : existing.weight,
       enable: updates.enable !== undefined ? updates.enable : existing.enable,
+      modelAliases: updates.modelAliases !== undefined ? updates.modelAliases : existing.modelAliases,
       updatedAt: now,
     };
 
@@ -443,6 +458,7 @@ export class FilePlanRepository implements IPlanRepository {
       expiresAt: effectiveExpiresAt,
       weight: config.weight,
       enable: config.enable ?? true,
+      modelAliases: config.modelAliases,
       createdAt: now,
       updatedAt: now,
     };
@@ -477,6 +493,7 @@ export class FilePlanRepository implements IPlanRepository {
       status: persistableStatus,
       weight: plan.weight,
       enable: plan.enable ?? true,
+      modelAliases: plan.modelAliases,
     };
   }
 

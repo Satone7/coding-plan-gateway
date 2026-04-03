@@ -1,0 +1,12 @@
+- [x] `src/types/coding-plan.ts` 中 `CodingPlan` 及相关类型已包含 `modelAliases` 属性
+- [x] `src/config/schema.ts` 的 `configSchema` 不再包含全局的 `modelAliases`
+- [x] `src/config/schema.ts` 的 `planConfigSchema` 包含 `modelAliases`
+- [x] `src/services/model-resolver.ts` 及其测试文件被彻底移除，或不再在 `RequestRouter` 中使用
+- [x] `src/services/plan-repository.ts` 的 `findByModel` 方法正确支持检查 `plan.modelAliases`
+- [x] `src/services/plan-selector.ts` 的 `findPlansByModel` 方法正确支持检查 `plan.modelAliases`
+- [x] 验证逻辑已实现：只有当 `plan.modelAliases[alias]` 在 `plan.models` 中存在（大小写不敏感）时，别名才有效
+- [x] `src/services/request-router.ts` 的 `route` 返回的 `canonicalName` 使用的是 `plan.models` 中配置的准确名称
+- [x] 上游请求（如 Anthropic/OpenAI handlers）中使用的 `model` 字段被赋值为正确的 `canonicalName`
+- [x] `src/cli/commands/onboard.ts` 的主菜单中没有 `Configure Model Aliases` 选项
+- [x] 在 `onboard` 创建或编辑 Plan 时，提示用户输入 `Model Aliases`（如：`gpt-4:gpt-4-turbo,glm-5:glm-5-turbo`）并正确保存
+- [x] 所有的单元测试（特别是路由和别名匹配逻辑）均已通过

@@ -158,9 +158,22 @@ export class PlanSelector {
   ): CodingPlan[] {
     const normalizedModel = model.toLowerCase().trim();
 
-    const matchingPlans = plans.filter((plan) =>
-      plan.models.some((m) => m.toLowerCase() === normalizedModel)
-    );
+    const matchingPlans = plans.filter((plan) => {
+      if (plan.models.some((m) => m.toLowerCase() === normalizedModel)) {
+        return true;
+      }
+      if (plan.modelAliases) {
+        for (const [alias, target] of Object.entries(plan.modelAliases)) {
+          if (alias.toLowerCase() === normalizedModel) {
+            const normalizedTarget = target.toLowerCase();
+            if (plan.models.some((m) => m.toLowerCase() === normalizedTarget)) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    });
 
     // By default, filter to active plans only
     if (!options.includeInactive) {
@@ -267,7 +280,20 @@ export class PlanSelector {
    */
   supportsModel(plan: CodingPlan, model: string): boolean {
     const normalizedModel = model.toLowerCase().trim();
-    return plan.models.some((m) => m.toLowerCase() === normalizedModel);
+    if (plan.models.some((m) => m.toLowerCase() === normalizedModel)) {
+      return true;
+    }
+    if (plan.modelAliases) {
+      for (const [alias, target] of Object.entries(plan.modelAliases)) {
+        if (alias.toLowerCase() === normalizedModel) {
+          const normalizedTarget = target.toLowerCase();
+          if (plan.models.some((m) => m.toLowerCase() === normalizedTarget)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   /**

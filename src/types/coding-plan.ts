@@ -89,6 +89,9 @@ export interface CodingPlan {
   /** Whether the plan is enabled. Temporarily disable without deleting. */
   enable?: boolean;
 
+  /** Model aliases specific to this plan. Maps user-provided alias to canonical model name. */
+  modelAliases?: Record<string, string>;
+
   /** Creation timestamp */
   createdAt: Date;
 
@@ -110,6 +113,7 @@ export interface CreateCodingPlanInput {
   expiresAt?: string;
   weight?: number;
   enable?: boolean;
+  modelAliases?: Record<string, string>;
 }
 
 /**
@@ -127,4 +131,5 @@ export interface UpdateCodingPlanInput {
   expiresAt?: string;
   weight?: number;
   enable?: boolean;
+  modelAliases?: Record<string, string>;
 }

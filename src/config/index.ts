@@ -154,7 +154,7 @@ export async function loadConfig(
 
   if (!(await fileExists(absolutePath))) {
     logger.warn(`Configuration file not found: ${absolutePath}, using empty configuration`);
-    return { version: CONFIG_VERSION, plans: [], modelAliases: {} };
+    return { version: CONFIG_VERSION, plans: [] };
   }
 
   logger.info(`Loading configuration from ${absolutePath}`);
@@ -259,7 +259,6 @@ export function createEmptyConfig(): Config {
   return {
     version: CONFIG_VERSION,
     plans: [],
-    modelAliases: {},
   };
 }
 
@@ -268,57 +267,3 @@ export function createEmptyConfig(): Config {
  */
 export { configSchema, planConfigSchema } from './schema';
 export type { Config, PlanConfig } from './schema';
-
-// Import ModelResolver type for hot-reload support
-import type { ModelResolver } from '@/services/model-resolver';
-
-/**
- * Global store for model resolver (used for hot-reload).
- * This allows the reload mechanism to update model aliases at runtime.
- */
-let modelResolverInstance: ModelResolver | null = null;
-let lastConfigPath: string | null = null;
-
-/**
- * Set the model resolver instance for hot-reload support.
- * This should be called during app initialization.
- *
- * @param resolver - The ModelResolver instance
- * @param configPath - The config file path (for reloading)
- */
-export function setModelResolver(resolver: ModelResolver, configPath: string): void {
-  modelResolverInstance = resolver;
-  lastConfigPath = configPath;
-  logger.info('Model resolver registered for hot-reload', { configPath });
-}
-
-/**
- * Reload model aliases from config file.
- * This is called by the reload mechanism to update aliases at runtime.
- *
- * @param encryptionKey - Optional encryption key for API keys
- * @returns true if reload was successful
- */
-export async function reloadModelAliases(encryptionKey?: string): Promise<boolean> {
-  if (!modelResolverInstance) {
-    logger.warn('Model resolver not registered, skipping alias reload');
-    return false;
-  }
-
-  if (!lastConfigPath) {
-    logger.warn('Config path not set, skipping alias reload');
-    return false;
-  }
-
-  try {
-    const config = await loadConfig(lastConfigPath, encryptionKey);
-    const aliases = config.modelAliases ?? {};
-
-    modelResolverInstance.updateAliases(aliases);
-    logger.info('Model aliases reloaded', { count: Object.keys(aliases).length });
-    return true;
-  } catch (error) {
-    logger.error('Failed to reload model aliases', error as Error);
-    return false;
-  }
-}

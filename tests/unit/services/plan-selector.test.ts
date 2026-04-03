@@ -56,6 +56,29 @@ describe('PlanSelector', () => {
       expect(result).toBeDefined();
       expect(result?.models).toContain('claude-sonnet-4-6');
     });
+
+    it('should select plan using model aliases', () => {
+      const planWithAlias = {
+        ...mockPlans[0],
+        modelAliases: {
+          'alias-kimi': 'kimi-k2.5'
+        }
+      };
+      const result = planSelector.selectPlan('alias-kimi', [planWithAlias, ...mockPlans.slice(1)], mockQuotaStates);
+      expect(result).toBeDefined();
+      expect(result?.id).toBe(1);
+    });
+
+    it('should ignore alias if target canonical model is not in models', () => {
+      const planWithInvalidAlias = {
+        ...mockPlans[0],
+        modelAliases: {
+          'alias-invalid': 'not-in-models'
+        }
+      };
+      const result = planSelector.selectPlan('alias-invalid', [planWithInvalidAlias, ...mockPlans.slice(1)], mockQuotaStates);
+      expect(result).toBeUndefined();
+    });
   });
 
   describe('findPlansByModel', () => {
