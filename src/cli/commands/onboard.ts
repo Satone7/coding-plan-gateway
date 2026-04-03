@@ -186,8 +186,9 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
         if (!value) return undefined;
         const pairs = value.split(',');
         for (const pair of pairs) {
-          if (!pair.includes(':')) {
-            return 'Invalid format. Use alias:canonical';
+          const colonIndex = pair.indexOf(':');
+          if (colonIndex <= 0 || colonIndex === pair.length - 1) {
+            return 'Invalid format. Use alias:canonical (neither can be empty)';
           }
         }
         return undefined;
