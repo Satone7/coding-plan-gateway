@@ -537,10 +537,10 @@ export class RequestProxy {
                 tailData = tailData.slice(-4096);
               }
               
-              if (line.startsWith('data: ') && line.trim() !== 'data: [DONE]') {
+              if (/^data:\s+/.test(line) && line.trim() !== 'data: [DONE]') {
                 try {
                   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                  const data = JSON.parse(line.slice(6));
+                  const data = JSON.parse(line.replace(/^data:\s+/, ''));
                   if (options.provider !== 'anthropic') {
                     // OpenAI format
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access

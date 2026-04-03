@@ -18,7 +18,6 @@ export interface MultimodalContentBlock {
     url: string;
     detail?: 'auto' | 'low' | 'high';
   };
-  [key: string]: any;
 }
 
 /**

@@ -1,4 +1,3 @@
-/* eslint-disable max-depth, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
 import { countTokens } from '@anthropic-ai/tokenizer';
 import { logger } from '@/utils/logger';
 import { AnthropicCountTokensRequest, AnthropicMessageRequest } from '@/types/anthropic';
@@ -11,41 +10,53 @@ export class TokenCounter {
    * Images are roughly estimated at 1000 tokens per image.
    * Documents are roughly estimated at 1 token per 4 characters of base64 data.
    */
+  // eslint-disable-next-line max-depth
   static estimateAnthropicInputTokens(request: AnthropicCountTokensRequest | AnthropicMessageRequest): number {
     let text = '';
     let additionalTokens = 0;
     
+    // eslint-disable-next-line max-depth
     if (request.system) {
       if (typeof request.system === 'string') {
         text += request.system + '\n';
       } else if (Array.isArray(request.system)) {
         for (const block of request.system) {
+          // eslint-disable-next-line max-depth
           if (block.type === 'text' && typeof block.text === 'string') {
             text += block.text + '\n';
           } else if (block.type === 'image') {
             additionalTokens += 1000;
           } else if (block.type === 'document') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
             const docBlock = block as any;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, max-depth
             if (typeof docBlock.source?.data === 'string') {
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
               additionalTokens += Math.ceil(docBlock.source.data.length / 4);
             }
           }
         }
       }
     }
+    // eslint-disable-next-line max-depth
     if (request.messages && Array.isArray(request.messages)) {
       for (const msg of request.messages) {
         if (typeof msg.content === 'string') {
           text += msg.content + '\n';
         } else if (Array.isArray(msg.content)) {
+          // eslint-disable-next-line max-depth
           for (const block of msg.content) {
+            // eslint-disable-next-line max-depth
             if (block.type === 'text' && typeof block.text === 'string') {
               text += block.text + '\n';
             } else if (block.type === 'image') {
               additionalTokens += 1000;
-            } else if ((block as any).type === 'document') {
+            } else if ((block as { type?: string }).type === 'document') {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
               const docBlock = block as any;
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, max-depth
               if (typeof docBlock.source?.data === 'string') {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 additionalTokens += Math.ceil(docBlock.source.data.length / 4);
               }
             }
@@ -66,6 +77,7 @@ export class TokenCounter {
    * Estimate token count for OpenAI requests as a fallback.
    * Uses @anthropic-ai/tokenizer to calculate token usage for text.
    */
+  // eslint-disable-next-line max-depth
   static estimateOpenAIInputTokens(request: ChatCompletionRequest): number {
     let text = '';
     let additionalTokens = 0;
@@ -75,8 +87,9 @@ export class TokenCounter {
         if (typeof msg.content === 'string') {
           text += msg.content + '\n';
         } else if (Array.isArray(msg.content)) {
-          // OpenAI vision/multimodal messages
+          // eslint-disable-next-line max-depth
           for (const block of msg.content) {
+            // eslint-disable-next-line max-depth
             if (block.type === 'text' && typeof block.text === 'string') {
               text += block.text + '\n';
             } else if (block.type === 'image_url') {

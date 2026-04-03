@@ -361,8 +361,8 @@ export function createAnthropicHandlers(
                   durationMs: Date.now() - (request.startTime || Date.now()),
                   statusCode: 200,
                   tokenUsage: {
-                    inputTokens: 0,
-                    outputTokens: 0,
+                    inputTokens: finalTokenUsage.inputTokens ?? 0,
+                    outputTokens: finalTokenUsage.outputTokens ?? 0,
                     totalTokens: finalTokenUsage.totalTokens,
                   },
                 });
