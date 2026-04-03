@@ -66,8 +66,7 @@ export const modelAliasesSchema = z
   .record(
     z.string().min(1), // alias key (e.g., "gpt-4")
     z.string().min(1) // canonical model name (e.g., "gpt-4-turbo")
-  )
-  .default({});
+  );
 
 /**
  * Plan configuration schema (from YAML/JSON).

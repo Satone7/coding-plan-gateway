@@ -344,6 +344,11 @@ export function createOpenAIHandlers(
         for (const model of plan.models) {
           modelSet.add(model);
         }
+        if (plan.modelAliases) {
+          for (const alias of Object.keys(plan.modelAliases)) {
+            modelSet.add(alias);
+          }
+        }
       }
 
       const models = Array.from(modelSet).map((id) => ({

@@ -51,6 +51,11 @@ export async function registerRoutes(
     for (const model of plan.models) {
       modelSet.add(model);
     }
+    if (plan.modelAliases) {
+      for (const alias of Object.keys(plan.modelAliases)) {
+        modelSet.add(alias);
+      }
+    }
   }
 
   app.get('/ready', () => ({

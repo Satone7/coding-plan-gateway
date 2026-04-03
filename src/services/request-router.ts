@@ -6,6 +6,7 @@
 import { randomUUID } from 'crypto';
 import type { IPlanRepository } from '@/services/plan-repository';
 import { PlanSelector, createPlanSelector, type SelectionContext } from '@/services/plan-selector';
+import { resolveCanonicalName } from '@/utils/model-alias';
 import { CircuitBreaker, createCircuitBreaker } from '@/services/circuit-breaker';
 import type { QuotaManager } from '@/services/quota-manager';
 import { RpmTracker, createRpmTracker } from '@/services/rpm-tracker';
@@ -186,28 +187,15 @@ export class RequestRouter {
     this.rpmTracker.recordRequest(selectedPlan.id);
 
     // Determine the exact case canonical name from the selected plan
-    let canonicalName = searchModel;
-    const normalizedSearch = searchModel.toLowerCase();
-    
-    const exactDirectMatch = selectedPlan.models.find(
-      (m) => m.toLowerCase() === normalizedSearch
-    );
-    
-    if (exactDirectMatch) {
-      canonicalName = exactDirectMatch;
-    } else if (selectedPlan.modelAliases) {
-      for (const [alias, target] of Object.entries(selectedPlan.modelAliases)) {
-        if (alias.toLowerCase() === normalizedSearch) {
-          const normalizedTarget = target.toLowerCase();
-          const exactAliasTargetMatch = selectedPlan.models.find(
-            (m) => m.toLowerCase() === normalizedTarget
-          );
-          if (exactAliasTargetMatch) {
-            canonicalName = exactAliasTargetMatch;
-          }
-          break;
-        }
-      }
+    const canonicalName = resolveCanonicalName(selectedPlan, searchModel);
+
+    if (canonicalName === searchModel && !selectedPlan.models.some(m => m.toLowerCase() === searchModel.toLowerCase())) {
+      logger.warn('Model alias target not found in plan models', {
+        requestId,
+        planId: selectedPlan.id,
+        searchModel,
+        availableModels: selectedPlan.models
+      });
     }
 
     // Get alternative plans for failover (exclude selected)
@@ -251,7 +239,6 @@ export class RequestRouter {
           model,
           searchedModel: model,
           availableModels,
-          searchedAliases: [],
           requestId: result.requestId,
         }
       );

@@ -172,6 +172,15 @@ export async function loadConfig(
   // Expand environment variables
   const expanded = expandEnvVarsInObject(parsed);
 
+  // Warn about legacy modelAliases
+  if (expanded && typeof expanded === 'object' && 'modelAliases' in expanded) {
+    logger.warn(
+      'Legacy root-level "modelAliases" found in configuration. ' +
+      'Model aliases are now configured per-plan. This root-level configuration will be ignored. ' +
+      'Please move these aliases to the "modelAliases" section of your respective plans.'
+    );
+  }
+
   // Validate configuration
   const result = configSchema.safeParse(expanded);
 

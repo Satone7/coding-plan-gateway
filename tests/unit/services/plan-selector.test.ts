@@ -107,6 +107,36 @@ describe('PlanSelector', () => {
     });
   });
 
+  describe('supportsModel', () => {
+    it('should return true for exact model match', () => {
+      expect(planSelector.supportsModel(mockPlans[0], 'kimi-k2')).toBe(true);
+    });
+
+    it('should return true for case-insensitive match', () => {
+      expect(planSelector.supportsModel(mockPlans[0], 'KIMI-K2')).toBe(true);
+    });
+
+    it('should return false for unsupported model', () => {
+      expect(planSelector.supportsModel(mockPlans[0], 'gpt-4')).toBe(false);
+    });
+
+    it('should return true for valid model alias', () => {
+      const planWithAlias = {
+        ...mockPlans[0],
+        modelAliases: { 'alias-kimi': 'kimi-k2' }
+      };
+      expect(planSelector.supportsModel(planWithAlias, 'alias-kimi')).toBe(true);
+    });
+
+    it('should return false for invalid model alias', () => {
+      const planWithAlias = {
+        ...mockPlans[0],
+        modelAliases: { 'alias-invalid': 'not-in-models' }
+      };
+      expect(planSelector.supportsModel(planWithAlias, 'alias-invalid')).toBe(false);
+    });
+  });
+
   describe('filterActivePlans', () => {
     it('should return only active plans', () => {
       const result = planSelector.filterActivePlans(mockPlans);

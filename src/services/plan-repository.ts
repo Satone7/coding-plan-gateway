@@ -19,6 +19,7 @@ import {
   isApiKeyEncrypted,
 } from '@/config/encryption';
 import { logger } from '@/utils/logger';
+import { planSupportsModel } from '@/utils/model-alias';
 import { DEFAULT_REQUEST_TIMEOUT_SEC } from '@/config/defaults';
 import type { PlanIdCounter } from './plan-id-counter';
 
@@ -114,24 +115,8 @@ export class FilePlanRepository implements IPlanRepository {
    */
   async findByModel(model: string): Promise<CodingPlan[]> {
     await this.ensureLoaded();
-    const normalizedModel = model.toLowerCase();
     return Array.from(this.plans.values())
-      .filter((plan) => {
-        if (plan.models.some((m) => m.toLowerCase() === normalizedModel)) {
-          return true;
-        }
-        if (plan.modelAliases) {
-          for (const [alias, target] of Object.entries(plan.modelAliases)) {
-            if (alias.toLowerCase() === normalizedModel) {
-              const normalizedTarget = target.toLowerCase();
-              if (plan.models.some((m) => m.toLowerCase() === normalizedTarget)) {
-                return true;
-              }
-            }
-          }
-        }
-        return false;
-      })
+      .filter((plan) => planSupportsModel(plan, model))
       .map((p) => this.toPlainObject(p));
   }
 

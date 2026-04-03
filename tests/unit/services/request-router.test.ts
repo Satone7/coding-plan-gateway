@@ -8,6 +8,8 @@ import { RequestRouter, createRequestRouter } from '@/services/request-router';
 import { createMockPlans } from '../../fixtures/mock-plans';
 import type { IPlanRepository } from '@/services/plan-repository';
 
+import { planSupportsModel } from '@/utils/model-alias';
+
 // Helper to create a mock repository with default behavior
 function createMockRepository(): IPlanRepository {
   const mockPlans = createMockPlans();
@@ -16,10 +18,7 @@ function createMockRepository(): IPlanRepository {
     findById: vi.fn(),
     findAll: vi.fn().mockResolvedValue(mockPlans),
     findByModel: vi.fn().mockImplementation(async (model: string) => {
-      const normalizedModel = model.toLowerCase();
-      return mockPlans.filter((plan) =>
-        plan.models.some((m) => m.toLowerCase() === normalizedModel)
-      );
+      return mockPlans.filter((plan) => planSupportsModel(plan, model));
     }),
     findActive: vi.fn().mockResolvedValue(mockPlans.filter(p => p.status === 'active')),
     save: vi.fn(),
@@ -46,6 +45,18 @@ describe('RequestRouter', () => {
       expect(result).toBeDefined();
       expect(result.selectedPlan).toBeDefined();
       expect(result.selectedPlan?.models).toContain('claude-sonnet-4-6');
+      expect(result.canonicalName).toBe('claude-sonnet-4-6');
+    });
+
+    it('should resolve canonical name correctly when alias is used', async () => {
+      const plans = await mockRepository.findAll();
+      const plan = plans[0];
+      plan.modelAliases = { 'my-alias': plan.models[0] };
+      
+      const result = await router.route('my-alias');
+      expect(result.selectedPlan).toBeDefined();
+      expect(result.selectedPlan?.id).toBe(plan.id);
+      expect(result.canonicalName).toBe(plan.models[0]);
     });
 
     it('should return undefined selectedPlan for unsupported model', async () => {

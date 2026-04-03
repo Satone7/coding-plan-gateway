@@ -275,9 +275,13 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
     const aliasesRecord: Record<string, string> = {};
     const pairs = aliasesValue.split(',');
     for (const pair of pairs) {
-      const [alias, canonical] = pair.split(':');
-      if (alias && canonical) {
-        aliasesRecord[alias.trim()] = canonical.trim();
+      const colonIndex = pair.indexOf(':');
+      if (colonIndex > 0) {
+        const alias = pair.substring(0, colonIndex).trim();
+        const canonical = pair.substring(colonIndex + 1).trim();
+        if (alias && canonical) {
+          aliasesRecord[alias] = canonical;
+        }
       }
     }
     if (Object.keys(aliasesRecord).length > 0) {

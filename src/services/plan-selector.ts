@@ -14,6 +14,7 @@ import {
   calculateRpmScore,
   calculateQuotaScore,
 } from '@/utils/expiration';
+import { planSupportsModel } from '@/utils/model-alias';
 import { logger } from '@/utils/logger';
 
 /**
@@ -156,24 +157,7 @@ export class PlanSelector {
     plans: CodingPlan[],
     options: FindPlansOptions = {}
   ): CodingPlan[] {
-    const normalizedModel = model.toLowerCase().trim();
-
-    const matchingPlans = plans.filter((plan) => {
-      if (plan.models.some((m) => m.toLowerCase() === normalizedModel)) {
-        return true;
-      }
-      if (plan.modelAliases) {
-        for (const [alias, target] of Object.entries(plan.modelAliases)) {
-          if (alias.toLowerCase() === normalizedModel) {
-            const normalizedTarget = target.toLowerCase();
-            if (plan.models.some((m) => m.toLowerCase() === normalizedTarget)) {
-              return true;
-            }
-          }
-        }
-      }
-      return false;
-    });
+    const matchingPlans = plans.filter((plan) => planSupportsModel(plan, model));
 
     // By default, filter to active plans only
     if (!options.includeInactive) {
@@ -279,21 +263,7 @@ export class PlanSelector {
    * @returns true if the plan supports the model
    */
   supportsModel(plan: CodingPlan, model: string): boolean {
-    const normalizedModel = model.toLowerCase().trim();
-    if (plan.models.some((m) => m.toLowerCase() === normalizedModel)) {
-      return true;
-    }
-    if (plan.modelAliases) {
-      for (const [alias, target] of Object.entries(plan.modelAliases)) {
-        if (alias.toLowerCase() === normalizedModel) {
-          const normalizedTarget = target.toLowerCase();
-          if (plan.models.some((m) => m.toLowerCase() === normalizedTarget)) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
+    return planSupportsModel(plan, model);
   }
 
   /**
