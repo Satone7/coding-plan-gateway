@@ -12,7 +12,7 @@ export type OpenAIMessageRole = 'system' | 'user' | 'assistant';
  * OpenAI multimodal content block
  */
 export interface MultimodalContentBlock {
-  type: string;
+  type: 'text' | 'image_url';
   text?: string;
   image_url?: {
     url: string;

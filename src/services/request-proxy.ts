@@ -541,15 +541,14 @@ export class RequestProxy {
                 try {
                   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                   const data = JSON.parse(line.replace(/^data:\s+/, ''));
-                  if (options.provider !== 'anthropic') {
+                  if (options.provider === 'openai') {
                     // OpenAI format
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     if (data.choices?.[0]?.delta?.content) {
                       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                       accumulatedText += data.choices[0].delta.content;
                     }
-                  }
-                  if (options.provider !== 'openai') {
+                  } else if (options.provider === 'anthropic') {
                     // Anthropic format
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     if (data.type === 'content_block_delta' && data.delta?.text) {

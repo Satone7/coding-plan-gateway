@@ -161,29 +161,23 @@ function recordMetrics(
   
   let tokenUsage = responseData ? extractAnthropicTokenUsage(responseData) : undefined;
   
-  if (!tokenUsage?.totalTokens && responseData) {
-    // Fallback to local token estimation
-    const inputTokens = TokenCounter.estimateAnthropicInputTokens(request.body);
-    let outputText = '';
-    if (responseData.content && Array.isArray(responseData.content)) {
-      for (const block of responseData.content) {
-        if (block.type === 'text' && typeof block.text === 'string') {
-          outputText += block.text;
-        }
+  let outputText: string | undefined;
+  if (responseData?.content && Array.isArray(responseData.content)) {
+    outputText = '';
+    for (const block of responseData.content) {
+      if (block.type === 'text' && typeof block.text === 'string') {
+        outputText += block.text;
       }
     }
-    const outputTokens = TokenCounter.estimateOutputTokens(outputText);
-    tokenUsage = {
-      inputTokens,
-      outputTokens,
-      totalTokens: inputTokens + outputTokens,
-    };
-    logger.debug('Using local token estimation fallback for Anthropic response', {
-      requestId: request.id,
-      inputTokens,
-      outputTokens,
-    });
   }
+
+  tokenUsage = TokenCounter.buildTokenUsageWithFallback(
+    tokenUsage,
+    request.body,
+    'anthropic',
+    outputText,
+    request.id
+  );
 
   attachProviderMetrics(request, {
     planId: plan.id,
@@ -336,22 +330,13 @@ export function createAnthropicHandlers(
             },
             reply,
             (tokenUsage, accumulatedText) => {
-              // Update provider metrics with stream token usage for dashboard/logging
-              let finalTokenUsage = tokenUsage;
-              if (!finalTokenUsage?.totalTokens && accumulatedText !== undefined) {
-                const inputTokens = TokenCounter.estimateAnthropicInputTokens(body);
-                const outputTokens = TokenCounter.estimateOutputTokens(accumulatedText);
-                finalTokenUsage = {
-                  inputTokens,
-                  outputTokens,
-                  totalTokens: inputTokens + outputTokens,
-                };
-                logger.debug('Using local token estimation fallback for Anthropic stream', {
-                  requestId,
-                  inputTokens,
-                  outputTokens,
-                });
-              }
+              const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
+                tokenUsage,
+                body,
+                'anthropic',
+                accumulatedText,
+                requestId
+              );
 
               if (finalTokenUsage?.totalTokens) {
                 attachProviderMetrics(request, {

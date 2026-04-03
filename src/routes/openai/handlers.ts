@@ -38,13 +38,13 @@ const chatCompletionSchema = z.object({
     content: z.union([
       z.string(),
       z.array(z.object({
-        type: z.string(),
+        type: z.enum(['text', 'image_url']),
         text: z.string().optional(),
         image_url: z.object({
           url: z.string(),
           detail: z.enum(['auto', 'low', 'high']).optional(),
-        }).passthrough().optional(),
-      }).passthrough())
+        }).optional(),
+      }))
     ]),
     name: z.string().optional(),
   })).min(1),
@@ -130,29 +130,23 @@ function recordMetrics(
   
   let tokenUsage = responseData ? extractOpenAITokenUsage(responseData) : undefined;
   
-  if (!tokenUsage?.totalTokens && responseData) {
-    // Fallback to local token estimation
-    const inputTokens = TokenCounter.estimateOpenAIInputTokens(request.body);
-    let outputText = '';
-    if (responseData.choices && Array.isArray(responseData.choices)) {
-      for (const choice of responseData.choices) {
-        if (typeof choice.message?.content === 'string') {
-          outputText += choice.message.content;
-        }
+  let outputText: string | undefined;
+  if (responseData?.choices && Array.isArray(responseData.choices)) {
+    outputText = '';
+    for (const choice of responseData.choices) {
+      if (typeof choice.message?.content === 'string') {
+        outputText += choice.message.content;
       }
     }
-    const outputTokens = TokenCounter.estimateOutputTokens(outputText);
-    tokenUsage = {
-      inputTokens,
-      outputTokens,
-      totalTokens: inputTokens + outputTokens,
-    };
-    logger.debug('Using local token estimation fallback for OpenAI response', {
-      requestId: request.id,
-      inputTokens,
-      outputTokens,
-    });
   }
+
+  tokenUsage = TokenCounter.buildTokenUsageWithFallback(
+    tokenUsage,
+    request.body,
+    'openai',
+    outputText,
+    request.id
+  );
 
   attachProviderMetrics(request, {
     planId: plan.id,
@@ -304,22 +298,13 @@ export function createOpenAIHandlers(
             },
             reply,
             (tokenUsage, accumulatedText) => {
-              // Update provider metrics with stream token usage for dashboard/logging
-              let finalTokenUsage = tokenUsage;
-              if (!finalTokenUsage?.totalTokens && accumulatedText !== undefined) {
-                const inputTokens = TokenCounter.estimateOpenAIInputTokens(body);
-                const outputTokens = TokenCounter.estimateOutputTokens(accumulatedText);
-                finalTokenUsage = {
-                  inputTokens,
-                  outputTokens,
-                  totalTokens: inputTokens + outputTokens,
-                };
-                logger.debug('Using local token estimation fallback for OpenAI stream', {
-                  requestId,
-                  inputTokens,
-                  outputTokens,
-                });
-              }
+              const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
+                tokenUsage,
+                body,
+                'openai',
+                accumulatedText,
+                requestId
+              );
 
               if (finalTokenUsage?.totalTokens) {
                 attachProviderMetrics(request, {

@@ -5,6 +5,50 @@ import { ChatCompletionRequest } from '@/types/openai';
 
 export class TokenCounter {
   /**
+   * Build a fallback token usage object when upstream doesn't provide one.
+   * Calculates input/output tokens based on the request and accumulated response text.
+   */
+  static buildTokenUsageWithFallback(
+    tokenUsage: { totalTokens?: number; inputTokens?: number; outputTokens?: number } | undefined,
+    request: unknown,
+    provider: 'anthropic' | 'openai',
+    accumulatedText?: string,
+    requestId?: string
+  ): { totalTokens: number; inputTokens: number; outputTokens: number } | undefined {
+    let finalTokenUsage = tokenUsage;
+    
+    if (!finalTokenUsage?.totalTokens && accumulatedText !== undefined) {
+      const inputTokens = provider === 'anthropic' 
+        ? this.estimateAnthropicInputTokens(request as AnthropicCountTokensRequest | AnthropicMessageRequest)
+        : this.estimateOpenAIInputTokens(request as ChatCompletionRequest);
+        
+      const outputTokens = this.estimateOutputTokens(accumulatedText);
+      
+      finalTokenUsage = {
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+      };
+      
+      logger.debug(`Using local token estimation fallback for ${provider} response`, {
+        requestId,
+        inputTokens,
+        outputTokens,
+      });
+    }
+    
+    if (finalTokenUsage && finalTokenUsage.totalTokens !== undefined) {
+      return {
+        totalTokens: finalTokenUsage.totalTokens,
+        inputTokens: finalTokenUsage.inputTokens ?? 0,
+        outputTokens: finalTokenUsage.outputTokens ?? 0,
+      };
+    }
+    
+    return undefined;
+  }
+
+  /**
    * Estimate token count for Anthropic requests as a fallback.
    * Uses @anthropic-ai/tokenizer to calculate token usage for text.
    * Images are roughly estimated at 1000 tokens per image.
