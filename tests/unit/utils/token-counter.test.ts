@@ -27,8 +27,13 @@ describe('TokenCounter', () => {
       };
 
       const tokens = TokenCounter.estimateAnthropicInputTokens(request);
-      // 'You are a helpful assistant\n\n' (29) + 'Hello world\n\n' (13) + 'Hi there\n\n' (10) = 52
-      expect(tokens).toBe(52);
+      
+      const expectedTokens = 
+        'You are a helpful assistant\n\n'.length + 
+        'Hello world\n\n'.length + 
+        'Hi there\n\n'.length;
+        
+      expect(tokens).toBe(expectedTokens);
     });
 
     it('should count tokens for array messages with text and images', () => {
@@ -47,8 +52,8 @@ describe('TokenCounter', () => {
       };
 
       const tokens = TokenCounter.estimateAnthropicInputTokens(request);
-      // 'Analyze this image\n\n' (20) + 1000 (image fallback) = 1020
-      expect(tokens).toBe(1020);
+      const expectedTokens = 'Analyze this image\n\n'.length + 1000;
+      expect(tokens).toBe(expectedTokens);
     });
 
     it('should count tokens for documents', () => {
@@ -67,8 +72,8 @@ describe('TokenCounter', () => {
       };
 
       const tokens = TokenCounter.estimateAnthropicInputTokens(request);
-      // 'abcd' length 4 / 4 = 1 token
-      expect(tokens).toBe(1);
+      const expectedTokens = Math.ceil('abcd'.length / 4);
+      expect(tokens).toBe(expectedTokens);
     });
 
     it('should handle tokenizer failures by using length/4 estimation', () => {
@@ -78,8 +83,8 @@ describe('TokenCounter', () => {
         messages: [{ role: 'user', content: 'throw error' }],
       };
       const tokens = TokenCounter.estimateAnthropicInputTokens(request);
-      // 'throw error\n' = 12 chars, ceil(12/4) = 3
-      expect(tokens).toBe(3);
+      const expectedTokens = Math.ceil('throw error\n'.length / 4);
+      expect(tokens).toBe(expectedTokens);
     });
   });
 
@@ -94,8 +99,8 @@ describe('TokenCounter', () => {
       };
 
       const tokens = TokenCounter.estimateOpenAIInputTokens(request);
-      // 'You are a bot\n\n' (15) + 'Hello\n\n' (7) = 22
-      expect(tokens).toBe(22);
+      const expectedTokens = 'You are a bot\n\n'.length + 'Hello\n\n'.length;
+      expect(tokens).toBe(expectedTokens);
     });
 
     it('should count tokens for multimodal messages', () => {
@@ -113,8 +118,8 @@ describe('TokenCounter', () => {
       };
 
       const tokens = TokenCounter.estimateOpenAIInputTokens(request);
-      // 'Look at this\n\n' (14) + 1000 (image fallback) = 1014
-      expect(tokens).toBe(1014);
+      const expectedTokens = 'Look at this\n\n'.length + 1000;
+      expect(tokens).toBe(expectedTokens);
     });
   });
 

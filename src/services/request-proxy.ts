@@ -538,6 +538,14 @@ export class RequestProxy {
               }
               
               if (options.provider && /^data:\s+/.test(line) && line.trim() !== 'data: [DONE]') {
+                // Cheap pre-check to avoid JSON.parse overhead for lines without text content
+                if (options.provider === 'openai' && !line.includes('"content"')) {
+                  continue;
+                }
+                if (options.provider === 'anthropic' && !line.includes('"delta"')) {
+                  continue;
+                }
+                
                 try {
                   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                   const data = JSON.parse(line.replace(/^data:\s+/, ''));

@@ -344,11 +344,7 @@ export function createAnthropicHandlers(
                 model,
                 durationMs: Date.now() - (request.startTime || Date.now()),
                 statusCode: 200,
-                tokenUsage: finalTokenUsage?.totalTokens !== undefined ? {
-                  inputTokens: finalTokenUsage.inputTokens ?? 0,
-                  outputTokens: finalTokenUsage.outputTokens ?? 0,
-                  totalTokens: finalTokenUsage.totalTokens,
-                } : undefined,
+                tokenUsage: finalTokenUsage,
               });
             }
           );

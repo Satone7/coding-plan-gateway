@@ -7,6 +7,7 @@ export class TokenCounter {
   /**
    * Build a fallback token usage object when upstream doesn't provide one.
    * Calculates input/output tokens based on the request and accumulated response text.
+   * Always returns a normalized object if totalTokens can be determined, otherwise undefined.
    */
   static buildTokenUsageWithFallback(
     tokenUsage: { totalTokens?: number; inputTokens?: number; outputTokens?: number } | undefined,
@@ -37,7 +38,7 @@ export class TokenCounter {
       });
     }
     
-    if (finalTokenUsage && finalTokenUsage.totalTokens !== undefined) {
+    if (finalTokenUsage?.totalTokens !== undefined) {
       return {
         totalTokens: finalTokenUsage.totalTokens,
         inputTokens: finalTokenUsage.inputTokens ?? 0,
