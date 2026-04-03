@@ -9,11 +9,18 @@
 export type OpenAIMessageRole = 'system' | 'user' | 'assistant';
 
 /**
+ * OpenAI multimodal content block
+ */
+export type MultimodalContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url?: { url: string; detail?: 'auto' | 'low' | 'high' } };
+
+/**
  * OpenAI chat message structure.
  */
 export interface ChatMessage {
   role: OpenAIMessageRole;
-  content: string;
+  content: string | MultimodalContentBlock[];
   name?: string;
 }
 

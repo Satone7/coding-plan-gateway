@@ -1,3 +1,4 @@
+/* eslint-disable max-depth, max-lines-per-function */
 /**
  * RequestProxy service for forwarding requests to upstream providers.
  * Handles both OpenAI and Anthropic format requests with streaming support.
@@ -71,7 +72,8 @@ interface InternalRequestOptions {
  */
 interface InternalStreamingOptions extends InternalRequestOptions {
   reply: FastifyReply;
-  onComplete: (tokenUsage?: StreamTokenUsage) => void;
+  onComplete: (tokenUsage?: StreamTokenUsage, accumulatedText?: string) => void;
+  provider?: 'openai' | 'anthropic';
 }
 
 /**
@@ -79,6 +81,8 @@ interface InternalStreamingOptions extends InternalRequestOptions {
  */
 export interface StreamTokenUsage {
   totalTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 /**
@@ -89,16 +93,21 @@ function extractStreamTokenUsage(tail: string): StreamTokenUsage | undefined {
   // OpenAI format: "usage":{"prompt_tokens":X,"completion_tokens":Y,"total_tokens":Z}
   const openaiMatch = tail.match(/"total_tokens"\s*:\s*(\d+)/);
   if (openaiMatch) {
-    return { totalTokens: parseInt(openaiMatch[1]!, 10) };
+    const totalTokens = parseInt(openaiMatch[1]!, 10);
+    const promptMatch = tail.match(/"prompt_tokens"\s*:\s*(\d+)/);
+    const completionMatch = tail.match(/"completion_tokens"\s*:\s*(\d+)/);
+    const inputTokens = promptMatch ? parseInt(promptMatch[1]!, 10) : undefined;
+    const outputTokens = completionMatch ? parseInt(completionMatch[1]!, 10) : undefined;
+    return { totalTokens, inputTokens, outputTokens };
   }
 
   // Anthropic format: look for input_tokens and output_tokens in separate events
   const inputMatch = tail.match(/"input_tokens"\s*:\s*(\d+)/);
   const outputMatch = tail.match(/"output_tokens"\s*:\s*(\d+)/);
   if (inputMatch || outputMatch) {
-    const input = inputMatch ? parseInt(inputMatch[1]!, 10) : 0;
-    const output = outputMatch ? parseInt(outputMatch[1]!, 10) : 0;
-    return { totalTokens: input + output };
+    const inputTokens = inputMatch ? parseInt(inputMatch[1]!, 10) : 0;
+    const outputTokens = outputMatch ? parseInt(outputMatch[1]!, 10) : 0;
+    return { totalTokens: inputTokens + outputTokens, inputTokens, outputTokens };
   }
 
   return undefined;
@@ -247,7 +256,7 @@ export class RequestProxy {
     options: ProxyRequestOptions,
     onChunk: StreamCallback,
     reply: FastifyReply,
-    onTokenUsage?: (tokenUsage?: StreamTokenUsage) => void
+    onTokenUsage?: (tokenUsage?: StreamTokenUsage, accumulatedText?: string) => void
   ): Promise<void> {
     const basePath = options.baseUrl.endsWith('/')
       ? options.baseUrl.slice(0, -1)
@@ -273,11 +282,12 @@ export class RequestProxy {
       body: request,
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
       authType: 'bearer',
+      provider: 'openai',
       reply,
-      onComplete: (tokenUsage) => {
+      onComplete: (tokenUsage, accumulatedText) => {
         onChunk('', true);
         if (onTokenUsage) {
-          onTokenUsage(tokenUsage);
+          onTokenUsage(tokenUsage, accumulatedText);
         }
         const durationMs = Date.now() - startTime;
         logger.info('OpenAI streaming request completed', {
@@ -390,7 +400,7 @@ export class RequestProxy {
     options: ProxyRequestOptions,
     onChunk: StreamCallback,
     reply: FastifyReply,
-    onTokenUsage?: (tokenUsage?: StreamTokenUsage) => void
+    onTokenUsage?: (tokenUsage?: StreamTokenUsage, accumulatedText?: string) => void
   ): Promise<void> {
     const basePath = options.baseUrl.endsWith('/')
       ? options.baseUrl.slice(0, -1)
@@ -419,15 +429,16 @@ export class RequestProxy {
       body: request,
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
       authType: 'x-api-key',
+      provider: 'anthropic',
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
       reply,
-      onComplete: (tokenUsage) => {
+      onComplete: (tokenUsage, accumulatedText) => {
         onChunk('', true);
         if (onTokenUsage) {
-          onTokenUsage(tokenUsage);
+          onTokenUsage(tokenUsage, accumulatedText);
         }
         const durationMs = Date.now() - startTime;
         logger.info('Anthropic streaming request completed', {
@@ -508,18 +519,68 @@ export class RequestProxy {
 
           // Forward chunks manually instead of piping, to extract token usage from tail
           let tailData = '';
+          let sseBuffer = '';
+          let accumulatedText = '';
+          
           res.on('data', (chunk: Buffer) => {
             options.reply.raw.write(chunk);
-            tailData += chunk.toString();
-            // Keep last 4KB for usage extraction
-            if (tailData.length > 4096) {
-              tailData = tailData.slice(-4096);
+            
+            // Consolidate buffering: extract lines from chunk
+            sseBuffer += chunk.toString();
+            const lines = sseBuffer.split('\n');
+            sseBuffer = lines.pop() || '';
+            
+            for (const line of lines) {
+              const lineWithNewline = line + '\n';
+              tailData += lineWithNewline;
+              if (tailData.length > 4096) {
+                tailData = tailData.slice(-4096);
+              }
+              
+              if (options.provider && /^data:\s+/.test(line) && line.trim() !== 'data: [DONE]') {
+                // Cheap pre-check to avoid JSON.parse overhead for lines without text content
+                if (options.provider === 'openai' && !line.includes('"content"')) {
+                  continue;
+                }
+                if (options.provider === 'anthropic' && !line.includes('"delta"')) {
+                  continue;
+                }
+                
+                try {
+                  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                  const data = JSON.parse(line.replace(/^data:\s+/, ''));
+                  if (options.provider === 'openai') {
+                    // OpenAI format
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    if (data.choices?.[0]?.delta?.content) {
+                      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                      accumulatedText += data.choices[0].delta.content;
+                    }
+                  } else if (options.provider === 'anthropic') {
+                    // Anthropic format
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    if (data.type === 'content_block_delta' && data.delta?.text) {
+                      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                      accumulatedText += data.delta.text;
+                    }
+                  }
+                } catch {
+                  // ignore partial or invalid JSON
+                }
+              }
             }
           });
 
           res.on('end', () => {
+            // Append any remaining buffer data to tailData
+            if (sseBuffer) {
+              tailData += sseBuffer;
+              if (tailData.length > 4096) {
+                tailData = tailData.slice(-4096);
+              }
+            }
             const tokenUsage = extractStreamTokenUsage(tailData);
-            options.onComplete(tokenUsage);
+            options.onComplete(tokenUsage, accumulatedText);
             options.reply.raw.end();
             resolve();
           });

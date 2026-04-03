@@ -1,0 +1,5 @@
+- [x] 新建了 `src/utils/token-counter.ts` 并在其中实现了针对 Anthropic 和 OpenAI 的输入输出 Token 估算函数。
+- [x] `RequestProxy` 中的流式请求处理（`makeStreamingRequest`）能正确解析并累加返回的数据流文本，作为 fallback 的输出。
+- [x] Anthropic 的普通对话和流式对话在缺少上游 Token 返回时，能成功触发 Fallback，并正确地将估算出的 input 和 output token 计入 Provider Metrics。
+- [x] OpenAI 的普通对话和流式对话在缺少上游 Token 返回时，能成功触发 Fallback，并正确地将估算出的 input 和 output token 计入 Provider Metrics。
+- [x] 原有 Anthropic 的 `/count_tokens` 接口的 Fallback 能够正确调用新提取的 `TokenCounter`，保持功能正常且能够成功构建通过 TypeScript 类型检查。
