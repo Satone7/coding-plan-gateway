@@ -8,7 +8,6 @@ import { createOpenAIHandlers } from './handlers';
 import { IPlanRepository } from '@/services/plan-repository';
 import { RequestProxy } from '@/services/request-proxy';
 import { QuotaManager } from '@/services/quota-manager';
-import type { ModelAliases } from '@/services/model-resolver';
 
 /**
  * Options for OpenAI routes.
@@ -20,8 +19,6 @@ export interface OpenAIRoutesOptions {
   proxy: RequestProxy;
   /** Quota manager instance */
   quotaManager?: QuotaManager;
-  /** Model aliases for resolution */
-  modelAliases?: ModelAliases;
   /** API prefix (default: '/v1') */
   prefix?: string;
 }
@@ -36,8 +33,8 @@ export async function registerOpenAIRoutes(
   app: FastifyInstance,
   options: OpenAIRoutesOptions
 ): Promise<void> {
-  const { repository, proxy, quotaManager, modelAliases, prefix = '/v1' } = options;
-  const handlers = createOpenAIHandlers(repository, proxy, quotaManager, modelAliases);
+  const { repository, proxy, quotaManager, prefix = '/v1' } = options;
+  const handlers = createOpenAIHandlers(repository, proxy, quotaManager);
 
   await app.register(
     (fastify, _options, done) => {

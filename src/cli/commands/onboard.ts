@@ -27,7 +27,6 @@ export async function handleOnboardCommand(context: CliContext): Promise<void> {
       options: [
         { value: 'plans', label: 'Manage Plans' },
         { value: 'lb', label: 'Configure Load Balancing' },
-        { value: 'aliases', label: 'Configure Model Aliases' },
         { value: 'save', label: 'Save & Exit' },
         { value: 'cancel', label: 'Cancel (Discard changes)' },
       ],
@@ -44,9 +43,6 @@ export async function handleOnboardCommand(context: CliContext): Promise<void> {
         break;
       case 'lb':
         await manageLoadBalancing(config);
-        break;
-      case 'aliases':
-        await manageAliases(config);
         break;
       case 'save':
         try {
@@ -183,6 +179,21 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
       initialValue: existing?.models.join(',') || '',
       validate: value => (!value || value.length === 0) ? 'At least one model is required' : undefined
     }),
+    modelAliases: () => p.text({
+      message: 'Model Aliases (comma-separated alias:canonical, optional)',
+      initialValue: existing?.modelAliases ? Object.entries(existing.modelAliases).map(([k, v]) => `${k}:${v}`).join(',') : '',
+      validate: value => {
+        if (!value) return undefined;
+        const pairs = value.split(',');
+        for (const pair of pairs) {
+          const colonIndex = pair.indexOf(':');
+          if (colonIndex <= 0 || colonIndex === pair.length - 1) {
+            return 'Invalid format. Use alias:canonical (neither can be empty)';
+          }
+        }
+        return undefined;
+      }
+    }),
     quotaLimit: () => p.text({
       message: 'Quota Limit',
       initialValue: existing?.quota.limit.toString() || '100000',
@@ -260,6 +271,24 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
   if (group.timeout) {
     plan.timeout = parseInt(group.timeout as string, 10);
   }
+  if (group.modelAliases) {
+    const aliasesValue = group.modelAliases as string;
+    const aliasesRecord: Record<string, string> = {};
+    const pairs = aliasesValue.split(',');
+    for (const pair of pairs) {
+      const colonIndex = pair.indexOf(':');
+      if (colonIndex > 0) {
+        const alias = pair.substring(0, colonIndex).trim();
+        const canonical = pair.substring(colonIndex + 1).trim();
+        if (alias && canonical) {
+          aliasesRecord[alias] = canonical;
+        }
+      }
+    }
+    if (Object.keys(aliasesRecord).length > 0) {
+      plan.modelAliases = aliasesRecord;
+    }
+  }
 
   return plan;
 }
@@ -313,81 +342,5 @@ async function manageLoadBalancing(config: Config) {
     }
   } else {
     p.log.success('Load balancing strategy updated.');
-  }
-}
-
-async function manageAliases(config: Config) {
-  config.modelAliases = config.modelAliases || {};
-  let back = false;
-  
-  while (!back) {
-    const modelAliases = config.modelAliases || {};
-    const aliasKeys = Object.keys(modelAliases);
-    const options = aliasKeys.map(alias => ({
-      value: `edit:${alias}`,
-      label: `${alias} → ${modelAliases[alias]}`
-    }));
-    
-    options.push({ value: 'add', label: color.green('+ Add New Alias') });
-    options.push({ value: 'back', label: '← Back to Main Menu' });
-
-    const action = await p.select({
-      message: 'Manage Model Aliases',
-      options,
-    });
-
-    if (p.isCancel(action)) return;
-
-    if (action === 'back') {
-      back = true;
-    } else if (action === 'add') {
-      const group = await p.group({
-        alias: () => p.text({
-          message: 'Alias Name (e.g. gpt-4)',
-          validate: v => (!v || v.length === 0) ? 'Alias name is required' : undefined
-        }),
-        canonical: () => p.text({
-          message: 'Canonical Model Name (e.g. gpt-4-turbo)',
-          validate: v => (!v || v.length === 0) ? 'Canonical name is required' : undefined
-        })
-      });
-
-      if (group) {
-        config.modelAliases = config.modelAliases || {};
-        config.modelAliases[group.alias as string] = group.canonical as string;
-        p.log.success(`Added alias: ${group.alias as string} → ${group.canonical as string}`);
-      }
-    } else if (typeof action === 'string' && action.startsWith('edit:')) {
-      const parts = action.split(':');
-      if (!parts[1]) continue;
-      const alias = parts[1];
-      const editAction = await p.select({
-        message: `Edit Alias: ${alias}`,
-        options: [
-          { value: 'update', label: 'Update target model' },
-          { value: 'delete', label: color.red('Delete alias') },
-          { value: 'back', label: 'Cancel' }
-        ]
-      });
-
-      if (p.isCancel(editAction)) continue;
-
-      if (editAction === 'delete') {
-        if (config.modelAliases) {
-          delete config.modelAliases[alias];
-          p.log.success('Alias deleted.');
-        }
-      } else if (editAction === 'update') {
-        const canonical = await p.text({
-          message: `New canonical model for ${alias}`,
-          initialValue: config.modelAliases ? config.modelAliases[alias] : ''
-        });
-        if (!p.isCancel(canonical) && canonical) {
-          config.modelAliases = config.modelAliases || {};
-          config.modelAliases[alias] = canonical as string;
-          p.log.success('Alias updated.');
-        }
-      }
-    }
   }
 }

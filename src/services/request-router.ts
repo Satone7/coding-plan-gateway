@@ -6,10 +6,10 @@
 import { randomUUID } from 'crypto';
 import type { IPlanRepository } from '@/services/plan-repository';
 import { PlanSelector, createPlanSelector, type SelectionContext } from '@/services/plan-selector';
+import { resolveCanonicalName } from '@/utils/model-alias';
 import { CircuitBreaker, createCircuitBreaker } from '@/services/circuit-breaker';
 import type { QuotaManager } from '@/services/quota-manager';
 import { RpmTracker, createRpmTracker } from '@/services/rpm-tracker';
-import { ModelResolver, createModelResolver, type ModelAliases } from '@/services/model-resolver';
 import type { CodingPlan, QuotaState } from '@/types';
 import type { LoadBalanceConfig } from '@/types/load-balancing';
 import { DEFAULT_LOAD_BALANCE_CONFIG } from '@/types/load-balancing';
@@ -62,7 +62,6 @@ export class RequestRouter {
   private readonly quotaManager: QuotaManager | null;
   private readonly rpmTracker: RpmTracker;
   private readonly loadBalanceConfig: LoadBalanceConfig;
-  private readonly modelResolver: ModelResolver;
 
   /**
    * Create a new RequestRouter.
@@ -70,8 +69,7 @@ export class RequestRouter {
   constructor(
     repository: IPlanRepository,
     quotaManager?: QuotaManager,
-    loadBalanceConfig?: LoadBalanceConfig,
-    modelAliases?: ModelAliases
+    loadBalanceConfig?: LoadBalanceConfig
   ) {
     this.repository = repository;
     this.loadBalanceConfig = loadBalanceConfig ?? DEFAULT_LOAD_BALANCE_CONFIG;
@@ -79,7 +77,6 @@ export class RequestRouter {
     this.planSelector = createPlanSelector(this.loadBalanceConfig, this.rpmTracker);
     this.circuitBreaker = createCircuitBreaker();
     this.quotaManager = quotaManager ?? null;
-    this.modelResolver = createModelResolver({ aliases: modelAliases ?? {} });
   }
 
   /**
@@ -141,20 +138,7 @@ export class RequestRouter {
    */
   async route(model: string, incomingRequestId?: string): Promise<RoutingResult> {
     const requestId = incomingRequestId ?? randomUUID();
-
-    // Resolve model name (case-insensitive + alias support)
-    const resolution = this.modelResolver.resolveWithOriginal(model);
-    const searchModel = resolution.canonicalName;
-
-    // Log alias resolution if applicable
-    if (resolution.wasAlias) {
-      logger.debug('Model alias resolved for routing', {
-        original: resolution.originalName,
-        alias: resolution.resolvedAlias,
-        canonical: searchModel,
-        requestId,
-      });
-    }
+    const searchModel = model;
 
     // Find all plans supporting this model (using canonical name for matching)
     const allPlans = await this.repository.findByModel(searchModel);
@@ -202,6 +186,9 @@ export class RequestRouter {
     // Record the request in RPM tracker for load balancing
     this.rpmTracker.recordRequest(selectedPlan.id);
 
+    // Determine the exact case canonical name from the selected plan
+    const canonicalName = resolveCanonicalName(selectedPlan, searchModel);
+
     // Get alternative plans for failover (exclude selected)
     const alternativePlans = plansWithQuota.filter(
       (plan) => plan.id !== selectedPlan.id
@@ -220,7 +207,7 @@ export class RequestRouter {
       selectedPlan,
       alternativePlans,
       requestId,
-      canonicalName: searchModel,
+      canonicalName,
     };
   }
 
@@ -236,17 +223,13 @@ export class RequestRouter {
       const allPlans = await this.repository.findAll();
       const availableModels = [...new Set(allPlans.flatMap((p) => p.models))].sort();
 
-      // Resolve the model to get what we searched for (case-insensitive + alias)
-      const resolution = this.modelResolver.resolveWithOriginal(model);
-
       throw createGatewayError(
         'MODEL_NOT_FOUND',
         `Model '${model}' not found. Case-insensitive search performed. Available models: ${availableModels.join(', ')}`,
         {
           model,
-          searchedModel: resolution.canonicalName,
+          searchedModel: model,
           availableModels,
-          searchedAliases: resolution.wasAlias ? [resolution.resolvedAlias!] : [],
           requestId: result.requestId,
         }
       );
@@ -386,8 +369,7 @@ export class RequestRouter {
 export function createRequestRouter(
   repository: IPlanRepository,
   quotaManager?: QuotaManager,
-  loadBalanceConfig?: LoadBalanceConfig,
-  modelAliases?: ModelAliases
+  loadBalanceConfig?: LoadBalanceConfig
 ): RequestRouter {
-  return new RequestRouter(repository, quotaManager, loadBalanceConfig, modelAliases);
+  return new RequestRouter(repository, quotaManager, loadBalanceConfig);
 }

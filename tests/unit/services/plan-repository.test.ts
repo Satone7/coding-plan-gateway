@@ -97,6 +97,27 @@ describe('PlanRepository', () => {
       expect(result).toHaveLength(2);
       expect(result.map((p) => p.name).sort()).toEqual(['Plan A', 'Plan C']);
     });
+
+    it('should return plans that support the model via alias', async () => {
+      await repository.save(
+        createMockPlanInput({ 
+          name: 'Plan A', 
+          models: ['Claude-Sonnet-4-6'],
+          modelAliases: { 'claude-3-sonnet': 'Claude-Sonnet-4-6' }
+        })
+      );
+      await repository.save(
+        createMockPlanInput({ 
+          name: 'Plan B', 
+          models: ['gpt-4'],
+          modelAliases: { 'claude-3-sonnet': 'not-in-models' } // Invalid alias target
+        })
+      );
+
+      const result = await repository.findByModel('claude-3-sonnet');
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('Plan A');
+    });
   });
 
   describe('findActive', () => {

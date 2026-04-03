@@ -8,7 +8,6 @@ import { z } from 'zod';
 import type { ApiKeyManager } from '@/services/api-key-manager';
 import type { UsageTracker } from '@/services/usage-tracker';
 import { logger } from '@/utils/logger';
-import { reloadModelAliases } from '@/config';
 
 /**
  * Options for reload routes.
@@ -86,13 +85,6 @@ function createHandlers(
             await usageTracker.initialize();
             reloaded.push('usage');
             logger.info('Usage data reloaded');
-          }
-        }
-
-        if (type === 'config' || type === 'all') {
-          const reloadedAliases = await reloadModelAliases();
-          if (reloadedAliases) {
-            reloaded.push('model-aliases');
           }
         }
 

@@ -56,6 +56,29 @@ describe('PlanSelector', () => {
       expect(result).toBeDefined();
       expect(result?.models).toContain('claude-sonnet-4-6');
     });
+
+    it('should select plan using model aliases', () => {
+      const planWithAlias = {
+        ...mockPlans[0],
+        modelAliases: {
+          'alias-kimi': 'kimi-k2.5'
+        }
+      };
+      const result = planSelector.selectPlan('alias-kimi', [planWithAlias, ...mockPlans.slice(1)], mockQuotaStates);
+      expect(result).toBeDefined();
+      expect(result?.id).toBe(1);
+    });
+
+    it('should ignore alias if target canonical model is not in models', () => {
+      const planWithInvalidAlias = {
+        ...mockPlans[0],
+        modelAliases: {
+          'alias-invalid': 'not-in-models'
+        }
+      };
+      const result = planSelector.selectPlan('alias-invalid', [planWithInvalidAlias, ...mockPlans.slice(1)], mockQuotaStates);
+      expect(result).toBeUndefined();
+    });
   });
 
   describe('findPlansByModel', () => {
@@ -81,6 +104,36 @@ describe('PlanSelector', () => {
       });
       expect(result.length).toBe(1);
       expect(result[0].status).toBe('paused');
+    });
+  });
+
+  describe('supportsModel', () => {
+    it('should return true for exact model match', () => {
+      expect(planSelector.supportsModel(mockPlans[0], 'kimi-k2')).toBe(true);
+    });
+
+    it('should return true for case-insensitive match', () => {
+      expect(planSelector.supportsModel(mockPlans[0], 'KIMI-K2')).toBe(true);
+    });
+
+    it('should return false for unsupported model', () => {
+      expect(planSelector.supportsModel(mockPlans[0], 'gpt-4')).toBe(false);
+    });
+
+    it('should return true for valid model alias', () => {
+      const planWithAlias = {
+        ...mockPlans[0],
+        modelAliases: { 'alias-kimi': 'kimi-k2' }
+      };
+      expect(planSelector.supportsModel(planWithAlias, 'alias-kimi')).toBe(true);
+    });
+
+    it('should return false for invalid model alias', () => {
+      const planWithAlias = {
+        ...mockPlans[0],
+        modelAliases: { 'alias-invalid': 'not-in-models' }
+      };
+      expect(planSelector.supportsModel(planWithAlias, 'alias-invalid')).toBe(false);
     });
   });
 

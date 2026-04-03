@@ -19,6 +19,7 @@ import {
   isApiKeyEncrypted,
 } from '@/config/encryption';
 import { logger } from '@/utils/logger';
+import { planSupportsModel } from '@/utils/model-alias';
 import { DEFAULT_REQUEST_TIMEOUT_SEC } from '@/config/defaults';
 import type { PlanIdCounter } from './plan-id-counter';
 
@@ -114,11 +115,8 @@ export class FilePlanRepository implements IPlanRepository {
    */
   async findByModel(model: string): Promise<CodingPlan[]> {
     await this.ensureLoaded();
-    const normalizedModel = model.toLowerCase();
     return Array.from(this.plans.values())
-      .filter((plan) =>
-        plan.models.some((m) => m.toLowerCase() === normalizedModel)
-      )
+      .filter((plan) => planSupportsModel(plan, model))
       .map((p) => this.toPlainObject(p));
   }
 
@@ -174,6 +172,7 @@ export class FilePlanRepository implements IPlanRepository {
       expiresAt: finalExpiresAt,
       weight: input.weight,
       enable: input.enable ?? true,
+      modelAliases: input.modelAliases,
       createdAt: now,
       updatedAt: now,
     };
@@ -221,6 +220,7 @@ export class FilePlanRepository implements IPlanRepository {
       expiresAt: updates.expiresAt !== undefined ? updates.expiresAt : existing.expiresAt,
       weight: updates.weight !== undefined ? updates.weight : existing.weight,
       enable: updates.enable !== undefined ? updates.enable : existing.enable,
+      modelAliases: updates.modelAliases !== undefined ? updates.modelAliases : existing.modelAliases,
       updatedAt: now,
     };
 
@@ -443,6 +443,7 @@ export class FilePlanRepository implements IPlanRepository {
       expiresAt: effectiveExpiresAt,
       weight: config.weight,
       enable: config.enable ?? true,
+      modelAliases: config.modelAliases,
       createdAt: now,
       updatedAt: now,
     };
@@ -477,6 +478,7 @@ export class FilePlanRepository implements IPlanRepository {
       status: persistableStatus,
       weight: plan.weight,
       enable: plan.enable ?? true,
+      modelAliases: plan.modelAliases,
     };
   }
 

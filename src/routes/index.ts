@@ -15,8 +15,7 @@ import type { QuotaManager } from '@/services/quota-manager';
 import type { PlanUsageTracker } from '@/services/plan-usage-tracker';
 import { createRequestProxy } from '@/services/request-proxy';
 import { dirname, join } from 'path';
-import { loadConfig, setModelResolver } from '@/config';
-import { ModelResolver } from '@/services/model-resolver';
+import { loadConfig } from '@/config';
 
 /**
  * Register all routes with the Fastify instance.
@@ -44,14 +43,20 @@ export async function registerRoutes(
     version: process.env.npm_package_version ?? '1.0.0',
   }));
 
-  // Load config to get model aliases and plan count for readiness check
+  // Load config to get plan count for readiness check
   const config = await loadConfig(configPath, encryptionKey);
-  const modelAliases = config.modelAliases ?? {};
   const planCount = config.plans.length;
   const modelSet = new Set<string>();
   for (const plan of config.plans) {
     for (const model of plan.models) {
       modelSet.add(model);
+    }
+    if (plan.modelAliases) {
+      for (const [alias, target] of Object.entries(plan.modelAliases)) {
+        if (plan.models.some((m) => m.toLowerCase() === target.toLowerCase())) {
+          modelSet.add(alias);
+        }
+      }
     }
   }
 
@@ -64,10 +69,6 @@ export async function registerRoutes(
       quotaStore: quotaManager !== undefined,
     },
   }));
-
-  // Create a ModelResolver and register it for hot-reload support
-  const modelResolver = new ModelResolver({ aliases: modelAliases, validateCircular: false });
-  setModelResolver(modelResolver, configPath);
 
   // Create and initialize PlanIdCounter
   const configDir = dirname(configPath);
@@ -112,7 +113,6 @@ export async function registerRoutes(
     repository,
     proxy,
     quotaManager,
-    modelAliases,
     prefix: '/api/v1',
   });
 
@@ -120,7 +120,6 @@ export async function registerRoutes(
     repository,
     proxy,
     quotaManager,
-    modelAliases,
     prefix: '/api/v1',
   });
 

@@ -9,7 +9,6 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { IPlanRepository } from '@/services/plan-repository';
 import { RequestRouter, createRequestRouter } from '@/services/request-router';
-import { type ModelAliases } from '@/services/model-resolver';
 import { RequestProxy } from '@/services/request-proxy';
 import { QuotaManager } from '@/services/quota-manager';
 import { logger } from '@/utils/logger';
@@ -183,10 +182,9 @@ async function attemptFailover(
 export function createOpenAIHandlers(
   repository: IPlanRepository,
   proxy: RequestProxy,
-  quotaManager?: QuotaManager,
-  modelAliases?: ModelAliases
+  quotaManager?: QuotaManager
 ): OpenAIHandlers {
-  const router = createRequestRouter(repository, quotaManager, undefined, modelAliases);
+  const router = createRequestRouter(repository, quotaManager);
   const services: HandlerServices = { repository, proxy, router };
 
   return {
@@ -345,6 +343,13 @@ export function createOpenAIHandlers(
       for (const plan of plans) {
         for (const model of plan.models) {
           modelSet.add(model);
+        }
+        if (plan.modelAliases) {
+          for (const [alias, target] of Object.entries(plan.modelAliases)) {
+            if (plan.models.some((m) => m.toLowerCase() === target.toLowerCase())) {
+              modelSet.add(alias);
+            }
+          }
         }
       }
 

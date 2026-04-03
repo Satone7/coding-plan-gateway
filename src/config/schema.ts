@@ -59,6 +59,16 @@ export const quotaConfigSchema = z.object({
 });
 
 /**
+ * Model aliases schema.
+ * Maps user-provided alias names to canonical model names.
+ */
+export const modelAliasesSchema = z
+  .record(
+    z.string().min(1), // alias key (e.g., "gpt-4")
+    z.string().min(1) // canonical model name (e.g., "gpt-4-turbo")
+  );
+
+/**
  * Plan configuration schema (from YAML/JSON).
  * ID can be either integer (preferred) or UUID (legacy, for migration).
  */
@@ -79,18 +89,17 @@ export const planConfigSchema = z.object({
   expiresAt: z.string().datetime().optional(),
   weight: z.number().int().min(1).max(100).optional(),
   enable: z.boolean().optional().default(true),
-});
-
-/**
- * Model aliases schema.
- * Maps user-provided alias names to canonical model names.
- */
-export const modelAliasesSchema = z
-  .record(
-    z.string().min(1), // alias key (e.g., "gpt-4")
-    z.string().min(1) // canonical model name (e.g., "gpt-4-turbo")
-  )
-  .default({});
+  modelAliases: modelAliasesSchema.optional(),
+}).refine(
+  (plan) => {
+    if (!plan.modelAliases) return true;
+    const modelsLower = plan.models.map((m: string) => m.toLowerCase());
+    return Object.values(plan.modelAliases).every(
+      (target) => modelsLower.includes(target.toLowerCase())
+    );
+  },
+  { message: "modelAliases target must exist in the plan's models array" }
+);
 
 /**
  * Full configuration schema (root).
@@ -99,7 +108,6 @@ export const configSchema = z.object({
   version: z.string().optional(),
   plans: z.array(planConfigSchema).default([]),
   loadBalancing: loadBalanceConfigSchema.optional(),
-  modelAliases: modelAliasesSchema, // NEW: configurable model aliases
 });
 
 /**
