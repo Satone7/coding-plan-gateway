@@ -6,7 +6,7 @@ import { ChatCompletionRequest } from '@/types/openai';
 // Mock the tokenizer to avoid loading the actual model during tests
 vi.mock('@anthropic-ai/tokenizer', () => ({
   countTokens: vi.fn().mockImplementation((text: string) => {
-    if (text === 'throw error') {
+    if (text.includes('throw error')) {
       throw new Error('Tokenizer failed');
     }
     return text.length; // Simple mock: 1 char = 1 token
@@ -72,8 +72,14 @@ describe('TokenCounter', () => {
     });
 
     it('should handle tokenizer failures by using length/4 estimation', () => {
-      // Intentionally left empty as per the original test setup,
-      // testing fallback logic indirectly through other tests
+      const request: AnthropicMessageRequest = {
+        model: 'claude-3-opus',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: 'throw error' }],
+      };
+      const tokens = TokenCounter.estimateAnthropicInputTokens(request);
+      // 'throw error\n' = 12 chars, ceil(12/4) = 3
+      expect(tokens).toBe(3);
     });
   });
 

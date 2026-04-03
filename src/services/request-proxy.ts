@@ -537,7 +537,7 @@ export class RequestProxy {
                 tailData = tailData.slice(-4096);
               }
               
-              if (/^data:\s+/.test(line) && line.trim() !== 'data: [DONE]') {
+              if (options.provider && /^data:\s+/.test(line) && line.trim() !== 'data: [DONE]') {
                 try {
                   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                   const data = JSON.parse(line.replace(/^data:\s+/, ''));

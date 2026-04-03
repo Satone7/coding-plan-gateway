@@ -37,14 +37,19 @@ const chatCompletionSchema = z.object({
     role: z.enum(['system', 'user', 'assistant']),
     content: z.union([
       z.string(),
-      z.array(z.object({
-        type: z.enum(['text', 'image_url']),
-        text: z.string().optional(),
-        image_url: z.object({
-          url: z.string(),
-          detail: z.enum(['auto', 'low', 'high']).optional(),
-        }).optional(),
-      }))
+      z.array(z.discriminatedUnion('type', [
+        z.object({
+          type: z.literal('text'),
+          text: z.string(),
+        }),
+        z.object({
+          type: z.literal('image_url'),
+          image_url: z.object({
+            url: z.string(),
+            detail: z.enum(['auto', 'low', 'high']).optional(),
+          }).optional(),
+        }),
+      ]))
     ]),
     name: z.string().optional(),
   })).min(1),
@@ -306,20 +311,18 @@ export function createOpenAIHandlers(
                 requestId
               );
 
-              if (finalTokenUsage?.totalTokens) {
-                attachProviderMetrics(request, {
-                  planId: plan.id,
-                  planName: plan.name,
-                  model,
-                  durationMs: Date.now() - (request.startTime || Date.now()),
-                  statusCode: 200,
-                  tokenUsage: {
-                    inputTokens: finalTokenUsage.inputTokens ?? 0,
-                    outputTokens: finalTokenUsage.outputTokens ?? 0,
-                    totalTokens: finalTokenUsage.totalTokens,
-                  },
-                });
-              }
+              attachProviderMetrics(request, {
+                planId: plan.id,
+                planName: plan.name,
+                model,
+                durationMs: Date.now() - (request.startTime || Date.now()),
+                statusCode: 200,
+                tokenUsage: finalTokenUsage?.totalTokens !== undefined ? {
+                  inputTokens: finalTokenUsage.inputTokens ?? 0,
+                  outputTokens: finalTokenUsage.outputTokens ?? 0,
+                  totalTokens: finalTokenUsage.totalTokens,
+                } : undefined,
+              });
             }
           );
         } catch (streamError) {
