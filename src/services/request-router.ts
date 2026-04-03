@@ -189,15 +189,6 @@ export class RequestRouter {
     // Determine the exact case canonical name from the selected plan
     const canonicalName = resolveCanonicalName(selectedPlan, searchModel);
 
-    if (canonicalName === searchModel && !selectedPlan.models.some((m) => m.toLowerCase() === searchModel.toLowerCase())) {
-      logger.warn('Model alias target not found in plan models', {
-        requestId,
-        planId: selectedPlan.id,
-        searchModel,
-        availableModels: selectedPlan.models
-      });
-    }
-
     // Get alternative plans for failover (exclude selected)
     const alternativePlans = plansWithQuota.filter(
       (plan) => plan.id !== selectedPlan.id

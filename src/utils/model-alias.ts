@@ -1,4 +1,5 @@
 import type { CodingPlan } from '@/types';
+import { logger } from '@/utils/logger';
 
 /**
  * Check if a plan supports a given model name, considering both direct matches
@@ -57,6 +58,14 @@ export function resolveCanonicalName(plan: CodingPlan, searchModel: string): str
         );
         if (exactAliasTargetMatch) {
           canonicalName = exactAliasTargetMatch;
+        } else {
+          // If alias target is not found in models array, log a warning and return original searchModel
+          logger.warn('Model alias target not found in plan models during canonical name resolution', {
+            planId: plan.id,
+            alias,
+            target,
+            availableModels: plan.models
+          });
         }
         break;
       }

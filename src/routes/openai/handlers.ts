@@ -345,8 +345,10 @@ export function createOpenAIHandlers(
           modelSet.add(model);
         }
         if (plan.modelAliases) {
-          for (const alias of Object.keys(plan.modelAliases)) {
-            modelSet.add(alias);
+          for (const [alias, target] of Object.entries(plan.modelAliases)) {
+            if (plan.models.some((m) => m.toLowerCase() === target.toLowerCase())) {
+              modelSet.add(alias);
+            }
           }
         }
       }
