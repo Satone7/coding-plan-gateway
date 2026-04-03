@@ -13,7 +13,7 @@ export type OpenAIMessageRole = 'system' | 'user' | 'assistant';
  */
 export interface ChatMessage {
   role: OpenAIMessageRole;
-  content: string;
+  content: string | any[];
   name?: string;
 }
 

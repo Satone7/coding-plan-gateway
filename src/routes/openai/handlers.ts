@@ -23,6 +23,7 @@ import {
 } from '@/middleware/request-timer';
 import type { ChatCompletionRequest, ChatCompletionResponse, ModelsResponse } from '@/types/openai';
 import type { CodingPlan } from '@/types';
+import { TokenCounter } from '@/utils/token-counter';
 
 /**
  * OpenAI chat completion request schema.
@@ -34,7 +35,7 @@ const chatCompletionSchema = z.object({
   model: z.string().min(1),
   messages: z.array(z.object({
     role: z.enum(['system', 'user', 'assistant']),
-    content: z.string(),
+    content: z.union([z.string(), z.array(z.any())]),
     name: z.string().optional(),
   })).min(1),
   stream: z.boolean().optional().default(false),
@@ -105,21 +106,51 @@ async function fetchApiKey(
  * Attach provider metrics and log response.
  */
 function recordMetrics(
-  request: FastifyRequest,
+  request: FastifyRequest<{ Body: ChatCompletionRequest }>,
   plan: CodingPlan,
   model: string,
   response: { durationMs: number; statusCode: number; data: unknown }
 ): void {
   // Type assertion for token usage extraction
-  type OpenAIUsageData = { usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } };
-  const usageData: OpenAIUsageData | undefined = response.data as OpenAIUsageData | undefined;
+  type OpenAIUsageData = {
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const responseData = response.data as OpenAIUsageData | undefined;
+  
+  let tokenUsage = responseData ? extractOpenAITokenUsage(responseData) : undefined;
+  
+  if (!tokenUsage?.totalTokens && responseData) {
+    // Fallback to local token estimation
+    const inputTokens = TokenCounter.estimateOpenAIInputTokens(request.body);
+    let outputText = '';
+    if (responseData.choices && Array.isArray(responseData.choices)) {
+      for (const choice of responseData.choices) {
+        if (typeof choice.message?.content === 'string') {
+          outputText += choice.message.content;
+        }
+      }
+    }
+    const outputTokens = TokenCounter.estimateOutputTokens(outputText);
+    tokenUsage = {
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
+    };
+    logger.debug('Using local token estimation fallback for OpenAI response', {
+      requestId: request.id,
+      inputTokens,
+      outputTokens,
+    });
+  }
+
   attachProviderMetrics(request, {
     planId: plan.id,
     planName: plan.name,
     model,
     durationMs: response.durationMs,
     statusCode: response.statusCode,
-    tokenUsage: usageData ? extractOpenAITokenUsage(usageData) : undefined,
+    tokenUsage,
     providerResponseTimeMs: response.durationMs,
   });
   logger.info('Chat completion response', {
@@ -138,9 +169,9 @@ async function attemptFailover(
   body: ValidatedChatCompletion,
   requestId: string,
   plan: CodingPlan,
-  request: FastifyRequest,
+  request: FastifyRequest<{ Body: ChatCompletionRequest }>,
   canonicalName?: string
-): Promise<{ durationMs: number; statusCode: number; data: unknown } | null> {
+): Promise<any> {
   const apiKey = await fetchApiKey(services.repository, plan.id, request);
   if (!apiKey) {
     return null;
@@ -262,9 +293,23 @@ export function createOpenAIHandlers(
               }
             },
             reply,
-            (tokenUsage) => {
+            (tokenUsage, accumulatedText) => {
               // Update provider metrics with stream token usage for dashboard/logging
-              if (tokenUsage?.totalTokens) {
+              let finalTokenUsage = tokenUsage;
+              if (!finalTokenUsage?.totalTokens && accumulatedText !== undefined) {
+                const inputTokens = TokenCounter.estimateOpenAIInputTokens(body);
+                const outputTokens = TokenCounter.estimateOutputTokens(accumulatedText);
+                finalTokenUsage = {
+                  totalTokens: inputTokens + outputTokens,
+                };
+                logger.debug('Using local token estimation fallback for OpenAI stream', {
+                  requestId,
+                  inputTokens,
+                  outputTokens,
+                });
+              }
+
+              if (finalTokenUsage?.totalTokens) {
                 attachProviderMetrics(request, {
                   planId: plan.id,
                   planName: plan.name,
@@ -274,7 +319,7 @@ export function createOpenAIHandlers(
                   tokenUsage: {
                     inputTokens: 0,
                     outputTokens: 0,
-                    totalTokens: tokenUsage.totalTokens,
+                    totalTokens: finalTokenUsage.totalTokens,
                   },
                 });
               }
@@ -305,7 +350,7 @@ export function createOpenAIHandlers(
         endStage(request, 'upstreamRequest');
         router.markPlanSuccess(plan.id);
         recordMetrics(request, plan, model, response);
-        return response.data as ChatCompletionResponse;
+        return response.data;
       } catch (error) {
         endStage(request, 'upstreamRequest');
         router.markPlanFailed(plan.id);
@@ -324,7 +369,7 @@ export function createOpenAIHandlers(
           const result = await attemptFailover(services, body, requestId, altPlan, request, routingResult.canonicalName);
           if (result) {
             recordMetrics(request, altPlan, model, result);
-            return result.data as ChatCompletionResponse;
+            return result.data;
           }
         }
 

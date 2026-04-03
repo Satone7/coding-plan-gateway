@@ -1,3 +1,4 @@
+/* eslint-disable max-depth, max-lines-per-function */
 /**
  * RequestProxy service for forwarding requests to upstream providers.
  * Handles both OpenAI and Anthropic format requests with streaming support.
@@ -71,7 +72,7 @@ interface InternalRequestOptions {
  */
 interface InternalStreamingOptions extends InternalRequestOptions {
   reply: FastifyReply;
-  onComplete: (tokenUsage?: StreamTokenUsage) => void;
+  onComplete: (tokenUsage?: StreamTokenUsage, accumulatedText?: string) => void;
 }
 
 /**
@@ -247,7 +248,7 @@ export class RequestProxy {
     options: ProxyRequestOptions,
     onChunk: StreamCallback,
     reply: FastifyReply,
-    onTokenUsage?: (tokenUsage?: StreamTokenUsage) => void
+    onTokenUsage?: (tokenUsage?: StreamTokenUsage, accumulatedText?: string) => void
   ): Promise<void> {
     const basePath = options.baseUrl.endsWith('/')
       ? options.baseUrl.slice(0, -1)
@@ -274,10 +275,10 @@ export class RequestProxy {
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
       authType: 'bearer',
       reply,
-      onComplete: (tokenUsage) => {
+      onComplete: (tokenUsage, accumulatedText) => {
         onChunk('', true);
         if (onTokenUsage) {
-          onTokenUsage(tokenUsage);
+          onTokenUsage(tokenUsage, accumulatedText);
         }
         const durationMs = Date.now() - startTime;
         logger.info('OpenAI streaming request completed', {
@@ -390,7 +391,7 @@ export class RequestProxy {
     options: ProxyRequestOptions,
     onChunk: StreamCallback,
     reply: FastifyReply,
-    onTokenUsage?: (tokenUsage?: StreamTokenUsage) => void
+    onTokenUsage?: (tokenUsage?: StreamTokenUsage, accumulatedText?: string) => void
   ): Promise<void> {
     const basePath = options.baseUrl.endsWith('/')
       ? options.baseUrl.slice(0, -1)
@@ -424,10 +425,10 @@ export class RequestProxy {
         'anthropic-dangerous-direct-browser-access': 'true',
       },
       reply,
-      onComplete: (tokenUsage) => {
+      onComplete: (tokenUsage, accumulatedText) => {
         onChunk('', true);
         if (onTokenUsage) {
-          onTokenUsage(tokenUsage);
+          onTokenUsage(tokenUsage, accumulatedText);
         }
         const durationMs = Date.now() - startTime;
         logger.info('Anthropic streaming request completed', {
@@ -508,18 +509,49 @@ export class RequestProxy {
 
           // Forward chunks manually instead of piping, to extract token usage from tail
           let tailData = '';
+          let sseBuffer = '';
+          let accumulatedText = '';
+          
           res.on('data', (chunk: Buffer) => {
             options.reply.raw.write(chunk);
-            tailData += chunk.toString();
+            const chunkStr = chunk.toString();
+            tailData += chunkStr;
             // Keep last 4KB for usage extraction
             if (tailData.length > 4096) {
               tailData = tailData.slice(-4096);
+            }
+            
+            // Extract text from SSE data
+            sseBuffer += chunkStr;
+            const lines = sseBuffer.split('\n');
+            sseBuffer = lines.pop() || '';
+            for (const line of lines) {
+              if (line.startsWith('data: ') && line.trim() !== 'data: [DONE]') {
+                try {
+                  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                  const data = JSON.parse(line.slice(6));
+                  // OpenAI format
+                  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                  if (data.choices?.[0]?.delta?.content) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    accumulatedText += data.choices[0].delta.content;
+                  }
+                  // Anthropic format
+                  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                  if (data.type === 'content_block_delta' && data.delta?.text) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    accumulatedText += data.delta.text;
+                  }
+                } catch {
+                  // ignore partial or invalid JSON
+                }
+              }
             }
           });
 
           res.on('end', () => {
             const tokenUsage = extractStreamTokenUsage(tailData);
-            options.onComplete(tokenUsage);
+            options.onComplete(tokenUsage, accumulatedText);
             options.reply.raw.end();
             resolve();
           });

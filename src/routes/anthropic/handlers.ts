@@ -28,7 +28,7 @@ import {
   AnthropicCountTokensResponse,
 } from '@/types/anthropic';
 import type { CodingPlan } from '@/types';
-import { countTokens } from '@anthropic-ai/tokenizer';
+import { TokenCounter } from '@/utils/token-counter';
 
 /**
  * Schema for system prompt content blocks.
@@ -97,63 +97,6 @@ interface HandlerServices {
 }
 
 /**
- * Calculate estimated token count as a fallback.
- * Uses @anthropic-ai/tokenizer to calculate token usage for text.
- * Images are roughly estimated at 1000 tokens per image.
- * Documents are roughly estimated at 1 token per 4 characters of base64 data.
- */
-function estimateTokenCount(request: AnthropicCountTokensRequest): number {
-  let text = '';
-  let additionalTokens = 0;
-  
-  if (request.system) {
-    if (typeof request.system === 'string') {
-      text += request.system + '\n';
-    } else if (Array.isArray(request.system)) {
-      for (const block of request.system) {
-        if (block.type === 'text' && typeof block.text === 'string') {
-          text += block.text + '\n';
-        } else if (block.type === 'image') {
-          additionalTokens += 1000;
-        } else if (block.type === 'document') {
-          const docBlock = block as any;
-          if (typeof docBlock.source?.data === 'string') {
-            additionalTokens += Math.ceil(docBlock.source.data.length / 4);
-          }
-        }
-      }
-    }
-  }
-  if (request.messages && Array.isArray(request.messages)) {
-    for (const msg of request.messages) {
-      if (typeof msg.content === 'string') {
-        text += msg.content + '\n';
-      } else if (Array.isArray(msg.content)) {
-        for (const block of msg.content) {
-          if (block.type === 'text' && typeof block.text === 'string') {
-            text += block.text + '\n';
-          } else if (block.type === 'image') {
-            additionalTokens += 1000;
-          } else if ((block as any).type === 'document') {
-            const docBlock = block as any;
-            if (typeof docBlock.source?.data === 'string') {
-              additionalTokens += Math.ceil(docBlock.source.data.length / 4);
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  try {
-    return countTokens(text) + additionalTokens;
-  } catch (error) {
-    logger.warn('Failed to calculate tokens with tokenizer, falling back to basic estimation', { error });
-    return Math.ceil(text.length / 4) + additionalTokens;
-  }
-}
-
-/**
  * Validate request and return parsed data as AnthropicMessageRequest.
  */
 function validateAndParse(request: FastifyRequest<{ Body: AnthropicMessageRequest }>): AnthropicMessageRequest {
@@ -204,21 +147,51 @@ async function fetchApiKey(
  * Attach provider metrics and log response.
  */
 function recordMetrics(
-  request: FastifyRequest,
+  request: FastifyRequest<{ Body: AnthropicMessageRequest }>,
   plan: CodingPlan,
   model: string,
   response: { durationMs: number; statusCode: number; data: unknown }
 ): void {
   // Type assertion for token usage extraction
-  type AnthropicUsageData = { usage?: { input_tokens?: number; output_tokens?: number } };
-  const usageData: AnthropicUsageData | undefined = response.data as AnthropicUsageData | undefined;
+  type AnthropicUsageData = {
+    usage?: { input_tokens?: number; output_tokens?: number };
+    content?: Array<{ type?: string; text?: string }>;
+  };
+  const responseData = response.data as AnthropicUsageData | undefined;
+  
+  let tokenUsage = responseData ? extractAnthropicTokenUsage(responseData) : undefined;
+  
+  if (!tokenUsage?.totalTokens && responseData) {
+    // Fallback to local token estimation
+    const inputTokens = TokenCounter.estimateAnthropicInputTokens(request.body);
+    let outputText = '';
+    if (responseData.content && Array.isArray(responseData.content)) {
+      for (const block of responseData.content) {
+        if (block.type === 'text' && typeof block.text === 'string') {
+          outputText += block.text;
+        }
+      }
+    }
+    const outputTokens = TokenCounter.estimateOutputTokens(outputText);
+    tokenUsage = {
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
+    };
+    logger.debug('Using local token estimation fallback for Anthropic response', {
+      requestId: request.id,
+      inputTokens,
+      outputTokens,
+    });
+  }
+
   attachProviderMetrics(request, {
     planId: plan.id,
     planName: plan.name,
     model,
     durationMs: response.durationMs,
     statusCode: response.statusCode,
-    tokenUsage: usageData ? extractAnthropicTokenUsage(usageData) : undefined,
+    tokenUsage,
     providerResponseTimeMs: response.durationMs,
   });
   logger.info('Anthropic message response', {
@@ -237,9 +210,9 @@ async function attemptFailover(
   body: AnthropicMessageRequest,
   requestId: string,
   plan: CodingPlan,
-  request: FastifyRequest,
+  request: FastifyRequest<{ Body: AnthropicMessageRequest }>,
   canonicalName?: string
-): Promise<{ durationMs: number; statusCode: number; data: unknown } | null> {
+): Promise<any> {
   const apiKey = await fetchApiKey(services.repository, plan.id, request);
   if (!apiKey) {
     return null;
@@ -362,9 +335,23 @@ export function createAnthropicHandlers(
               }
             },
             reply,
-            (tokenUsage) => {
+            (tokenUsage, accumulatedText) => {
               // Update provider metrics with stream token usage for dashboard/logging
-              if (tokenUsage?.totalTokens) {
+              let finalTokenUsage = tokenUsage;
+              if (!finalTokenUsage?.totalTokens && accumulatedText !== undefined) {
+                const inputTokens = TokenCounter.estimateAnthropicInputTokens(body);
+                const outputTokens = TokenCounter.estimateOutputTokens(accumulatedText);
+                finalTokenUsage = {
+                  totalTokens: inputTokens + outputTokens,
+                };
+                logger.debug('Using local token estimation fallback for Anthropic stream', {
+                  requestId,
+                  inputTokens,
+                  outputTokens,
+                });
+              }
+
+              if (finalTokenUsage?.totalTokens) {
                 attachProviderMetrics(request, {
                   planId: plan.id,
                   planName: plan.name,
@@ -374,7 +361,7 @@ export function createAnthropicHandlers(
                   tokenUsage: {
                     inputTokens: 0,
                     outputTokens: 0,
-                    totalTokens: tokenUsage.totalTokens,
+                    totalTokens: finalTokenUsage.totalTokens,
                   },
                 });
               }
@@ -405,7 +392,7 @@ export function createAnthropicHandlers(
         endStage(request, 'upstreamRequest');
         router.markPlanSuccess(plan.id);
         recordMetrics(request, plan, model, response);
-        return response.data as AnthropicMessageResponse;
+        return response.data;
       } catch (error) {
         endStage(request, 'upstreamRequest');
         logger.warn('Primary plan request failed', {
@@ -431,7 +418,7 @@ export function createAnthropicHandlers(
           const result = await attemptFailover(services, body, requestId, altPlan, request, routingResult.canonicalName);
           if (result) {
             recordMetrics(request, altPlan, model, result);
-            return result.data as AnthropicMessageResponse;
+            return result.data;
           }
         }
 
@@ -493,7 +480,7 @@ export function createAnthropicHandlers(
           providerResponseTimeMs: response.durationMs,
         });
         
-        return response.data as AnthropicCountTokensResponse;
+        return response.data;
       } catch (error) {
         endStage(request, 'upstreamRequest');
         const errStatusCode = (error as { statusCode?: number }).statusCode || 500;
@@ -522,7 +509,9 @@ export function createAnthropicHandlers(
 
           logger.info('Attempting failover for count tokens', { requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id });
           const altApiKey = await fetchApiKey(services.repository, altPlan.id, request);
-          if (!altApiKey) continue;
+          if (!altApiKey) {
+            continue;
+          }
 
           if (routingResult.canonicalName) {
             body.model = routingResult.canonicalName;
@@ -544,7 +533,7 @@ export function createAnthropicHandlers(
               providerResponseTimeMs: result.durationMs,
             });
             
-            return result.data as AnthropicCountTokensResponse;
+            return result.data;
           } catch (altError) {
             endStage(request, 'upstreamRequest');
             const altErrStatusCode = (altError as { statusCode?: number }).statusCode || 500;
@@ -569,7 +558,7 @@ export function createAnthropicHandlers(
           requestId,
         });
         
-        const estimatedTokens = estimateTokenCount(body);
+        const estimatedTokens = TokenCounter.estimateAnthropicInputTokens(body);
         
         // Attach success metrics for the local fallback to prevent error logging
         attachProviderMetrics(request, {
