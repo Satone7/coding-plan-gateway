@@ -35,7 +35,17 @@ const chatCompletionSchema = z.object({
   model: z.string().min(1),
   messages: z.array(z.object({
     role: z.enum(['system', 'user', 'assistant']),
-    content: z.union([z.string(), z.array(z.any())]),
+    content: z.union([
+      z.string(),
+      z.array(z.object({
+        type: z.string(),
+        text: z.string().optional(),
+        image_url: z.object({
+          url: z.string(),
+          detail: z.enum(['auto', 'low', 'high']).optional(),
+        }).passthrough().optional(),
+      }).passthrough())
+    ]),
     name: z.string().optional(),
   })).min(1),
   stream: z.boolean().optional().default(false),
@@ -171,7 +181,7 @@ async function attemptFailover(
   plan: CodingPlan,
   request: FastifyRequest<{ Body: ChatCompletionRequest }>,
   canonicalName?: string
-): Promise<any> {
+): Promise<{ durationMs: number; statusCode: number; data: unknown } | null> {
   const apiKey = await fetchApiKey(services.repository, plan.id, request);
   if (!apiKey) {
     return null;
@@ -300,6 +310,8 @@ export function createOpenAIHandlers(
                 const inputTokens = TokenCounter.estimateOpenAIInputTokens(body);
                 const outputTokens = TokenCounter.estimateOutputTokens(accumulatedText);
                 finalTokenUsage = {
+                  inputTokens,
+                  outputTokens,
                   totalTokens: inputTokens + outputTokens,
                 };
                 logger.debug('Using local token estimation fallback for OpenAI stream', {
@@ -350,7 +362,7 @@ export function createOpenAIHandlers(
         endStage(request, 'upstreamRequest');
         router.markPlanSuccess(plan.id);
         recordMetrics(request, plan, model, response);
-        return response.data;
+        return response.data as ChatCompletionResponse;
       } catch (error) {
         endStage(request, 'upstreamRequest');
         router.markPlanFailed(plan.id);
@@ -369,7 +381,7 @@ export function createOpenAIHandlers(
           const result = await attemptFailover(services, body, requestId, altPlan, request, routingResult.canonicalName);
           if (result) {
             recordMetrics(request, altPlan, model, result);
-            return result.data;
+            return result.data as ChatCompletionResponse;
           }
         }
 

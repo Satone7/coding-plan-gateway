@@ -212,7 +212,7 @@ async function attemptFailover(
   plan: CodingPlan,
   request: FastifyRequest<{ Body: AnthropicMessageRequest }>,
   canonicalName?: string
-): Promise<any> {
+): Promise<{ durationMs: number; statusCode: number; data: unknown } | null> {
   const apiKey = await fetchApiKey(services.repository, plan.id, request);
   if (!apiKey) {
     return null;
@@ -342,6 +342,8 @@ export function createAnthropicHandlers(
                 const inputTokens = TokenCounter.estimateAnthropicInputTokens(body);
                 const outputTokens = TokenCounter.estimateOutputTokens(accumulatedText);
                 finalTokenUsage = {
+                  inputTokens,
+                  outputTokens,
                   totalTokens: inputTokens + outputTokens,
                 };
                 logger.debug('Using local token estimation fallback for Anthropic stream', {
@@ -392,7 +394,7 @@ export function createAnthropicHandlers(
         endStage(request, 'upstreamRequest');
         router.markPlanSuccess(plan.id);
         recordMetrics(request, plan, model, response);
-        return response.data;
+        return response.data as AnthropicMessageResponse;
       } catch (error) {
         endStage(request, 'upstreamRequest');
         logger.warn('Primary plan request failed', {
@@ -418,7 +420,7 @@ export function createAnthropicHandlers(
           const result = await attemptFailover(services, body, requestId, altPlan, request, routingResult.canonicalName);
           if (result) {
             recordMetrics(request, altPlan, model, result);
-            return result.data;
+            return result.data as AnthropicMessageResponse;
           }
         }
 
@@ -480,7 +482,7 @@ export function createAnthropicHandlers(
           providerResponseTimeMs: response.durationMs,
         });
         
-        return response.data;
+        return response.data as AnthropicCountTokensResponse;
       } catch (error) {
         endStage(request, 'upstreamRequest');
         const errStatusCode = (error as { statusCode?: number }).statusCode || 500;
@@ -533,7 +535,7 @@ export function createAnthropicHandlers(
               providerResponseTimeMs: result.durationMs,
             });
             
-            return result.data;
+            return result.data as AnthropicCountTokensResponse;
           } catch (altError) {
             endStage(request, 'upstreamRequest');
             const altErrStatusCode = (altError as { statusCode?: number }).statusCode || 500;
