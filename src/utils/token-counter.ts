@@ -18,7 +18,7 @@ export class TokenCounter {
   ): { totalTokens: number; inputTokens: number; outputTokens: number } | undefined {
     let finalTokenUsage = tokenUsage;
     
-    if (!finalTokenUsage?.totalTokens && accumulatedText !== undefined) {
+    if (finalTokenUsage?.totalTokens === undefined && accumulatedText !== undefined) {
       const inputTokens = provider === 'anthropic' 
         ? this.estimateAnthropicInputTokens(request as AnthropicCountTokensRequest | AnthropicMessageRequest)
         : this.estimateOpenAIInputTokens(request as ChatCompletionRequest);
