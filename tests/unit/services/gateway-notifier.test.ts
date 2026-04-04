@@ -59,7 +59,7 @@ describe('GatewayNotifier', () => {
 
       expect(result).toBe(true);
       expect(mockFetch).toHaveBeenCalledWith(
-        'http://test:8080/internal/reload',
+        'http://test:8080/api/internal/reload',
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
