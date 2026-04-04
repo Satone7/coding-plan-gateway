@@ -15,6 +15,7 @@ import {
 } from '@/types/cli';
 import type { QuotaPeriod } from '@/types/coding-plan';
 import { loadPlanUsageConfig } from '@/config/defaults';
+import { formatQuotaPeriod } from '@/utils/format';
 
 /**
  * Create a CLI error with context.
@@ -40,32 +41,6 @@ function isValidDate(date: string): boolean {
  */
 function getTodayDate(): string {
   return new Date().toISOString().split('T')[0]!;
-}
-
-/**
- * Format a QuotaPeriod into a human-readable string for CLI display.
- *
- * @param period - The structured quota period
- * @returns Human-readable period string (e.g., '5h (sliding)', 'weekly (Mon)', 'monthly (15th)', 'total')
- */
-export function formatQuotaPeriod(period: QuotaPeriod | 'daily' | 'monthly' | 'total'): string {
-  // Handle legacy string values for backward compat
-  if (typeof period === 'string') {
-    return period;
-  }
-
-  switch (period.type) {
-    case '5h':
-      return '5h (sliding)';
-    case 'weekly': {
-      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      return `weekly (${days[period.weekday - 1]})`;
-    }
-    case 'monthly':
-      return `monthly (${period.expiresOn ?? 1}th)`;
-    case 'total':
-      return 'total';
-  }
 }
 
 /**

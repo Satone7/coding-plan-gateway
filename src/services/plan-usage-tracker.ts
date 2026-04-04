@@ -27,6 +27,7 @@ import { logger } from '@/utils/logger';
 import { PLAN_USAGE_DEFAULTS } from '@/config/defaults';
 import { calculateEffectiveExpiration } from '@/utils/expiration';
 import type { QuotaPeriod } from '@/types/coding-plan';
+import { calculateResetAt as calculateStructuredResetAt } from '@/types/quota';
 
 /**
  * PlanUsageTracker configuration.
@@ -319,73 +320,22 @@ export class PlanUsageTracker {
     expiresAt?: string,
     currentResetAt?: Date | null
   ): Date | null {
-    // Handle structured QuotaPeriod
+    // Handle structured QuotaPeriod — delegate to shared utility in quota.ts
     if (typeof period === 'object') {
-      if (period.type === 'total') {
-        return null;
+      // For monthly periods, apply expiresAt override from plan config if present
+      if (period.type === 'monthly' && expiresAt !== undefined) {
+        const expiration = new Date(expiresAt);
+        if (!isNaN(expiration.getTime())) {
+          return new Date(Date.UTC(
+            expiration.getUTCFullYear(),
+            expiration.getUTCMonth(),
+            expiration.getUTCDate(),
+            0, 0, 0, 0
+          ));
+        }
       }
 
-      if (period.type === '5h') {
-        // Sliding window: on initial creation, resetAt = now + 5h.
-        // On subsequent resets, resetAt = currentResetAt + 5h (slides predictably).
-        const base = currentResetAt ?? new Date();
-        return new Date(base.getTime() + period.windowHours * 60 * 60 * 1000);
-      }
-
-      if (period.type === 'weekly') {
-        const now = new Date();
-        const targetJsDay = period.weekday % 7; // ISO -> JS day
-        const currentJsDay = now.getUTCDay();
-        let daysUntilTarget = targetJsDay - currentJsDay;
-        if (daysUntilTarget <= 0) {
-          daysUntilTarget += 7;
-        }
-        const nextReset = new Date(now);
-        nextReset.setUTCDate(nextReset.getUTCDate() + daysUntilTarget);
-        nextReset.setUTCHours(0, 0, 0, 0);
-        return nextReset;
-      }
-
-      if (period.type === 'monthly') {
-        // If expiresAt is provided at the plan level, use it
-        if (expiresAt !== undefined) {
-          const expiration = new Date(expiresAt);
-          if (!isNaN(expiration.getTime())) {
-            return new Date(
-              expiration.getFullYear(),
-              expiration.getMonth(),
-              expiration.getDate(),
-              0, 0, 0, 0
-            );
-          }
-        }
-
-        // Use the period's own expiresOn, or fallback to parameter
-        const targetDay = period.expiresOn ?? expiresOn ?? 1;
-        const now = new Date();
-        const currentYear = now.getUTCFullYear();
-        const currentMonth = now.getUTCMonth();
-        const currentDay = now.getUTCDate();
-
-        const daysInCurrentMonth = new Date(Date.UTC(currentYear, currentMonth + 1, 0)).getUTCDate();
-        const clampedDay = Math.min(targetDay, daysInCurrentMonth);
-
-        if (currentDay < clampedDay) {
-          return new Date(Date.UTC(currentYear, currentMonth, clampedDay, 0, 0, 0, 0));
-        }
-
-        let nextMonth = currentMonth + 1;
-        let nextYear = currentYear;
-        if (nextMonth > 11) {
-          nextMonth = 0;
-          nextYear++;
-        }
-        const daysInNextMonth = new Date(Date.UTC(nextYear, nextMonth + 1, 0)).getUTCDate();
-        const nextClampedDay = Math.min(targetDay, daysInNextMonth);
-        return new Date(Date.UTC(nextYear, nextMonth, nextClampedDay, 0, 0, 0, 0));
-      }
-
-      return null;
+      return calculateStructuredResetAt(period, currentResetAt);
     }
 
     // Handle legacy string period (backward compatibility)
@@ -398,13 +348,13 @@ export class PlanUsageTracker {
       const expiration = calculateEffectiveExpiration({ expiresOn, expiresAt });
 
       if (expiration) {
-        // Return midnight of the expiration day
-        return new Date(
+        // Return midnight of the expiration day (UTC)
+        return new Date(Date.UTC(
           expiration.getFullYear(),
           expiration.getMonth(),
           expiration.getDate(),
           0, 0, 0, 0
-        );
+        ));
       }
     }
 
@@ -412,19 +362,19 @@ export class PlanUsageTracker {
     const now = new Date();
 
     if (period === 'daily') {
-      // Next midnight local time
+      // Next midnight UTC
       const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(0, 0, 0, 0);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      tomorrow.setUTCHours(0, 0, 0, 0);
       return tomorrow;
     }
 
     if (period === 'monthly') {
-      // First day of next month at midnight local time
+      // First day of next month at midnight UTC
       const nextMonth = new Date(now);
-      nextMonth.setMonth(nextMonth.getMonth() + 1);
-      nextMonth.setDate(1);
-      nextMonth.setHours(0, 0, 0, 0);
+      nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
+      nextMonth.setUTCDate(1);
+      nextMonth.setUTCHours(0, 0, 0, 0);
       return nextMonth;
     }
 
@@ -1056,12 +1006,12 @@ export class PlanUsageTracker {
           if (plan.quota.expiresAt) {
             const expiration = new Date(plan.quota.expiresAt);
             if (!isNaN(expiration.getTime())) {
-              const expirationMidnight = new Date(
-                expiration.getFullYear(),
-                expiration.getMonth(),
-                expiration.getDate(),
+              const expirationMidnight = new Date(Date.UTC(
+                expiration.getUTCFullYear(),
+                expiration.getUTCMonth(),
+                expiration.getUTCDate(),
                 0, 0, 0, 0
-              );
+              ));
               if (now >= expirationMidnight) {
                 const resetCount = this.resetPlanUsage(plan.id);
                 if (resetCount > 0) {
@@ -1120,12 +1070,12 @@ export class PlanUsageTracker {
       if (plan.quota.expiresAt) {
         const expiration = new Date(plan.quota.expiresAt);
         if (!isNaN(expiration.getTime())) {
-          const expirationMidnight = new Date(
-            expiration.getFullYear(),
-            expiration.getMonth(),
-            expiration.getDate(),
+          const expirationMidnight = new Date(Date.UTC(
+            expiration.getUTCFullYear(),
+            expiration.getUTCMonth(),
+            expiration.getUTCDate(),
             0, 0, 0, 0
-          );
+          ));
           if (now >= expirationMidnight) {
             // For one-time expiration, reset all usage (original behavior)
             shouldResetAll = true;
@@ -1136,11 +1086,11 @@ export class PlanUsageTracker {
         if (period === 'daily') {
           cycleStartDateStr = todayStr;
         } else if (period === 'monthly') {
-          const currentYear = now.getFullYear();
-          const currentMonth = now.getMonth();
-          const currentDay = now.getDate();
+          const currentYear = now.getUTCFullYear();
+          const currentMonth = now.getUTCMonth();
+          const currentDay = now.getUTCDate();
 
-          const daysInCurrentMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+          const daysInCurrentMonth = new Date(Date.UTC(currentYear, currentMonth + 1, 0)).getUTCDate();
           const targetDay = plan.quota.expiresOn !== undefined
             ? Math.min(plan.quota.expiresOn, daysInCurrentMonth)
             : 1;
@@ -1156,7 +1106,7 @@ export class PlanUsageTracker {
               lastMonth = 11;
               lastMonthYear--;
             }
-            const daysInLastMonth = new Date(lastMonthYear, lastMonth + 1, 0).getDate();
+            const daysInLastMonth = new Date(Date.UTC(lastMonthYear, lastMonth + 1, 0)).getUTCDate();
             const lastMonthTargetDay = plan.quota.expiresOn !== undefined
               ? Math.min(plan.quota.expiresOn, daysInLastMonth)
               : 1;

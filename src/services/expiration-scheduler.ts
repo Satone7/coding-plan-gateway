@@ -7,6 +7,7 @@
 
 import type { PlanUsageTracker } from './plan-usage-tracker';
 import type { IPlanRepository } from './plan-repository';
+import type { QuotaManager } from './quota-manager';
 import { logger } from '@/utils/logger';
 import type { QuotaPeriod } from '@/types/coding-plan';
 
@@ -33,6 +34,7 @@ export interface ExpirationSchedulerConfig {
 export class ExpirationScheduler {
   private readonly planUsageTracker: PlanUsageTracker;
   private readonly planRepository: IPlanRepository;
+  private readonly quotaManager?: QuotaManager;
   private readonly checkIntervalMs: number;
   private checkInterval: NodeJS.Timeout | null = null;
   private lastCheckTime: Date | null = null;
@@ -47,10 +49,12 @@ export class ExpirationScheduler {
   constructor(
     planUsageTracker: PlanUsageTracker,
     planRepository: IPlanRepository,
-    config: ExpirationSchedulerConfig = {}
+    config: ExpirationSchedulerConfig = {},
+    quotaManager?: QuotaManager
   ) {
     this.planUsageTracker = planUsageTracker;
     this.planRepository = planRepository;
+    this.quotaManager = quotaManager;
     this.checkIntervalMs = config.checkIntervalMs ?? 60000; // 1 minute default
   }
 
@@ -110,6 +114,10 @@ export class ExpirationScheduler {
             ? plan.quota.period
             : (plan.quota.period as 'daily' | 'monthly' | 'total');
 
+        // Read the current resetAt from QuotaManager for sliding window plans (5h).
+        // This allows the scheduler to properly detect window boundaries.
+        const resetAt = this.quotaManager?.getQuotaState(plan.id)?.resetAt;
+
         return {
           id: plan.id,
           quota: {
@@ -117,8 +125,7 @@ export class ExpirationScheduler {
             // Top-level expiresOn/expiresAt for backward compat (used by legacy monthly)
             expiresOn: plan.expiresOn,
             expiresAt: plan.expiresAt,
-            // resetAt is not tracked at this layer; the tracker computes from period config
-            resetAt: undefined as Date | null | undefined,
+            resetAt: resetAt ?? undefined,
           },
         };
       });
@@ -167,7 +174,8 @@ export class ExpirationScheduler {
 export function createExpirationScheduler(
   planUsageTracker: PlanUsageTracker,
   planRepository: IPlanRepository,
-  config?: ExpirationSchedulerConfig
+  config?: ExpirationSchedulerConfig,
+  quotaManager?: QuotaManager
 ): ExpirationScheduler {
-  return new ExpirationScheduler(planUsageTracker, planRepository, config);
+  return new ExpirationScheduler(planUsageTracker, planRepository, config, quotaManager);
 }

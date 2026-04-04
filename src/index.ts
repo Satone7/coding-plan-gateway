@@ -72,7 +72,8 @@ async function main(): Promise<void> {
     const expirationScheduler = createExpirationScheduler(
       planUsageTracker,
       planRepository,
-      { checkIntervalMs: 60000 } // Check every minute
+      { checkIntervalMs: 60000 }, // Check every minute
+      quotaManager
     );
     expirationScheduler.start();
 

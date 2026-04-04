@@ -381,9 +381,9 @@ describe('PlanUsageTracker', () => {
       const resetDate = tracker.calculateResetAt('daily', 27);
 
       expect(resetDate).toBeInstanceOf(Date);
-      expect(resetDate?.getHours()).toBe(0);
-      expect(resetDate?.getMinutes()).toBe(0);
-      expect(resetDate?.getSeconds()).toBe(0);
+      expect(resetDate?.getUTCHours()).toBe(0);
+      expect(resetDate?.getUTCMinutes()).toBe(0);
+      expect(resetDate?.getUTCSeconds()).toBe(0);
     });
   });
 
