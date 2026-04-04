@@ -10,9 +10,17 @@ import { ExpirationScheduler, createExpirationScheduler } from '@/services/expir
 import { PlanUsageTracker, createPlanUsageTracker } from '@/services/plan-usage-tracker';
 import { createPlanRepository } from '@/services/plan-repository';
 import type { IPlanRepository } from '@/services/plan-repository';
+import type { QuotaPeriod } from '@/types/coding-plan';
 
 // Mock plan repository for testing
-function createMockPlanRepository(plans: Array<{ id: number; quota: { period: 'daily' | 'monthly' | 'total'; expiresOn?: number; expiresAt?: string } }>): IPlanRepository {
+function createMockPlanRepository(plans: Array<{
+  id: number;
+  quota: {
+    period: QuotaPeriod | 'daily' | 'monthly' | 'total';
+    expiresOn?: number;
+    expiresAt?: string;
+  };
+}>): IPlanRepository {
   return {
     reload: vi.fn().mockResolvedValue(undefined),
     findAll: vi.fn().mockResolvedValue(plans.map(p => ({
@@ -208,6 +216,65 @@ describe('ExpirationScheduler', () => {
       expect(tracker.getTotalUsage(2)).toBe(1);
       // Plan 3 should NOT be reset (total period)
       expect(tracker.getTotalUsage(3)).toBe(1);
+
+      scheduler.stop();
+    });
+
+    it('should handle structured total period plans without resetting', async () => {
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+
+      const mockRepo = createMockPlanRepository([
+        { id: 1, quota: { period: { type: 'total' } } },
+      ]);
+
+      scheduler = createExpirationScheduler(tracker, mockRepo, { checkIntervalMs: 100 });
+      scheduler.start();
+
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Total period should never be reset
+      expect(tracker.getTotalUsage(1)).toBe(2);
+
+      scheduler.stop();
+    });
+
+    it('should handle structured monthly with past expiresAt', async () => {
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - 1);
+
+      const mockRepo = createMockPlanRepository([
+        { id: 1, quota: { period: { type: 'monthly' }, expiresAt: pastDate.toISOString() } },
+      ]);
+
+      scheduler = createExpirationScheduler(tracker, mockRepo, { checkIntervalMs: 100 });
+      scheduler.start();
+
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      expect(tracker.getTotalUsage(1)).toBe(0);
+
+      scheduler.stop();
+    });
+
+    it('should handle structured weekly period plans', async () => {
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+
+      const mockRepo = createMockPlanRepository([
+        { id: 1, quota: { period: { type: 'weekly', weekday: 1 } } },
+      ]);
+
+      scheduler = createExpirationScheduler(tracker, mockRepo, { checkIntervalMs: 100 });
+      scheduler.start();
+
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Weekly plans: today's records are within the current cycle, so they should be kept
+      expect(tracker.getTotalUsage(1)).toBe(2);
 
       scheduler.stop();
     });

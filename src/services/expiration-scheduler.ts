@@ -8,6 +8,7 @@
 import type { PlanUsageTracker } from './plan-usage-tracker';
 import type { IPlanRepository } from './plan-repository';
 import { logger } from '@/utils/logger';
+import type { QuotaPeriod } from '@/types/coding-plan';
 
 /**
  * ExpirationScheduler configuration.
@@ -100,15 +101,27 @@ export class ExpirationScheduler {
       // Get all plans
       const plans = await this.planRepository.findAll();
 
-      // Extract expiration config for each plan
-      const plansWithExpiration = plans.map((plan) => ({
-        id: plan.id,
-        quota: {
-          period: plan.quota.period,
-          expiresOn: plan.expiresOn,
-          expiresAt: plan.expiresAt,
-        },
-      }));
+      // Extract expiration config for each plan, passing structured quota config
+      const plansWithExpiration = plans.map((plan) => {
+        // The plan.quota.period is already a structured QuotaPeriod from the config.
+        // For legacy plans still using string periods, pass them through as-is.
+        const period: QuotaPeriod | 'daily' | 'monthly' | 'total' =
+          typeof plan.quota.period === 'object'
+            ? plan.quota.period
+            : (plan.quota.period as 'daily' | 'monthly' | 'total');
+
+        return {
+          id: plan.id,
+          quota: {
+            period,
+            // Top-level expiresOn/expiresAt for backward compat (used by legacy monthly)
+            expiresOn: plan.expiresOn,
+            expiresAt: plan.expiresAt,
+            // resetAt is not tracked at this layer; the tracker computes from period config
+            resetAt: undefined as Date | null | undefined,
+          },
+        };
+      });
 
       // Check and reset expired plans
       const resetPlanIds = this.planUsageTracker.checkAndResetExpiredPlans(plansWithExpiration);
