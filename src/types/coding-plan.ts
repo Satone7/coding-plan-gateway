@@ -15,7 +15,7 @@ export type QuotaPeriodType = '5h' | 'weekly' | 'monthly' | 'total';
  */
 export interface FiveHourPeriod {
   type: '5h';
-  windowHours: 5;
+  windowHours: number;
   sliding: true;
 }
 

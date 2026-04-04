@@ -63,6 +63,9 @@ export function ensureStructuredPeriod(
     return migrated;
   }
 
-  // Already structured — return as-is
-  return period as QuotaPeriod;
+  // Already structured — validate and return
+  if (typeof period === 'object' && period !== null && 'type' in period) {
+    return period as QuotaPeriod;
+  }
+  throw new Error(`Invalid quota period: ${JSON.stringify(period)}`);
 }

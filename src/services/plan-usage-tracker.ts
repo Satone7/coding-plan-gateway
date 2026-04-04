@@ -350,9 +350,9 @@ export class PlanUsageTracker {
       if (expiration) {
         // Return midnight of the expiration day (UTC)
         return new Date(Date.UTC(
-          expiration.getFullYear(),
-          expiration.getMonth(),
-          expiration.getDate(),
+          expiration.getUTCFullYear(),
+          expiration.getUTCMonth(),
+          expiration.getUTCDate(),
           0, 0, 0, 0
         ));
       }
