@@ -10,7 +10,7 @@ describe('quotaConfigSchema', () => {
   it('should parse quota with expiresOn inside quota', () => {
     const input = {
       limit: 90000,
-      period: 'monthly' as const,
+      period: { type: 'monthly' as const, expiresOn: 27 },
       expiresOn: 27,
     };
 
@@ -25,7 +25,7 @@ describe('quotaConfigSchema', () => {
   it('should parse quota with expiresAt inside quota', () => {
     const input = {
       limit: 90000,
-      period: 'monthly' as const,
+      period: { type: 'monthly' as const },
       expiresAt: '2026-04-27T23:59:59.999Z',
     };
 
@@ -40,7 +40,7 @@ describe('quotaConfigSchema', () => {
   it('should parse quota with both expiresOn and expiresAt inside quota', () => {
     const input = {
       limit: 90000,
-      period: 'monthly' as const,
+      period: { type: 'monthly' as const, expiresOn: 27 },
       expiresOn: 27,
       expiresAt: '2026-04-27T23:59:59.999Z',
     };
@@ -57,7 +57,7 @@ describe('quotaConfigSchema', () => {
   it('should validate expiresOn is between 1 and 31', () => {
     const invalidInput = {
       limit: 90000,
-      period: 'monthly' as const,
+      period: { type: 'monthly' as const },
       expiresOn: 32,
     };
 
@@ -69,7 +69,7 @@ describe('quotaConfigSchema', () => {
   it('should validate expiresOn is at least 1', () => {
     const invalidInput = {
       limit: 90000,
-      period: 'monthly' as const,
+      period: { type: 'monthly' as const },
       expiresOn: 0,
     };
 

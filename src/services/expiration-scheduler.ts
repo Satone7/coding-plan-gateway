@@ -7,7 +7,9 @@
 
 import type { PlanUsageTracker } from './plan-usage-tracker';
 import type { IPlanRepository } from './plan-repository';
+import type { QuotaManager } from './quota-manager';
 import { logger } from '@/utils/logger';
+import type { QuotaPeriod } from '@/types/coding-plan';
 
 /**
  * ExpirationScheduler configuration.
@@ -32,6 +34,7 @@ export interface ExpirationSchedulerConfig {
 export class ExpirationScheduler {
   private readonly planUsageTracker: PlanUsageTracker;
   private readonly planRepository: IPlanRepository;
+  private readonly quotaManager?: QuotaManager;
   private readonly checkIntervalMs: number;
   private checkInterval: NodeJS.Timeout | null = null;
   private lastCheckTime: Date | null = null;
@@ -46,10 +49,12 @@ export class ExpirationScheduler {
   constructor(
     planUsageTracker: PlanUsageTracker,
     planRepository: IPlanRepository,
-    config: ExpirationSchedulerConfig = {}
+    config: ExpirationSchedulerConfig = {},
+    quotaManager?: QuotaManager
   ) {
     this.planUsageTracker = planUsageTracker;
     this.planRepository = planRepository;
+    this.quotaManager = quotaManager;
     this.checkIntervalMs = config.checkIntervalMs ?? 60000; // 1 minute default
   }
 
@@ -100,15 +105,30 @@ export class ExpirationScheduler {
       // Get all plans
       const plans = await this.planRepository.findAll();
 
-      // Extract expiration config for each plan
-      const plansWithExpiration = plans.map((plan) => ({
-        id: plan.id,
-        quota: {
-          period: plan.quota.period,
-          expiresOn: plan.expiresOn,
-          expiresAt: plan.expiresAt,
-        },
-      }));
+      // Extract expiration config for each plan, passing structured quota config
+      const plansWithExpiration = plans.map((plan) => {
+        // The plan.quota.period is already a structured QuotaPeriod from the config.
+        // For legacy plans still using string periods, pass them through as-is.
+        const period: QuotaPeriod | 'daily' | 'monthly' | 'total' =
+          typeof plan.quota.period === 'object'
+            ? plan.quota.period
+            : (plan.quota.period as 'daily' | 'monthly' | 'total');
+
+        // Read the current resetAt from QuotaManager for sliding window plans (5h).
+        // This allows the scheduler to properly detect window boundaries.
+        const resetAt = this.quotaManager?.getQuotaState(plan.id)?.resetAt;
+
+        return {
+          id: plan.id,
+          quota: {
+            period,
+            // Top-level expiresOn/expiresAt for backward compat (used by legacy monthly)
+            expiresOn: plan.expiresOn,
+            expiresAt: plan.expiresAt,
+            resetAt: resetAt ?? undefined,
+          },
+        };
+      });
 
       // Check and reset expired plans
       const resetPlanIds = this.planUsageTracker.checkAndResetExpiredPlans(plansWithExpiration);
@@ -154,7 +174,8 @@ export class ExpirationScheduler {
 export function createExpirationScheduler(
   planUsageTracker: PlanUsageTracker,
   planRepository: IPlanRepository,
-  config?: ExpirationSchedulerConfig
+  config?: ExpirationSchedulerConfig,
+  quotaManager?: QuotaManager
 ): ExpirationScheduler {
-  return new ExpirationScheduler(planUsageTracker, planRepository, config);
+  return new ExpirationScheduler(planUsageTracker, planRepository, config, quotaManager);
 }

@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import type { QuotaPeriod } from './coding-plan';
 
 /**
  * Daily usage record for a specific plan.
@@ -53,7 +54,7 @@ export interface PlanUsageReport {
   /** Daily breakdown within the date range */
   dailyBreakdown: DailyPlanUsage[];
   /** Quota period type from plan configuration */
-  quotaPeriod: 'daily' | 'monthly' | 'total';
+  quotaPeriod: QuotaPeriod | 'daily' | 'monthly' | 'total';
   /** Next reset date for daily/monthly plans */
   resetAt: Date | null;
 }
@@ -135,7 +136,7 @@ export interface PlanUsageSummary {
   /** Usage percentage */
   percentage: number;
   /** Quota period type */
-  quotaPeriod: 'daily' | 'monthly' | 'total';
+  quotaPeriod: QuotaPeriod | 'daily' | 'monthly' | 'total';
   /** Next reset date */
   resetAt: Date | null;
 }
@@ -221,8 +222,8 @@ export interface PlanInfo {
   quota: {
     /** Maximum allowed usage */
     limit: number;
-    /** Quota reset period */
-    period: 'daily' | 'monthly' | 'total';
+    /** Quota reset period (structured QuotaPeriod or legacy string for backward compat) */
+    period: QuotaPeriod | 'daily' | 'monthly' | 'total';
     /** Optional day of month for reset (1-31). Used for monthly quotas with custom reset dates. */
     expiresOn?: number;
     /** Optional ISO 8601 datetime for absolute expiration. Takes precedence over expiresOn. */

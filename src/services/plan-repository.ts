@@ -21,6 +21,7 @@ import {
 import { logger } from '@/utils/logger';
 import { planSupportsModel } from '@/utils/model-alias';
 import { DEFAULT_REQUEST_TIMEOUT_SEC } from '@/config/defaults';
+import { ensureStructuredPeriod, isLegacyPeriod } from '@/utils/quota-period-migration';
 import type { PlanIdCounter } from './plan-id-counter';
 
 /**
@@ -313,12 +314,17 @@ export class FilePlanRepository implements IPlanRepository {
       const content = await readFile(this.filePath, 'utf-8');
       const parsed: unknown = this.parseContent(content);
 
-      // Validate and convert to CodingPlan objects
+      // Extract plans array from parsed config
       const plansData =
         parsed && typeof parsed === 'object' && 'plans' in parsed
           ? (parsed as { plans: unknown[] }).plans
           : [];
-      const config = planConfigSchema.array().parse(plansData);
+
+      // Migrate legacy string-based quota periods before Zod validation
+      const migratedPlans = this.migratePlans(plansData);
+
+      // Validate and convert to CodingPlan objects
+      const config = planConfigSchema.array().parse(migratedPlans);
 
       this.plans = new Map();
       for (const planConfig of config) {
@@ -418,9 +424,13 @@ export class FilePlanRepository implements IPlanRepository {
       throw new Error('Plan ID is required');
     }
 
-    // Support expiresOn/expiresAt in both nested (quota) and top-level positions
-    // Nested takes precedence, falls back to top-level for backward compatibility
-    const effectiveExpiresOn = config.quota.expiresOn ?? config.expiresOn;
+    // Support expiresOn/expiresAt in multiple positions:
+    // 1. quota.period.expiresOn (structured monthly period)
+    // 2. quota.expiresOn (legacy position inside quota block)
+    // 3. expiresOn (top-level plan field, oldest format)
+    const periodExpiresOn =
+      config.quota.period.type === 'monthly' ? config.quota.period.expiresOn : undefined;
+    const effectiveExpiresOn = periodExpiresOn ?? config.quota.expiresOn ?? config.expiresOn;
     const effectiveExpiresAt = config.quota.expiresAt ?? config.expiresAt;
 
     // Merge expires fields into quota for internal consistency
@@ -461,8 +471,12 @@ export class FilePlanRepository implements IPlanRepository {
         : undefined;
 
     // Store expiresOn/expiresAt inside quota for proper nesting
+    // For monthly periods, sync the effective expiresOn into the period itself
     const quotaWithExpiration = {
       ...plan.quota,
+      period: plan.quota.period.type === 'monthly' && plan.expiresOn !== undefined
+        ? { ...plan.quota.period, expiresOn: plan.expiresOn }
+        : plan.quota.period,
       expiresOn: plan.expiresOn,
       expiresAt: plan.expiresAt,
     };
@@ -480,6 +494,38 @@ export class FilePlanRepository implements IPlanRepository {
       enable: plan.enable ?? true,
       modelAliases: plan.modelAliases,
     };
+  }
+
+  /**
+   * Migrate legacy string-based quota periods to structured format.
+   * Operates on raw parsed data before Zod validation.
+   */
+  private migratePlans(plansData: unknown[]): unknown[] {
+    return plansData.map((plan) => {
+      if (!plan || typeof plan !== 'object') return plan;
+      const rawPlan = plan as Record<string, unknown>;
+
+      if (!rawPlan.quota || typeof rawPlan.quota !== 'object') return plan;
+      const rawQuota = rawPlan.quota as Record<string, unknown>;
+
+      // Check if period is in legacy string format
+      if (isLegacyPeriod(rawQuota.period)) {
+        // Collect expiresOn from quota level or plan level
+        const expiresOn = (rawQuota.expiresOn as number | undefined)
+          ?? (rawPlan.expiresOn as number | undefined);
+
+        // Migrate to structured period
+        rawQuota.period = ensureStructuredPeriod(rawQuota.period, expiresOn);
+
+        // Remove top-level expiresOn if it was only used for migration
+        // (keep it if quota also had one, as quota takes precedence)
+        if (rawQuota.expiresOn === undefined && rawPlan.expiresOn !== undefined) {
+          delete rawPlan.expiresOn;
+        }
+      }
+
+      return plan;
+    });
   }
 
   /**

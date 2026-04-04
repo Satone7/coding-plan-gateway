@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { QuotaManager, createQuotaManager } from '@/services/quota-manager';
 import type { QuotaState } from '@/types';
+import { calculateResetAt, createInitialQuotaState } from '@/types';
 import { createMockPlans, createMockQuotaStates } from '../../fixtures/mock-plans';
 import { writeFile, readFile, mkdir, rmdir } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -398,6 +399,371 @@ describe('QuotaManager', () => {
       const used = quotaManager.getUsedQuota(999999);
       expect(used).toBe(0);
     });
+  });
+});
+
+describe('calculateResetAt (structured QuotaPeriod)', () => {
+  describe('5h sliding window', () => {
+    it('should return now + 5h for initial creation', () => {
+      const before = new Date();
+      const result = calculateResetAt({ type: '5h', windowHours: 5, sliding: true });
+      const after = new Date();
+
+      expect(result).not.toBeNull();
+      const minExpected = before.getTime() + 5 * 60 * 60 * 1000;
+      const maxExpected = after.getTime() + 5 * 60 * 60 * 1000;
+      expect(result!.getTime()).toBeGreaterThanOrEqual(minExpected);
+      expect(result!.getTime()).toBeLessThanOrEqual(maxExpected);
+    });
+
+    it('should slide from currentResetAt for subsequent resets', () => {
+      const currentResetAt = new Date('2026-04-04T10:00:00Z');
+      const result = calculateResetAt(
+        { type: '5h', windowHours: 5, sliding: true },
+        currentResetAt
+      );
+
+      expect(result).not.toBeNull();
+      // Should be currentResetAt + 5h, not now + 5h
+      expect(result!.getTime()).toBe(currentResetAt.getTime() + 5 * 60 * 60 * 1000);
+      expect(result!.toISOString()).toBe('2026-04-04T15:00:00.000Z');
+    });
+
+    it('should use now when currentResetAt is null', () => {
+      const before = new Date();
+      const result = calculateResetAt(
+        { type: '5h', windowHours: 5, sliding: true },
+        null
+      );
+      const after = new Date();
+
+      expect(result).not.toBeNull();
+      const minExpected = before.getTime() + 5 * 60 * 60 * 1000;
+      const maxExpected = after.getTime() + 5 * 60 * 60 * 1000;
+      expect(result!.getTime()).toBeGreaterThanOrEqual(minExpected);
+      expect(result!.getTime()).toBeLessThanOrEqual(maxExpected);
+    });
+  });
+
+  describe('weekly period', () => {
+    it('should calculate next occurrence of configured weekday at 00:00 UTC', () => {
+      // weekday=1 (Monday)
+      const result = calculateResetAt({ type: 'weekly', weekday: 1 });
+      expect(result).not.toBeNull();
+      // Should be a Monday (JS day 1)
+      expect(result!.getUTCDay()).toBe(1);
+      // Should be at midnight UTC
+      expect(result!.getUTCHours()).toBe(0);
+      expect(result!.getUTCMinutes()).toBe(0);
+      expect(result!.getUTCSeconds()).toBe(0);
+    });
+
+    it('should handle Sunday (weekday=7)', () => {
+      const result = calculateResetAt({ type: 'weekly', weekday: 7 });
+      expect(result).not.toBeNull();
+      // Sunday in JS is day 0
+      expect(result!.getUTCDay()).toBe(0);
+      expect(result!.getUTCHours()).toBe(0);
+    });
+
+    it('should always be in the future', () => {
+      for (const weekday of [1, 2, 3, 4, 5, 6, 7] as const) {
+        const result = calculateResetAt({ type: 'weekly', weekday });
+        expect(result).not.toBeNull();
+        // Reset date should be strictly in the future
+        // (at least 1 day ahead since we always skip to next occurrence)
+        expect(result!.getTime()).toBeGreaterThan(Date.now() - 86400000);
+      }
+    });
+  });
+
+  describe('monthly period', () => {
+    it('should return next month 1st for default monthly (no expiresOn)', () => {
+      const result = calculateResetAt({ type: 'monthly' });
+      expect(result).not.toBeNull();
+      expect(result!.getUTCDate()).toBe(1);
+      expect(result!.getUTCHours()).toBe(0);
+    });
+
+    it('should return configured expiresOn day for monthly period', () => {
+      const result = calculateResetAt({ type: 'monthly', expiresOn: 15 });
+      expect(result).not.toBeNull();
+      // Should be the 15th of a month
+      expect(result!.getUTCDate()).toBe(15);
+    });
+
+    it('should clamp expiresOn to last day of month for short months', () => {
+      const result = calculateResetAt({ type: 'monthly', expiresOn: 31 });
+      expect(result).not.toBeNull();
+      // Day should be valid for whatever month it falls in
+      expect(result!.getUTCDate()).toBeLessThanOrEqual(31);
+    });
+  });
+
+  describe('total period', () => {
+    it('should return null (never resets)', () => {
+      const result = calculateResetAt({ type: 'total' });
+      expect(result).toBeNull();
+    });
+  });
+});
+
+describe('createInitialQuotaState (structured QuotaPeriod)', () => {
+  it('should create state with 5h sliding window period', () => {
+    const state = createInitialQuotaState(1, 100, { type: '5h', windowHours: 5, sliding: true });
+    expect(state.planId).toBe(1);
+    expect(state.limit).toBe(100);
+    expect(state.used).toBe(0);
+    expect(state.period).toEqual({ type: '5h', windowHours: 5, sliding: true });
+    expect(state.resetAt).not.toBeNull();
+    // resetAt should be approximately 5 hours from now
+    const diff = state.resetAt!.getTime() - Date.now();
+    expect(diff).toBeGreaterThan(4.9 * 60 * 60 * 1000);
+    expect(diff).toBeLessThan(5.1 * 60 * 60 * 1000);
+  });
+
+  it('should create state with weekly period', () => {
+    const state = createInitialQuotaState(2, 500, { type: 'weekly', weekday: 3 });
+    expect(state.period).toEqual({ type: 'weekly', weekday: 3 });
+    expect(state.resetAt).not.toBeNull();
+    // Should be a Wednesday (JS day 3)
+    expect(state.resetAt!.getUTCDay()).toBe(3);
+  });
+
+  it('should create state with monthly period', () => {
+    const state = createInitialQuotaState(3, 1000, { type: 'monthly' });
+    expect(state.period).toEqual({ type: 'monthly' });
+    expect(state.resetAt).not.toBeNull();
+  });
+
+  it('should create state with total period (null resetAt)', () => {
+    const state = createInitialQuotaState(4, 5000, { type: 'total' });
+    expect(state.period).toEqual({ type: 'total' });
+    expect(state.resetAt).toBeNull();
+  });
+});
+
+describe('QuotaManager with structured periods', () => {
+  let quotaManager: QuotaManager;
+  let tempDir: string;
+  let quotaPath: string;
+
+  beforeEach(async () => {
+    tempDir = join(tmpdir(), `quota-struct-test-${Date.now()}`);
+    await mkdir(tempDir, { recursive: true });
+    quotaPath = join(tempDir, 'quota-state.json');
+    quotaManager = createQuotaManager({ quotaStatePath: quotaPath });
+  });
+
+  afterEach(async () => {
+    quotaManager.stopPeriodicSync();
+    if (existsSync(tempDir)) {
+      await rmdir(tempDir, { recursive: true });
+    }
+  });
+
+  it('should initialize with 5h period plan', async () => {
+    await quotaManager.initialize([
+      { id: 1, quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } } },
+    ]);
+    const state = quotaManager.getQuotaState(1);
+    expect(state).toBeDefined();
+    expect(state?.period).toEqual({ type: '5h', windowHours: 5, sliding: true });
+    expect(state?.resetAt).not.toBeNull();
+  });
+
+  it('should initialize with weekly period plan', async () => {
+    await quotaManager.initialize([
+      { id: 2, quota: { limit: 500, period: { type: 'weekly', weekday: 1 } } },
+    ]);
+    const state = quotaManager.getQuotaState(2);
+    expect(state).toBeDefined();
+    expect(state?.period).toEqual({ type: 'weekly', weekday: 1 });
+    expect(state?.resetAt).not.toBeNull();
+  });
+
+  it('should initialize with total period plan', async () => {
+    await quotaManager.initialize([
+      { id: 3, quota: { limit: 5000, period: { type: 'total' } } },
+    ]);
+    const state = quotaManager.getQuotaState(3);
+    expect(state).toBeDefined();
+    expect(state?.period).toEqual({ type: 'total' });
+    expect(state?.resetAt).toBeNull();
+  });
+
+  it('should persist and reload structured period types', async () => {
+    await quotaManager.initialize([
+      { id: 1, quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } } },
+      { id: 2, quota: { limit: 500, period: { type: 'weekly', weekday: 3 } } },
+      { id: 3, quota: { limit: 5000, period: { type: 'total' } } },
+    ]);
+
+    await quotaManager.consumeQuota(1, 10);
+    await quotaManager.persist();
+
+    // Create new manager and load
+    const manager2 = createQuotaManager({ quotaStatePath: quotaPath });
+    await manager2.initialize([
+      { id: 1, quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } } },
+      { id: 2, quota: { limit: 500, period: { type: 'weekly', weekday: 3 } } },
+      { id: 3, quota: { limit: 5000, period: { type: 'total' } } },
+    ]);
+
+    const state1 = manager2.getQuotaState(1);
+    expect(state1?.used).toBe(10);
+    expect(state1?.period).toEqual({ type: '5h', windowHours: 5, sliding: true });
+
+    const state3 = manager2.getQuotaState(3);
+    expect(state3?.resetAt).toBeNull();
+  });
+
+  it('should migrate legacy string period "daily" to structured 5h period on load', async () => {
+    // Write a quota-state.json with old string-format periods
+    const legacyState = {
+      version: '1.0',
+      lastSync: new Date().toISOString(),
+      states: {
+        '1': {
+          planId: 1,
+          used: 30,
+          limit: 100,
+          period: 'daily', // legacy string format
+          lastUpdated: new Date().toISOString(),
+          resetAt: new Date(Date.now() + 3600000).toISOString(),
+        },
+      },
+    };
+
+    await writeFile(quotaPath, JSON.stringify(legacyState), 'utf-8');
+
+    await quotaManager.initialize([
+      { id: 1, quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } } },
+    ]);
+
+    const state = quotaManager.getQuotaState(1);
+    expect(state).toBeDefined();
+    expect(state?.used).toBe(30);
+    // Period should be migrated to structured format
+    expect(state?.period).toEqual({ type: '5h', windowHours: 5, sliding: true });
+  });
+
+  it('should migrate legacy string period "monthly" to structured monthly period on load', async () => {
+    const legacyState = {
+      version: '1.0',
+      lastSync: new Date().toISOString(),
+      states: {
+        '2': {
+          planId: 2,
+          used: 200,
+          limit: 1000,
+          period: 'monthly', // legacy string format
+          lastUpdated: new Date().toISOString(),
+          resetAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+      },
+    };
+
+    await writeFile(quotaPath, JSON.stringify(legacyState), 'utf-8');
+
+    await quotaManager.initialize([
+      { id: 2, quota: { limit: 1000, period: { type: 'monthly', expiresOn: 1 } } },
+    ]);
+
+    const state = quotaManager.getQuotaState(2);
+    expect(state).toBeDefined();
+    expect(state?.used).toBe(200);
+    expect(state?.period).toEqual({ type: 'monthly', expiresOn: 1 });
+  });
+
+  it('should migrate legacy string period "total" to structured total period on load', async () => {
+    const legacyState = {
+      version: '1.0',
+      lastSync: new Date().toISOString(),
+      states: {
+        '3': {
+          planId: 3,
+          used: 500,
+          limit: 5000,
+          period: 'total', // legacy string format
+          lastUpdated: new Date().toISOString(),
+          resetAt: null,
+        },
+      },
+    };
+
+    await writeFile(quotaPath, JSON.stringify(legacyState), 'utf-8');
+
+    await quotaManager.initialize([
+      { id: 3, quota: { limit: 5000, period: { type: 'total' } } },
+    ]);
+
+    const state = quotaManager.getQuotaState(3);
+    expect(state).toBeDefined();
+    expect(state?.used).toBe(500);
+    expect(state?.period).toEqual({ type: 'total' });
+  });
+
+  it('should serialize structured period objects correctly in persist round-trip', async () => {
+    await quotaManager.initialize([
+      { id: 1, quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } } },
+      { id: 2, quota: { limit: 500, period: { type: 'weekly', weekday: 5 } } },
+      { id: 3, quota: { limit: 1000, period: { type: 'monthly', expiresOn: 15 } } },
+      { id: 4, quota: { limit: 5000, period: { type: 'total' } } },
+    ]);
+
+    await quotaManager.persist();
+
+    // Read the raw file and verify structured period is serialized correctly
+    const content = await readFile(quotaPath, 'utf-8');
+    const data = JSON.parse(content);
+
+    expect(data.states['1'].period).toEqual({ type: '5h', windowHours: 5, sliding: true });
+    expect(data.states['2'].period).toEqual({ type: 'weekly', weekday: 5 });
+    expect(data.states['3'].period).toEqual({ type: 'monthly', expiresOn: 15 });
+    expect(data.states['4'].period).toEqual({ type: 'total' });
+  });
+
+  it('should handle mixed legacy and structured periods in persisted state', async () => {
+    const mixedState = {
+      version: '1.0',
+      lastSync: new Date().toISOString(),
+      states: {
+        '1': {
+          planId: 1,
+          used: 10,
+          limit: 100,
+          period: 'daily', // legacy
+          lastUpdated: new Date().toISOString(),
+          resetAt: new Date(Date.now() + 3600000).toISOString(),
+        },
+        '2': {
+          planId: 2,
+          used: 20,
+          limit: 500,
+          period: { type: 'weekly', weekday: 3 }, // already structured
+          lastUpdated: new Date().toISOString(),
+          resetAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+      },
+    };
+
+    await writeFile(quotaPath, JSON.stringify(mixedState), 'utf-8');
+
+    await quotaManager.initialize([
+      { id: 1, quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } } },
+      { id: 2, quota: { limit: 500, period: { type: 'weekly', weekday: 3 } } },
+    ]);
+
+    const state1 = quotaManager.getQuotaState(1);
+    const state2 = quotaManager.getQuotaState(2);
+
+    // Legacy should be migrated
+    expect(state1?.period).toEqual({ type: '5h', windowHours: 5, sliding: true });
+    expect(state1?.used).toBe(10);
+    // Structured should pass through unchanged
+    expect(state2?.period).toEqual({ type: 'weekly', weekday: 3 });
+    expect(state2?.used).toBe(20);
   });
 });
 

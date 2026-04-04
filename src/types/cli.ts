@@ -4,6 +4,7 @@
 
 import type { ApiKey } from './api-key';
 import type { UsageReport } from './usage';
+import type { QuotaPeriod } from './coding-plan';
 import type { CreateKeyResult, ValidationStatus } from '@/services/api-key-manager';
 
 /**
@@ -84,7 +85,7 @@ export interface PlanUsageReportDisplay {
     date: string;
     requestCount: number;
   }>;
-  quotaPeriod: 'daily' | 'monthly' | 'total';
+  quotaPeriod: QuotaPeriod | 'daily' | 'monthly' | 'total';
   resetAt: Date | null;
 }
 
@@ -98,7 +99,7 @@ export interface PlanUsageSummaryDisplay {
   used: number;
   remaining: number;
   percentage: number;
-  quotaPeriod: 'daily' | 'monthly' | 'total';
+  quotaPeriod: QuotaPeriod | 'daily' | 'monthly' | 'total';
   resetAt: Date | null;
 }
 

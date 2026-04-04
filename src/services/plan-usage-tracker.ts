@@ -26,6 +26,8 @@ import { planUsageDataStorageSchema, adjustmentHistoryStorageSchema } from '@/ty
 import { logger } from '@/utils/logger';
 import { PLAN_USAGE_DEFAULTS } from '@/config/defaults';
 import { calculateEffectiveExpiration } from '@/utils/expiration';
+import type { QuotaPeriod } from '@/types/coding-plan';
+import { calculateResetAt as calculateStructuredResetAt } from '@/types/quota';
 
 /**
  * PlanUsageTracker configuration.
@@ -302,18 +304,41 @@ export class PlanUsageTracker {
 
   /**
    * Calculate the next reset date based on quota period.
-   * Respects expiresOn and expiresAt from plan configuration.
+   * Accepts both the new structured QuotaPeriod and legacy string periods.
+   * Respects expiresOn and expiresAt from plan configuration (for legacy and monthly).
    *
-   * @param period - The quota period type
+   * @param period - The quota period (new structured type or legacy string)
    * @param expiresOn - Optional day of month (1-31) for custom reset
    * @param expiresAt - Optional ISO 8601 datetime for absolute expiration
+   * @param currentResetAt - For sliding window periods (5h), the current resetAt value.
+   *   When provided, the next reset is calculated from this timestamp instead of now.
    * @returns The next reset date, or null for total period
    */
   calculateResetAt(
-    period: 'daily' | 'monthly' | 'total',
+    period: QuotaPeriod | 'daily' | 'monthly' | 'total',
     expiresOn?: number,
-    expiresAt?: string
+    expiresAt?: string,
+    currentResetAt?: Date | null
   ): Date | null {
+    // Handle structured QuotaPeriod — delegate to shared utility in quota.ts
+    if (typeof period === 'object') {
+      // For monthly periods, apply expiresAt override from plan config if present
+      if (period.type === 'monthly' && expiresAt !== undefined) {
+        const expiration = new Date(expiresAt);
+        if (!isNaN(expiration.getTime())) {
+          return new Date(Date.UTC(
+            expiration.getUTCFullYear(),
+            expiration.getUTCMonth(),
+            expiration.getUTCDate(),
+            0, 0, 0, 0
+          ));
+        }
+      }
+
+      return calculateStructuredResetAt(period, currentResetAt);
+    }
+
+    // Handle legacy string period (backward compatibility)
     if (period === 'total') {
       return null;
     }
@@ -323,13 +348,13 @@ export class PlanUsageTracker {
       const expiration = calculateEffectiveExpiration({ expiresOn, expiresAt });
 
       if (expiration) {
-        // Return midnight of the expiration day
-        return new Date(
-          expiration.getFullYear(),
-          expiration.getMonth(),
-          expiration.getDate(),
+        // Return midnight of the expiration day (UTC)
+        return new Date(Date.UTC(
+          expiration.getUTCFullYear(),
+          expiration.getUTCMonth(),
+          expiration.getUTCDate(),
           0, 0, 0, 0
-        );
+        ));
       }
     }
 
@@ -337,19 +362,19 @@ export class PlanUsageTracker {
     const now = new Date();
 
     if (period === 'daily') {
-      // Next midnight local time
+      // Next midnight UTC
       const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(0, 0, 0, 0);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      tomorrow.setUTCHours(0, 0, 0, 0);
       return tomorrow;
     }
 
     if (period === 'monthly') {
-      // First day of next month at midnight local time
+      // First day of next month at midnight UTC
       const nextMonth = new Date(now);
-      nextMonth.setMonth(nextMonth.getMonth() + 1);
-      nextMonth.setDate(1);
-      nextMonth.setHours(0, 0, 0, 0);
+      nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
+      nextMonth.setUTCDate(1);
+      nextMonth.setUTCHours(0, 0, 0, 0);
       return nextMonth;
     }
 
@@ -359,11 +384,22 @@ export class PlanUsageTracker {
   /**
    * Calculate the reset date for a plan based on its quota configuration.
    * This is a convenience method that extracts the relevant fields from a PlanInfo object.
+   * Supports both new structured QuotaPeriod and legacy string period.
    *
    * @param planInfo - The plan information containing quota configuration
    * @returns The next reset date, or null for total period
    */
   calculateResetDate(planInfo: PlanInfo): Date | null {
+    // If period is already a structured object, pass it directly
+    if (typeof planInfo.quota.period === 'object') {
+      return this.calculateResetAt(
+        planInfo.quota.period,
+        planInfo.quota.expiresOn,
+        planInfo.quota.expiresAt
+      );
+    }
+
+    // Legacy string period
     return this.calculateResetAt(
       planInfo.quota.period,
       planInfo.quota.expiresOn,
@@ -894,6 +930,7 @@ export class PlanUsageTracker {
   /**
    * Check and reset expired plans.
    * This method is called by the scheduler to reset plans whose expiration date has passed.
+   * Supports both new structured QuotaPeriod and legacy string period types.
    *
    * @param plans - Array of plans with their expiration configuration
    * @returns Array of plan IDs that were reset
@@ -901,7 +938,12 @@ export class PlanUsageTracker {
   checkAndResetExpiredPlans(
     plans: Array<{
       id: number;
-      quota: { period: 'daily' | 'monthly' | 'total'; expiresOn?: number; expiresAt?: string };
+      quota: {
+        period: QuotaPeriod | 'daily' | 'monthly' | 'total';
+        expiresOn?: number;
+        expiresAt?: string;
+        resetAt?: Date | null;
+      };
     }>
   ): number[] {
     const now = new Date();
@@ -909,7 +951,121 @@ export class PlanUsageTracker {
     const todayStr = now.toISOString().split('T')[0]!;
 
     for (const plan of plans) {
-      if (plan.quota.period === 'total') {
+      const period = plan.quota.period;
+
+      // Handle structured QuotaPeriod
+      if (typeof period === 'object') {
+        if (period.type === 'total') {
+          continue;
+        }
+
+        if (period.type === '5h') {
+          // 5h sliding window: check if the current resetAt has passed
+          // NOTE: Usage history cleanup uses daily granularity (YYYY-MM-DD keys), so
+          // records are pruned by calendar date rather than exact 5h window boundary.
+          // This is a design trade-off — same-day records from before the window are
+          // kept, and all of yesterday's records may be deleted even if some fall
+          // within the window. Actual quota enforcement is handled correctly by
+          // QuotaManager with time-based sliding via `resetAt` timestamps.
+          const currentResetAt = plan.quota.resetAt;
+          if (currentResetAt && now >= currentResetAt) {
+            // Window has expired — delete records from before the sliding window start
+            const windowStart = new Date(now.getTime() - period.windowHours * 60 * 60 * 1000);
+            const windowStartStr = windowStart.toISOString().split('T')[0]!;
+            const resetCount = this.resetPlanUsage(plan.id, windowStartStr);
+            if (resetCount > 0) {
+              resetPlanIds.push(plan.id);
+            }
+          } else if (!currentResetAt) {
+            // No resetAt set yet (initial state) — clean records older than 5h window
+            const windowStart = new Date(now.getTime() - period.windowHours * 60 * 60 * 1000);
+            const windowStartStr = windowStart.toISOString().split('T')[0]!;
+            const resetCount = this.resetPlanUsage(plan.id, windowStartStr);
+            if (resetCount > 0) {
+              resetPlanIds.push(plan.id);
+            }
+          }
+          continue;
+        }
+
+        if (period.type === 'weekly') {
+          // Calculate start of the current weekly cycle (last occurrence of weekday at 00:00 UTC)
+          const targetJsDay = period.weekday % 7; // ISO -> JS day
+          const currentJsDay = now.getUTCDay();
+          let daysSinceTarget = currentJsDay - targetJsDay;
+          if (daysSinceTarget < 0) {
+            daysSinceTarget += 7;
+          }
+          const cycleStart = new Date(now);
+          cycleStart.setUTCDate(cycleStart.getUTCDate() - daysSinceTarget);
+          cycleStart.setUTCHours(0, 0, 0, 0);
+          const cycleStartStr = cycleStart.toISOString().split('T')[0]!;
+          const resetCount = this.resetPlanUsage(plan.id, cycleStartStr);
+          if (resetCount > 0) {
+            resetPlanIds.push(plan.id);
+          }
+          continue;
+        }
+
+        if (period.type === 'monthly') {
+          // Check for absolute expiresAt first
+          if (plan.quota.expiresAt) {
+            const expiration = new Date(plan.quota.expiresAt);
+            if (!isNaN(expiration.getTime())) {
+              const expirationMidnight = new Date(Date.UTC(
+                expiration.getUTCFullYear(),
+                expiration.getUTCMonth(),
+                expiration.getUTCDate(),
+                0, 0, 0, 0
+              ));
+              if (now >= expirationMidnight) {
+                const resetCount = this.resetPlanUsage(plan.id);
+                if (resetCount > 0) {
+                  resetPlanIds.push(plan.id);
+                }
+                continue;
+              }
+            }
+          }
+
+          // Use the period's expiresOn or the quota-level expiresOn
+          const targetDay = period.expiresOn ?? plan.quota.expiresOn ?? 1;
+          const currentYear = now.getUTCFullYear();
+          const currentMonth = now.getUTCMonth();
+          const currentDay = now.getUTCDate();
+
+          const daysInCurrentMonth = new Date(Date.UTC(currentYear, currentMonth + 1, 0)).getUTCDate();
+          const clampedDay = Math.min(targetDay, daysInCurrentMonth);
+
+          let cycleStartDateStr: string;
+          if (currentDay >= clampedDay) {
+            // Cycle started this month
+            cycleStartDateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`;
+          } else {
+            // Cycle started last month
+            let lastMonth = currentMonth - 1;
+            let lastMonthYear = currentYear;
+            if (lastMonth < 0) {
+              lastMonth = 11;
+              lastMonthYear--;
+            }
+            const daysInLastMonth = new Date(Date.UTC(lastMonthYear, lastMonth + 1, 0)).getUTCDate();
+            const lastMonthTargetDay = Math.min(targetDay, daysInLastMonth);
+            cycleStartDateStr = `${lastMonthYear}-${String(lastMonth + 1).padStart(2, '0')}-${String(lastMonthTargetDay).padStart(2, '0')}`;
+          }
+
+          const resetCount = this.resetPlanUsage(plan.id, cycleStartDateStr);
+          if (resetCount > 0) {
+            resetPlanIds.push(plan.id);
+          }
+          continue;
+        }
+
+        continue;
+      }
+
+      // Handle legacy string periods (backward compatibility)
+      if (period === 'total') {
         continue;
       }
 
@@ -920,12 +1076,12 @@ export class PlanUsageTracker {
       if (plan.quota.expiresAt) {
         const expiration = new Date(plan.quota.expiresAt);
         if (!isNaN(expiration.getTime())) {
-          const expirationMidnight = new Date(
-            expiration.getFullYear(),
-            expiration.getMonth(),
-            expiration.getDate(),
+          const expirationMidnight = new Date(Date.UTC(
+            expiration.getUTCFullYear(),
+            expiration.getUTCMonth(),
+            expiration.getUTCDate(),
             0, 0, 0, 0
-          );
+          ));
           if (now >= expirationMidnight) {
             // For one-time expiration, reset all usage (original behavior)
             shouldResetAll = true;
@@ -933,15 +1089,15 @@ export class PlanUsageTracker {
         }
       } else {
         // Handle periodic resets (daily/monthly)
-        if (plan.quota.period === 'daily') {
+        if (period === 'daily') {
           cycleStartDateStr = todayStr;
-        } else if (plan.quota.period === 'monthly') {
-          const currentYear = now.getFullYear();
-          const currentMonth = now.getMonth();
-          const currentDay = now.getDate();
+        } else if (period === 'monthly') {
+          const currentYear = now.getUTCFullYear();
+          const currentMonth = now.getUTCMonth();
+          const currentDay = now.getUTCDate();
 
-          const daysInCurrentMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-          const targetDay = plan.quota.expiresOn !== undefined 
+          const daysInCurrentMonth = new Date(Date.UTC(currentYear, currentMonth + 1, 0)).getUTCDate();
+          const targetDay = plan.quota.expiresOn !== undefined
             ? Math.min(plan.quota.expiresOn, daysInCurrentMonth)
             : 1;
 
@@ -956,11 +1112,11 @@ export class PlanUsageTracker {
               lastMonth = 11;
               lastMonthYear--;
             }
-            const daysInLastMonth = new Date(lastMonthYear, lastMonth + 1, 0).getDate();
-            const lastMonthTargetDay = plan.quota.expiresOn !== undefined 
+            const daysInLastMonth = new Date(Date.UTC(lastMonthYear, lastMonth + 1, 0)).getUTCDate();
+            const lastMonthTargetDay = plan.quota.expiresOn !== undefined
               ? Math.min(plan.quota.expiresOn, daysInLastMonth)
               : 1;
-            
+
             cycleStartDateStr = `${lastMonthYear}-${String(lastMonth + 1).padStart(2, '0')}-${String(lastMonthTargetDay).padStart(2, '0')}`;
           }
         }

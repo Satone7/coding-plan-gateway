@@ -48,12 +48,43 @@ export const loadBalanceConfigSchema = z.object({
 });
 
 /**
+ * Quota period schemas (discriminated union).
+ */
+const fiveHourPeriodSchema = z.object({
+  type: z.literal('5h'),
+  windowHours: z.number().int().min(1).max(24).optional().default(5),
+  sliding: z.boolean().optional().default(true),
+});
+
+const weeklyPeriodSchema = z.object({
+  type: z.literal('weekly'),
+  weekday: z.number().int().min(1).max(7),
+});
+
+const monthlyPeriodSchema = z.object({
+  type: z.literal('monthly'),
+  expiresOn: z.number().int().min(1).max(31).optional().default(1),
+});
+
+const totalPeriodSchema = z.object({
+  type: z.literal('total'),
+});
+
+export const quotaPeriodSchema = z.discriminatedUnion('type', [
+  fiveHourPeriodSchema,
+  weeklyPeriodSchema,
+  monthlyPeriodSchema,
+  totalPeriodSchema,
+]);
+
+/**
  * Quota configuration schema.
  */
 export const quotaConfigSchema = z.object({
   limit: z.number().int().positive(),
-  period: z.enum(['daily', 'monthly', 'total']),
-  // Load balancing and expiration fields inside quota
+  period: quotaPeriodSchema,
+  // Legacy expiration fields inside quota (kept for backward compat with old YAML configs)
+  // These are applied by configToPlan in the repository layer
   expiresOn: z.number().int().min(1).max(31).optional(),
   expiresAt: z.string().datetime().optional(),
 });
@@ -84,7 +115,8 @@ export const planConfigSchema = z.object({
   quota: quotaConfigSchema,
   timeout: z.number().int().min(1).optional(),
   status: z.enum(['active', 'paused']).optional(),
-  // Load balancing and expiration fields
+  // Legacy expiration fields (kept for backward compat during migration)
+  // These are applied by migration logic when period is old string format
   expiresOn: z.number().int().min(1).max(31).optional(),
   expiresAt: z.string().datetime().optional(),
   weight: z.number().int().min(1).max(100).optional(),

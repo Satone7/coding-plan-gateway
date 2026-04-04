@@ -4,6 +4,8 @@
  */
 
 import { z } from 'zod';
+import { quotaPeriodSchema } from '@/config/schema';
+export { quotaPeriodSchema };
 
 // ==================== Common Schemas ====================
 
@@ -56,11 +58,7 @@ export const positiveIntegerSchema = z.number().int().positive();
 export const nonNegativeIntegerSchema = z.number().int().nonnegative();
 
 // ==================== Quota Schemas ====================
-
-/**
- * Quota period schema.
- */
-export const quotaPeriodSchema = z.enum(['daily', 'monthly', 'total']);
+// quotaPeriodSchema is re-exported from @/config/schema to avoid duplication.
 
 /**
  * Quota configuration schema.

@@ -118,30 +118,84 @@ export function createInitialQuotaState(
 
 /**
  * Calculate the next reset date based on quota period.
+ *
+ * @param period - The quota period (discriminated union)
+ * @param currentResetAt - For sliding window periods (5h), the current resetAt value.
+ *   When provided, the next reset is calculated from this timestamp instead of now.
+ * @returns The next reset Date, or null for 'total' period (never resets)
  */
-export function calculateResetAt(period: QuotaPeriod): Date | null {
-  if (period === 'total') {
+export function calculateResetAt(period: QuotaPeriod, currentResetAt?: Date | null): Date | null {
+  if (period.type === 'total') {
     return null;
   }
 
   const now = new Date();
 
-  if (period === 'daily') {
-    // Reset at next UTC midnight
-    const tomorrow = new Date(now);
-    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-    tomorrow.setUTCHours(0, 0, 0, 0);
-    return tomorrow;
+  if (period.type === '5h') {
+    // Sliding window: on initial creation, resetAt = now + 5h.
+    // On subsequent resets, resetAt = currentResetAt + 5h (slides predictably).
+    const base = currentResetAt ?? now;
+    const next = new Date(base.getTime() + period.windowHours * 60 * 60 * 1000);
+    return next;
   }
 
-  if (period === 'monthly') {
-    // Reset on the 1st of next month at UTC midnight
-    const nextMonth = new Date(now);
-    nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-    nextMonth.setUTCDate(1);
-    nextMonth.setUTCHours(0, 0, 0, 0);
-    return nextMonth;
+  if (period.type === 'weekly') {
+    // ISO weekday: 1=Monday, 7=Sunday. JS getUTCDay(): 0=Sunday, 6=Saturday.
+    // Convert ISO weekday to JS day: jsDay = isoWeekday % 7
+    const targetJsDay = period.weekday % 7; // 1->1(Mon), ..., 6->6(Sat), 7->0(Sun)
+    const currentJsDay = now.getUTCDay();
+    let daysUntilTarget = targetJsDay - currentJsDay;
+    if (daysUntilTarget <= 0) {
+      daysUntilTarget += 7;
+    }
+    const nextReset = new Date(now);
+    nextReset.setUTCDate(nextReset.getUTCDate() + daysUntilTarget);
+    nextReset.setUTCHours(0, 0, 0, 0);
+    return nextReset;
+  }
+
+  if (period.type === 'monthly') {
+    // If expiresOn is configured, reset on that day of month.
+    // Otherwise, reset on the 1st of next month.
+    const targetDay = period.expiresOn ?? 1;
+
+    const currentYear = now.getUTCFullYear();
+    const currentMonth = now.getUTCMonth();
+    const currentDay = now.getUTCDate();
+
+    // Get days in current month
+    const daysInCurrentMonth = getDaysInMonth(currentYear, currentMonth);
+    const clampedDay = Math.min(targetDay, daysInCurrentMonth);
+
+    if (currentDay < clampedDay) {
+      // Target day is still ahead this month
+      return new Date(Date.UTC(currentYear, currentMonth, clampedDay, 0, 0, 0, 0));
+    }
+
+    // Target day has passed, use next month
+    let nextMonth = currentMonth + 1;
+    let nextYear = currentYear;
+    if (nextMonth > 11) {
+      nextMonth = 0;
+      nextYear++;
+    }
+    const daysInNextMonth = getDaysInMonth(nextYear, nextMonth);
+    const nextClampedDay = Math.min(targetDay, daysInNextMonth);
+
+    return new Date(Date.UTC(nextYear, nextMonth, nextClampedDay, 0, 0, 0, 0));
   }
 
   return null;
+}
+
+/**
+ * Get the number of days in a given month (UTC-safe).
+ *
+ * @param year - Full year
+ * @param month - Month (0-11, where 0 = January)
+ * @returns Number of days in the month
+ */
+function getDaysInMonth(year: number, month: number): number {
+  // Day 0 of next month gives last day of current month
+  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
 }

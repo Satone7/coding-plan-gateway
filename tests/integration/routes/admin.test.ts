@@ -227,13 +227,39 @@ describe('Admin Routes', () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it('should validate quota period is valid enum', async () => {
+    it('should validate quota period is valid structured format', async () => {
       const response = await app.inject({
         method: 'POST',
         url: '/api/plans',
         payload: {
           ...createMockPlanInput(),
           quota: { limit: 100, period: 'invalid' },
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('should validate weekly period requires weekday', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/plans',
+        payload: {
+          ...createMockPlanInput(),
+          quota: { limit: 100, period: { type: 'weekly' } },
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('should validate weekly period weekday is in range 1-7', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/plans',
+        payload: {
+          ...createMockPlanInput(),
+          quota: { limit: 100, period: { type: 'weekly', weekday: 9 } },
         },
       });
 
@@ -361,7 +387,7 @@ describe('Admin Routes', () => {
 
     it('should update quota partially', async () => {
       const plan = await repository.save(
-        createMockPlanInput({ quota: { limit: 100, period: 'daily' } })
+        createMockPlanInput({ quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } } })
       );
 
       const response = await app.inject({
@@ -375,7 +401,7 @@ describe('Admin Routes', () => {
       expect(response.statusCode).toBe(200);
       expect(response.json().data.quota).toEqual({
         limit: 200,
-        period: 'daily',
+        period: { type: '5h', windowHours: 5, sliding: true },
       });
     });
 
@@ -455,7 +481,7 @@ describe('Admin Routes', () => {
           name: 'Full Plan',
           baseUrl: 'https://api.example.com',
           models: ['model-1', 'model-2'],
-          quota: { limit: 500, period: 'monthly' },
+          quota: { limit: 500, period: { type: 'monthly', expiresOn: 15 } },
           timeout: 45,
         })
       );
@@ -471,7 +497,7 @@ describe('Admin Routes', () => {
         name: 'Full Plan',
         baseUrl: 'https://api.example.com',
         models: ['model-1', 'model-2'],
-        quota: { limit: 500, period: 'monthly' },
+        quota: { limit: 500, period: { type: 'monthly', expiresOn: 15 } },
         timeout: 45,
         status: 'active',
         enable: true,
@@ -654,6 +680,153 @@ describe('Admin Routes', () => {
 
       // Verify QuotaManager was updated
       expect(quotaManager.getUsedQuota(plan.id)).toBe(250);
+    });
+  });
+
+  describe('Structured QuotaPeriod API', () => {
+    it('should create plan with 5h structured period', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/plans',
+        payload: {
+          name: '5h Sliding Plan',
+          baseUrl: 'https://api.example.com',
+          apiKey: 'test-key',
+          models: ['model-1'],
+          quota: {
+            limit: 100,
+            period: { type: '5h', windowHours: 5, sliding: true },
+          },
+        },
+      });
+
+      expect(response.statusCode).toBe(201);
+      const body = response.json();
+      expect(body.data.quota.period).toEqual({
+        type: '5h',
+        windowHours: 5,
+        sliding: true,
+      });
+    });
+
+    it('should create plan with weekly structured period', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/plans',
+        payload: {
+          name: 'Weekly Plan',
+          baseUrl: 'https://api.example.com',
+          apiKey: 'test-key',
+          models: ['model-1'],
+          quota: {
+            limit: 500,
+            period: { type: 'weekly', weekday: 3 },
+          },
+        },
+      });
+
+      expect(response.statusCode).toBe(201);
+      const body = response.json();
+      expect(body.data.quota.period).toEqual({
+        type: 'weekly',
+        weekday: 3,
+      });
+    });
+
+    it('should create plan with monthly structured period with expiresOn', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/plans',
+        payload: {
+          name: 'Monthly Plan',
+          baseUrl: 'https://api.example.com',
+          apiKey: 'test-key',
+          models: ['model-1'],
+          quota: {
+            limit: 1000,
+            period: { type: 'monthly', expiresOn: 15 },
+          },
+        },
+      });
+
+      expect(response.statusCode).toBe(201);
+      const body = response.json();
+      expect(body.data.quota.period).toEqual({
+        type: 'monthly',
+        expiresOn: 15,
+      });
+    });
+
+    it('should create plan with total structured period', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/plans',
+        payload: {
+          name: 'Total Plan',
+          baseUrl: 'https://api.example.com',
+          apiKey: 'test-key',
+          models: ['model-1'],
+          quota: {
+            limit: 10000,
+            period: { type: 'total' },
+          },
+        },
+      });
+
+      expect(response.statusCode).toBe(201);
+      const body = response.json();
+      expect(body.data.quota.period).toEqual({ type: 'total' });
+    });
+
+    it('should update plan to change period type', async () => {
+      // Create with monthly
+      const plan = await repository.save(createMockPlanInput({
+        quota: { limit: 500, period: { type: 'monthly' } },
+      }));
+
+      // Update to weekly
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/api/plans/${plan.id}`,
+        payload: {
+          quota: {
+            period: { type: 'weekly', weekday: 5 },
+          },
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().data.quota.period).toEqual({
+        type: 'weekly',
+        weekday: 5,
+      });
+    });
+
+    it('should list plans returning structured period format', async () => {
+      await repository.save(createMockPlanInput({
+        name: 'Plan A',
+        quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } },
+      }));
+      await repository.save(createMockPlanInput({
+        name: 'Plan B',
+        quota: { limit: 500, period: { type: 'weekly', weekday: 1 } },
+      }));
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/plans',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+
+      const planA = body.data.find((p: { name: string }) => p.name === 'Plan A');
+      const planB = body.data.find((p: { name: string }) => p.name === 'Plan B');
+
+      expect(planA.quota.period.type).toBe('5h');
+      expect(planA.quota.period.windowHours).toBe(5);
+      expect(planB.quota.period.type).toBe('weekly');
+      expect(planB.quota.period.weekday).toBe(1);
     });
   });
 });

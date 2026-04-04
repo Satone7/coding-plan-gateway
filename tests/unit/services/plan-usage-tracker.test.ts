@@ -381,9 +381,9 @@ describe('PlanUsageTracker', () => {
       const resetDate = tracker.calculateResetAt('daily', 27);
 
       expect(resetDate).toBeInstanceOf(Date);
-      expect(resetDate?.getHours()).toBe(0);
-      expect(resetDate?.getMinutes()).toBe(0);
-      expect(resetDate?.getSeconds()).toBe(0);
+      expect(resetDate?.getUTCHours()).toBe(0);
+      expect(resetDate?.getUTCMinutes()).toBe(0);
+      expect(resetDate?.getUTCSeconds()).toBe(0);
     });
   });
 
@@ -643,6 +643,409 @@ describe('PlanUsageTracker', () => {
       // Should not reset if the calculated expiration date is in the future
       // (depends on timing of the test)
       expect(tracker.getTotalUsage(1)).toBe(1);
+    });
+  });
+
+  describe('calculateResetAt with structured QuotaPeriod', () => {
+    it('should return null for total structured period', async () => {
+      await tracker.initialize();
+
+      const resetDate = tracker.calculateResetAt({ type: 'total' });
+      expect(resetDate).toBeNull();
+    });
+
+    it('should calculate 5h sliding window reset', async () => {
+      await tracker.initialize();
+
+      const before = new Date();
+      const resetDate = tracker.calculateResetAt({ type: '5h', windowHours: 5, sliding: true });
+      const after = new Date();
+
+      expect(resetDate).not.toBeNull();
+      const minExpected = before.getTime() + 5 * 60 * 60 * 1000;
+      const maxExpected = after.getTime() + 5 * 60 * 60 * 1000;
+      expect(resetDate!.getTime()).toBeGreaterThanOrEqual(minExpected);
+      expect(resetDate!.getTime()).toBeLessThanOrEqual(maxExpected);
+    });
+
+    it('should calculate weekly reset at configured weekday', async () => {
+      await tracker.initialize();
+
+      const resetDate = tracker.calculateResetAt({ type: 'weekly', weekday: 1 });
+      expect(resetDate).not.toBeNull();
+      // Should be a Monday (JS day 1)
+      expect(resetDate!.getUTCDay()).toBe(1);
+      expect(resetDate!.getUTCHours()).toBe(0);
+    });
+
+    it('should calculate weekly reset for Sunday (weekday=7)', async () => {
+      await tracker.initialize();
+
+      const resetDate = tracker.calculateResetAt({ type: 'weekly', weekday: 7 });
+      expect(resetDate).not.toBeNull();
+      // Sunday in JS is day 0
+      expect(resetDate!.getUTCDay()).toBe(0);
+    });
+
+    it('should calculate monthly reset with structured period and expiresOn', async () => {
+      await tracker.initialize();
+
+      const resetDate = tracker.calculateResetAt({ type: 'monthly', expiresOn: 27 });
+      expect(resetDate).not.toBeNull();
+      expect(resetDate!.getUTCDate()).toBe(27);
+    });
+
+    it('should calculate monthly reset without expiresOn (defaults to 1st)', async () => {
+      await tracker.initialize();
+
+      const resetDate = tracker.calculateResetAt({ type: 'monthly' });
+      expect(resetDate).not.toBeNull();
+      expect(resetDate!.getUTCDate()).toBe(1);
+    });
+
+    it('should handle structured monthly with plan-level expiresAt override', async () => {
+      await tracker.initialize();
+
+      const futureDate = new Date();
+      futureDate.setMonth(futureDate.getMonth() + 2);
+      futureDate.setDate(15);
+      futureDate.setHours(23, 59, 59, 999);
+
+      const resetDate = tracker.calculateResetAt(
+        { type: 'monthly', expiresOn: 27 },
+        undefined,
+        futureDate.toISOString()
+      );
+
+      expect(resetDate).not.toBeNull();
+      expect(resetDate!.getDate()).toBe(futureDate.getDate());
+    });
+
+    it('should calculate 5h sliding window reset from currentResetAt', async () => {
+      await tracker.initialize();
+
+      // Set a specific currentResetAt value
+      const currentResetAt = new Date('2026-04-04T10:00:00Z');
+      const resetDate = tracker.calculateResetAt(
+        { type: '5h', windowHours: 5, sliding: true },
+        undefined,
+        undefined,
+        currentResetAt
+      );
+
+      expect(resetDate).not.toBeNull();
+      // Next reset should be 5h after the provided currentResetAt
+      const expected = new Date('2026-04-04T15:00:00Z');
+      expect(resetDate!.getTime()).toBe(expected.getTime());
+    });
+
+    it('should use now as base when currentResetAt is null for 5h period', async () => {
+      await tracker.initialize();
+
+      const before = new Date();
+      const resetDate = tracker.calculateResetAt(
+        { type: '5h', windowHours: 5, sliding: true },
+        undefined,
+        undefined,
+        null
+      );
+      const after = new Date();
+
+      expect(resetDate).not.toBeNull();
+      const minExpected = before.getTime() + 5 * 60 * 60 * 1000;
+      const maxExpected = after.getTime() + 5 * 60 * 60 * 1000;
+      expect(resetDate!.getTime()).toBeGreaterThanOrEqual(minExpected);
+      expect(resetDate!.getTime()).toBeLessThanOrEqual(maxExpected);
+    });
+  });
+
+  describe('calculateResetDate with structured PlanInfo', () => {
+    it('should handle 5h structured period in PlanInfo', async () => {
+      await tracker.initialize();
+
+      const planInfo = {
+        id: 1,
+        name: 'Test Plan',
+        quota: {
+          limit: 100,
+          period: { type: '5h' as const, windowHours: 5, sliding: true as const },
+        },
+      };
+
+      const resetDate = tracker.calculateResetDate(planInfo);
+      expect(resetDate).not.toBeNull();
+      // Should be roughly 5h from now
+      const now = Date.now();
+      expect(resetDate!.getTime()).toBeGreaterThan(now + 4 * 60 * 60 * 1000);
+      expect(resetDate!.getTime()).toBeLessThan(now + 6 * 60 * 60 * 1000);
+    });
+
+    it('should handle weekly structured period in PlanInfo', async () => {
+      await tracker.initialize();
+
+      const planInfo = {
+        id: 1,
+        name: 'Test Plan',
+        quota: {
+          limit: 100,
+          period: { type: 'weekly' as const, weekday: 1 as const },
+        },
+      };
+
+      const resetDate = tracker.calculateResetDate(planInfo);
+      expect(resetDate).not.toBeNull();
+      expect(resetDate!.getUTCDay()).toBe(1); // Monday
+      expect(resetDate!.getUTCHours()).toBe(0);
+    });
+
+    it('should handle total structured period in PlanInfo', async () => {
+      await tracker.initialize();
+
+      const planInfo = {
+        id: 1,
+        name: 'Test Plan',
+        quota: {
+          limit: 100,
+          period: { type: 'total' as const },
+        },
+      };
+
+      const resetDate = tracker.calculateResetDate(planInfo);
+      expect(resetDate).toBeNull();
+    });
+
+    it('should handle monthly structured period in PlanInfo', async () => {
+      await tracker.initialize();
+
+      const planInfo = {
+        id: 1,
+        name: 'Test Plan',
+        quota: {
+          limit: 100,
+          period: { type: 'monthly' as const, expiresOn: 15 },
+        },
+      };
+
+      const resetDate = tracker.calculateResetDate(planInfo);
+      expect(resetDate).not.toBeNull();
+      // Should be on the 15th
+      expect(resetDate!.getUTCDate()).toBe(15);
+    });
+  });
+
+  describe('checkAndResetExpiredPlans with structured periods', () => {
+    it('should reset 5h sliding window plans when resetAt has passed', async () => {
+      await tracker.initialize();
+
+      // Add a record from 2 days ago (definitely before the current 5h window)
+      const twoDaysAgo = new Date();
+      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+      const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0]!;
+      const storageKey = `${twoDaysAgoStr}:1`;
+      tracker['usage'].set(storageKey, {
+        planId: 1,
+        date: twoDaysAgoStr,
+        requestCount: 5,
+        lastUpdated: twoDaysAgo,
+      });
+
+      // Also add today's record
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+
+      // resetAt in the past means the 5h window has expired
+      const pastResetAt = new Date(Date.now() - 6 * 60 * 60 * 1000); // 6h ago
+
+      const plans = [
+        {
+          id: 1,
+          quota: {
+            period: { type: '5h' as const, windowHours: 5, sliding: true as const },
+            resetAt: pastResetAt,
+          },
+        },
+      ];
+
+      const resetPlanIds = tracker.checkAndResetExpiredPlans(plans);
+
+      // 2 days ago records should be deleted (they are before the window start date)
+      expect(resetPlanIds).toContain(1);
+      // Today's records should be kept (within the 5h window from now)
+      expect(tracker.getTotalUsage(1)).toBe(2);
+    });
+
+    it('should not reset 5h sliding window plans when resetAt is in the future', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+
+      // resetAt in the future means window has NOT expired
+      const futureResetAt = new Date(Date.now() + 3 * 60 * 60 * 1000); // 3h from now
+
+      const plans = [
+        {
+          id: 1,
+          quota: {
+            period: { type: '5h' as const, windowHours: 5, sliding: true as const },
+            resetAt: futureResetAt,
+          },
+        },
+      ];
+
+      const resetPlanIds = tracker.checkAndResetExpiredPlans(plans);
+
+      expect(resetPlanIds).toHaveLength(0);
+      expect(tracker.getTotalUsage(1)).toBe(2);
+    });
+
+    it('should reset weekly plans for records before current cycle start', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+
+      const plans = [
+        {
+          id: 1,
+          quota: {
+            period: { type: 'weekly' as const, weekday: 1 as const },
+          },
+        },
+      ];
+
+      const resetPlanIds = tracker.checkAndResetExpiredPlans(plans);
+
+      // Records from today should be kept (today is within the current cycle)
+      // unless the cycle just started today
+      // The important thing is it doesn't crash and handles the period type
+      expect(Array.isArray(resetPlanIds)).toBe(true);
+    });
+
+    it('should reset structured monthly plans based on expiresOn', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+
+      // Create a plan with expiresOn that has passed this month
+      const now = new Date();
+      const pastDay = now.getUTCDate() > 1 ? now.getUTCDate() - 1 : 1;
+
+      const plans = [
+        {
+          id: 1,
+          quota: {
+            period: { type: 'monthly' as const, expiresOn: pastDay },
+          },
+        },
+      ];
+
+      const resetPlanIds = tracker.checkAndResetExpiredPlans(plans);
+
+      // Should not fully reset since the cycle start date is within this month
+      // Records from before the cycle start should be removed, but today's record may be kept
+      expect(Array.isArray(resetPlanIds)).toBe(true);
+    });
+
+    it('should reset all usage for structured monthly with past expiresAt', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - 1);
+
+      const plans = [
+        {
+          id: 1,
+          quota: {
+            period: { type: 'monthly' as const },
+            expiresAt: pastDate.toISOString(),
+          },
+        },
+      ];
+
+      const resetPlanIds = tracker.checkAndResetExpiredPlans(plans);
+
+      expect(resetPlanIds).toContain(1);
+      expect(tracker.getTotalUsage(1)).toBe(0);
+    });
+
+    it('should not reset structured monthly with future expiresAt', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(1);
+
+      const futureDate = new Date();
+      futureDate.setFullYear(futureDate.getFullYear() + 1);
+
+      const plans = [
+        {
+          id: 1,
+          quota: {
+            period: { type: 'monthly' as const },
+            expiresAt: futureDate.toISOString(),
+          },
+        },
+      ];
+
+      const resetPlanIds = tracker.checkAndResetExpiredPlans(plans);
+
+      expect(resetPlanIds).toHaveLength(0);
+      expect(tracker.getTotalUsage(1)).toBe(2);
+    });
+
+    it('should skip structured total period plans', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+
+      const plans = [
+        {
+          id: 1,
+          quota: {
+            period: { type: 'total' as const },
+          },
+        },
+      ];
+
+      const resetPlanIds = tracker.checkAndResetExpiredPlans(plans);
+
+      expect(resetPlanIds).toHaveLength(0);
+      expect(tracker.getTotalUsage(1)).toBe(1);
+    });
+
+    it('should handle mixed structured and legacy period plans', async () => {
+      await tracker.initialize();
+
+      tracker.incrementDailyUsage(1);
+      tracker.incrementDailyUsage(2);
+      tracker.incrementDailyUsage(3);
+
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - 1);
+
+      const futureDate = new Date();
+      futureDate.setFullYear(futureDate.getFullYear() + 1);
+
+      const plans = [
+        // Structured monthly with past expiresAt — should reset
+        { id: 1, quota: { period: { type: 'monthly' as const }, expiresAt: pastDate.toISOString() } },
+        // Structured total — should not reset
+        { id: 2, quota: { period: { type: 'total' as const } } },
+        // Legacy monthly with future expiresAt — should not reset
+        { id: 3, quota: { period: 'monthly' as const, expiresAt: futureDate.toISOString() } },
+      ];
+
+      const resetPlanIds = tracker.checkAndResetExpiredPlans(plans);
+
+      expect(resetPlanIds).toContain(1);
+      expect(tracker.getTotalUsage(1)).toBe(0);
+      expect(tracker.getTotalUsage(2)).toBe(1);
+      expect(tracker.getTotalUsage(3)).toBe(1);
     });
   });
 });

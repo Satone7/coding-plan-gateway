@@ -4,9 +4,59 @@
  */
 
 /**
- * Quota reset period types
+ * Quota reset period type discriminator values
  */
-export type QuotaPeriod = 'daily' | 'monthly' | 'total';
+export type QuotaPeriodType = '5h' | 'weekly' | 'monthly' | 'total';
+
+/**
+ * 5-hour sliding window quota period.
+ * Resets every 5 hours from the last reset time.
+ * `sliding` and `windowHours` reserved for future fixed-time mode.
+ */
+export interface FiveHourPeriod {
+  type: '5h';
+  windowHours: number;
+  sliding: true;
+}
+
+/**
+ * Weekly fixed-weekday quota period.
+ * Resets at 00:00 UTC on the configured weekday.
+ * weekday: 1 (Monday) through 7 (Sunday), ISO 8601 convention.
+ */
+export interface WeeklyPeriod {
+  type: 'weekly';
+  weekday: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+}
+
+/**
+ * Monthly fixed-day quota period.
+ * Resets at 00:00 UTC on the configured day of month.
+ * If the day doesn't exist in a month, uses the last day of that month.
+ */
+export interface MonthlyPeriod {
+  type: 'monthly';
+  expiresOn?: number;
+}
+
+/**
+ * Total (lifetime) quota period — never resets.
+ */
+export interface TotalPeriod {
+  type: 'total';
+}
+
+/**
+ * Quota period discriminated union.
+ * Use the `type` field to discriminate between period kinds.
+ */
+export type QuotaPeriod = FiveHourPeriod | WeeklyPeriod | MonthlyPeriod | TotalPeriod;
+
+/**
+ * Legacy quota period string values (pre-migration).
+ * Used internally for backward-compatible migration only.
+ */
+export type LegacyQuotaPeriod = 'daily' | 'monthly' | 'total';
 
 /**
  * Plan operational status
@@ -19,12 +69,8 @@ export type PlanStatus = 'active' | 'paused' | 'error' | 'exhausted';
 export interface QuotaConfig {
   /** Maximum allowed usage */
   limit: number;
-  /** Quota reset period */
+  /** Quota reset period (structured discriminated union) */
   period: QuotaPeriod;
-  /** Day of month when quota resets/expires (1-31). Use last day of month if day doesn't exist. */
-  expiresOn?: number;
-  /** Exact ISO 8601 datetime for one-time expiration. Takes precedence over expiresOn. */
-  expiresAt?: string;
 }
 
 /**

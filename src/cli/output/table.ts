@@ -16,6 +16,7 @@ import type {
   AdjustmentResultDisplay,
 } from '@/types/cli';
 import type { CreateKeyResult } from '@/services/api-key-manager';
+import { formatQuotaPeriod } from '@/utils/format';
 
 /**
  * Format a date for display.
@@ -389,7 +390,7 @@ Examples:
     lines.push(`  Used:        ${report.totalRequests.toLocaleString()}`);
     lines.push(`  Remaining:   ${report.remaining.toLocaleString()}`);
     lines.push(`  Percentage:  ${report.percentage}%`);
-    lines.push(`  Period:      ${report.quotaPeriod}`);
+    lines.push(`  Period:      ${formatQuotaPeriod(report.quotaPeriod)}`);
     if (report.resetAt) {
       lines.push(`  Resets:      ${formatDateTime(report.resetAt)}`);
     }
@@ -441,7 +442,7 @@ Examples:
       const used = plan.used.toLocaleString().padStart(8);
       const remaining = plan.remaining.toLocaleString().padStart(10);
       const percentage = plan.percentage.toString().padStart(3);
-      const period = plan.quotaPeriod.padEnd(9);
+      const period = formatQuotaPeriod(plan.quotaPeriod).padEnd(9);
       const reset = plan.resetAt ? formatDateTime(plan.resetAt) : 'N/A';
 
       lines.push(`  ${name} ${limit} ${used} ${remaining} ${percentage}%  ${period} ${reset}`);

@@ -13,7 +13,9 @@ import {
   type PlanUsageSummaryDisplay,
   type AdjustmentResultDisplay,
 } from '@/types/cli';
+import type { QuotaPeriod } from '@/types/coding-plan';
 import { loadPlanUsageConfig } from '@/config/defaults';
+import { formatQuotaPeriod } from '@/utils/format';
 
 /**
  * Create a CLI error with context.
