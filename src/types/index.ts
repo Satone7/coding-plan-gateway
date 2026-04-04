@@ -6,6 +6,12 @@
 // Coding plan types
 export type {
   QuotaPeriod,
+  QuotaPeriodType,
+  LegacyQuotaPeriod,
+  FiveHourPeriod,
+  WeeklyPeriod,
+  MonthlyPeriod,
+  TotalPeriod,
   PlanStatus,
   QuotaConfig,
   CodingPlan,
