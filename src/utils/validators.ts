@@ -58,9 +58,26 @@ export const nonNegativeIntegerSchema = z.number().int().nonnegative();
 // ==================== Quota Schemas ====================
 
 /**
- * Quota period schema.
+ * Quota period schema (discriminated union).
  */
-export const quotaPeriodSchema = z.enum(['daily', 'monthly', 'total']);
+export const quotaPeriodSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('5h'),
+    windowHours: z.number().int().min(1).max(24).optional().default(5),
+    sliding: z.boolean().optional().default(true),
+  }),
+  z.object({
+    type: z.literal('weekly'),
+    weekday: z.number().int().min(1).max(7),
+  }),
+  z.object({
+    type: z.literal('monthly'),
+    expiresOn: z.number().int().min(1).max(31).optional().default(1),
+  }),
+  z.object({
+    type: z.literal('total'),
+  }),
+]);
 
 /**
  * Quota configuration schema.
