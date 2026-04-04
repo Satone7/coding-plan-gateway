@@ -1,0 +1,296 @@
+{
+  "project": "Quota Reset Periods Redesign",
+  "description": "Replace string-based QuotaPeriod (daily/monthly/total) with structured discriminated-union objects supporting 5h sliding window, weekly, monthly, and total periods. Includes auto-migration from old format.",
+  "goal": "Support 5h (sliding), weekly (fixed weekday), monthly (fixed day), and total quota reset periods with structured config and backward-compatible migration",
+  "architecture": "Discriminated union type with `type` field. Each period type has its own fields. Auto-migration on config load. calculateResetAt handles each type's reset logic.",
+  "tech_stack": ["TypeScript 5.x", "Node.js 20+", "Zod", "Vitest"],
+  "created_at": "2026-04-04",
+  "design_doc": "docs/plans/2026-04-04-quota-reset-periods-design.md",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Define new QuotaPeriod types and interfaces",
+      "description": "Create the discriminated union type system for QuotaPeriod in src/types/coding-plan.ts. Define FiveHourPeriod, WeeklyPeriod, MonthlyPeriod, TotalPeriod interfaces and the QuotaPeriod union type. Update QuotaConfig to use the new structured period.",
+      "steps": [
+        "Add QuotaPeriodType = '5h' | 'weekly' | 'monthly' | 'total' type alias",
+        "Define FiveHourPeriod interface: { type: '5h'; windowHours: 5; sliding: true }",
+        "Define WeeklyPeriod interface: { type: 'weekly'; weekday: 1|2|3|4|5|6|7 }",
+        "Define MonthlyPeriod interface: { type: 'monthly'; expiresOn?: number }",
+        "Define TotalPeriod interface: { type: 'total' }",
+        "Define QuotaPeriod = FiveHourPeriod | WeeklyPeriod | MonthlyPeriod | TotalPeriod",
+        "Update QuotaConfig interface: change `period: QuotaPeriod` and remove top-level `expiresOn`/`expiresAt` from QuotaConfig (they move into MonthlyPeriod/CodingPlan)",
+        "Keep CodingPlan.expiresOn and CodingPlan.expiresAt for backward compat (top-level fields)",
+        "Export new types from src/types/index.ts"
+      ],
+      "passes": false,
+      "files": {
+        "modify": [
+          "src/types/coding-plan.ts",
+          "src/types/index.ts"
+        ]
+      },
+      "validation_criteria": [
+        "TypeScript compiles without errors",
+        "All period interfaces have correct `type` discriminant",
+        "QuotaConfig.period accepts the new union type"
+      ],
+      "skills": ["executing-single-task", "test-driven-development"]
+    },
+    {
+      "id": 2,
+      "title": "Add Zod validation schemas for new period types",
+      "description": "Create Zod discriminated union schemas in src/config/schema.ts and src/utils/validators.ts. Support both new structured format and old string format for migration.",
+      "steps": [
+        "In src/config/schema.ts: Define fiveHourPeriodSchema, weeklyPeriodSchema, monthlyPeriodSchema, totalPeriodSchema",
+        "Create quotaPeriodSchema using z.discriminatedUnion('type', [...])",
+        "Update quotaConfigSchema to use new quotaPeriodSchema, keep backward compat with `expiresOn`/`expiresAt` as optional top-level quota fields",
+        "In src/utils/validators.ts: Update quotaPeriodSchema to discriminated union",
+        "Update quotaConfigSchema in validators to match",
+        "Update quotaStateSchema to use new quotaPeriodSchema",
+        "Update createPlanBodySchema and updatePlanBodySchema in src/routes/admin/handlers.ts"
+      ],
+      "passes": false,
+      "depends_on": [1],
+      "files": {
+        "modify": [
+          "src/config/schema.ts",
+          "src/utils/validators.ts",
+          "src/routes/admin/handlers.ts"
+        ],
+        "test": [
+          "tests/unit/config/quota-config-schema.test.ts"
+        ]
+      },
+      "validation_criteria": [
+        "Zod schemas validate correct structured period objects",
+        "Weekly without weekday fails validation",
+        "Monthly with invalid expiresOn fails validation",
+        "Old string format still parseable (for migration path)"
+      ],
+      "skills": ["executing-single-task", "test-driven-development"]
+    },
+    {
+      "id": 3,
+      "title": "Implement auto-migration from old string format",
+      "description": "Add migration logic that converts old string-based period ('daily'/'monthly'/'total') to the new structured format on config load. Emit warning log when migration occurs.",
+      "steps": [
+        "Create migrateQuotaPeriod helper function in a new utility or in schema.ts",
+        "Map 'daily' → { type: '5h' }",
+        "Map 'monthly' + expiresOn → { type: 'monthly', expiresOn }",
+        "Map 'monthly' (no expiresOn) → { type: 'monthly', expiresOn: 1 }",
+        "Map 'total' → { type: 'total' }",
+        "Integrate migration into plan config loading path (src/config/ or schema transform)",
+        "Add log warning when migration occurs",
+        "Write unit tests for migration function"
+      ],
+      "passes": false,
+      "depends_on": [1, 2],
+      "files": {
+        "create": [
+          "src/utils/quota-period-migration.ts"
+        ],
+        "test": [
+          "tests/unit/utils/quota-period-migration.test.ts"
+        ]
+      },
+      "validation_criteria": [
+        "'daily' string migrates to { type: '5h' }",
+        "'monthly' with expiresOn:15 migrates to { type: 'monthly', expiresOn: 15 }",
+        "'monthly' without expiresOn migrates to { type: 'monthly', expiresOn: 1 }",
+        "'total' migrates to { type: 'total' }",
+        "Unknown string throws validation error",
+        "New format passes through unchanged"
+      ],
+      "skills": ["executing-single-task", "test-driven-development"]
+    },
+    {
+      "id": 4,
+      "title": "Update calculateResetAt for new period types",
+      "description": "Rewrite calculateResetAt in src/types/quota.ts to handle the new structured QuotaPeriod discriminated union. Also update the duplicate in src/services/plan-usage-tracker.ts.",
+      "steps": [
+        "Update calculateResetAt in src/types/quota.ts to accept QuotaPeriod (union type)",
+        "Handle '5h': return now + 5 hours (for initial), currentResetAt + 5h (for subsequent)",
+        "Handle 'weekly': calculate next occurrence of configured weekday at 00:00 UTC",
+        "Handle 'monthly': calculate next occurrence of expiresOn day at 00:00 UTC (keep existing logic)",
+        "Handle 'total': return null",
+        "Update createInitialQuotaState to accept new QuotaPeriod type",
+        "Update calculateResetAt in src/services/plan-usage-tracker.ts (duplicate function)",
+        "Update calculateResetDate convenience method",
+        "Ensure QuotaManager.checkQuotaResets passes currentResetAt for sliding window recalculation"
+      ],
+      "passes": false,
+      "depends_on": [1],
+      "files": {
+        "modify": [
+          "src/types/quota.ts",
+          "src/services/plan-usage-tracker.ts",
+          "src/services/quota-manager.ts"
+        ],
+        "test": [
+          "tests/unit/services/quota-manager.test.ts",
+          "tests/unit/services/plan-usage-tracker.test.ts"
+        ]
+      },
+      "validation_criteria": [
+        "5h sliding: initial reset = now + 5h, subsequent = previous resetAt + 5h",
+        "Weekly: next weekday at 00:00 UTC, handles week wrap",
+        "Monthly: next expiresOn day at 00:00 UTC, handles month boundaries",
+        "Total: returns null",
+        "All existing tests still pass"
+      ],
+      "skills": ["executing-single-task", "test-driven-development"]
+    },
+    {
+      "id": 5,
+      "title": "Update QuotaState and QuotaManager for structured period",
+      "description": "Update QuotaState.period to use the new QuotaPeriod union type. Update QuotaManager serialization/deserialization to handle the structured period object in quota-state.json.",
+      "steps": [
+        "Update QuotaState interface period field to QuotaPeriod union",
+        "Update QuotaManager.QuotaStateSerialized to serialize structured period",
+        "Update loadPersistedState to deserialize structured period (and migrate old string format in persisted state)",
+        "Update PlanQuotaInfo interface in quota-manager.ts",
+        "Update checkQuotaResets to use new period type for reset logic"
+      ],
+      "passes": false,
+      "depends_on": [1, 4],
+      "files": {
+        "modify": [
+          "src/types/quota.ts",
+          "src/services/quota-manager.ts"
+        ],
+        "test": [
+          "tests/unit/services/quota-manager.test.ts"
+        ]
+      },
+      "validation_criteria": [
+        "QuotaState.period is the structured union type",
+        "quota-state.json serializes/deserializes structured period correctly",
+        "Old persisted string-format periods are migrated on load",
+        "checkQuotaResets works with all period types"
+      ],
+      "skills": ["executing-single-task", "test-driven-development"]
+    },
+    {
+      "id": 6,
+      "title": "Update PlanUsageTracker and ExpirationScheduler",
+      "description": "Update PlanUsageTracker.calculateResetAt, calculateResetDate, checkAndResetExpiredPlans for new period types. Update ExpirationScheduler to pass structured period config.",
+      "steps": [
+        "Update PlanUsageTracker.calculateResetAt to accept QuotaPeriod union type",
+        "Handle '5h' period in checkAndResetExpiredPlans (sliding window, based on resetAt timestamp)",
+        "Handle 'weekly' period in checkAndResetExpiredPlans (fixed weekday)",
+        "Handle 'monthly' period (keep existing logic with expiresOn)",
+        "Update PlanInfo.quota.period type in plan-usage.ts",
+        "Update ExpirationScheduler.checkExpirations to pass structured quota config",
+        "Update PlanUsageSummary and PlanUsageReport quotaPeriod fields"
+      ],
+      "passes": false,
+      "depends_on": [1, 4, 5],
+      "files": {
+        "modify": [
+          "src/services/plan-usage-tracker.ts",
+          "src/services/expiration-scheduler.ts",
+          "src/types/plan-usage.ts"
+        ],
+        "test": [
+          "tests/unit/services/plan-usage-tracker.test.ts"
+        ]
+      },
+      "validation_criteria": [
+        "calculateResetAt works for all 4 period types",
+        "checkAndResetExpiredPlans handles 5h sliding window correctly",
+        "checkAndResetExpiredPlans handles weekly correctly",
+        "ExpirationScheduler passes correct config to tracker",
+        "PlanInfo.quota.period uses new type"
+      ],
+      "skills": ["executing-single-task", "test-driven-development"]
+    },
+    {
+      "id": 7,
+      "title": "Update admin API handlers and CLI",
+      "description": "Update all admin API handlers to accept and return the new structured period format. Update CLI plan command to display new period format.",
+      "steps": [
+        "Update createPlanBodySchema and updatePlanBodySchema in admin/handlers.ts for structured period",
+        "Update PlanResponse interface period field to QuotaPeriod",
+        "Update plan creation handler to accept structured period",
+        "Update plan update handler to accept structured period",
+        "Update usage report/summary handlers for new period display",
+        "Update CLI plan.ts to display formatted period (e.g., '5h (sliding)', 'weekly (Mon)', 'monthly (15th)')",
+        "Update quotaPeriod display in CLI types (PlanUsageSummaryDisplay)"
+      ],
+      "passes": false,
+      "depends_on": [2, 5, 6],
+      "files": {
+        "modify": [
+          "src/routes/admin/handlers.ts",
+          "src/cli/commands/plan.ts"
+        ],
+        "test": [
+          "tests/integration/routes/admin.test.ts"
+        ]
+      },
+      "validation_criteria": [
+        "POST /api/plans accepts structured period in request body",
+        "GET /api/plans returns structured period in response",
+        "CLI plan list displays formatted period strings",
+        "All existing API tests pass"
+      ],
+      "skills": ["executing-single-task", "test-driven-development"]
+    },
+    {
+      "id": 8,
+      "title": "Update config.yaml.example and config loader",
+      "description": "Update the example config to use new structured period format. Ensure config loading path applies migration for old format.",
+      "steps": [
+        "Update config.yaml.example to show all period types with structured format",
+        "Add examples for 5h, weekly, monthly, total periods",
+        "Verify config loader (plan repository) applies migration on load",
+        "Test loading old-format YAML → plans created with correct structured period"
+      ],
+      "passes": false,
+      "depends_on": [3, 7],
+      "files": {
+        "modify": [
+          "config.yaml.example"
+        ]
+      },
+      "validation_criteria": [
+        "config.yaml.example demonstrates all 4 period types",
+        "Old-format YAML loads successfully with auto-migration",
+        "New-format YAML loads successfully",
+        "Migration warning logged for old format"
+      ],
+      "skills": ["executing-single-task"]
+    },
+    {
+      "id": 9,
+      "title": "Integration tests and final validation",
+      "description": "Write integration tests covering end-to-end flows: config loading with migration, quota reset cycles for each period type, API CRUD with structured periods.",
+      "steps": [
+        "Write integration test: load old-format config → plans created with new period type",
+        "Write integration test: load new-format config → plans work correctly",
+        "Write integration test: 5h quota reset cycle (create plan, wait for reset, verify)",
+        "Write integration test: weekly quota reset at correct weekday",
+        "Write integration test: API create/update plan with structured period",
+        "Run full test suite, verify all pass",
+        "Run TypeScript type check (tsc --noEmit)"
+      ],
+      "passes": false,
+      "depends_on": [6, 7, 8],
+      "files": {
+        "create": [
+          "tests/integration/quota-reset-periods.test.ts"
+        ],
+        "modify": [
+          "tests/integration/usage-report-expireson.test.ts"
+        ]
+      },
+      "validation_criteria": [
+        "All existing tests pass",
+        "New integration tests pass",
+        "TypeScript compiles without errors",
+        "No regressions in quota tracking"
+      ],
+      "skills": ["executing-single-task", "test-driven-development"]
+    }
+  ]
+}
