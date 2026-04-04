@@ -11,6 +11,7 @@ import type { QuotaState, QuotaPeriod } from '@/types';
 import { createInitialQuotaState, calculateResetAt } from '@/types';
 import { logger } from '@/utils/logger';
 import { DEFAULT_QUOTA_SYNC_CONFIG } from '@/config/defaults';
+import { ensureStructuredPeriod } from '@/utils/quota-period-migration';
 import type { PlanUsageTracker } from './plan-usage-tracker';
 
 /**
@@ -469,11 +470,14 @@ export class QuotaManager {
           continue;
         }
 
+        // Migrate legacy string-format periods to structured union
+        const period = ensureStructuredPeriod(serialized.period);
+
         states.set(planId, {
           planId: serialized.planId,
           used: serialized.used,
           limit: serialized.limit,
-          period: serialized.period,
+          period,
           lastUpdated: new Date(serialized.lastUpdated),
           resetAt: serialized.resetAt ? new Date(serialized.resetAt) : null,
         });

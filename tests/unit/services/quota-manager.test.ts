@@ -617,6 +617,154 @@ describe('QuotaManager with structured periods', () => {
     const state3 = manager2.getQuotaState(3);
     expect(state3?.resetAt).toBeNull();
   });
+
+  it('should migrate legacy string period "daily" to structured 5h period on load', async () => {
+    // Write a quota-state.json with old string-format periods
+    const legacyState = {
+      version: '1.0',
+      lastSync: new Date().toISOString(),
+      states: {
+        '1': {
+          planId: 1,
+          used: 30,
+          limit: 100,
+          period: 'daily', // legacy string format
+          lastUpdated: new Date().toISOString(),
+          resetAt: new Date(Date.now() + 3600000).toISOString(),
+        },
+      },
+    };
+
+    await writeFile(quotaPath, JSON.stringify(legacyState), 'utf-8');
+
+    await quotaManager.initialize([
+      { id: 1, quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } } },
+    ]);
+
+    const state = quotaManager.getQuotaState(1);
+    expect(state).toBeDefined();
+    expect(state?.used).toBe(30);
+    // Period should be migrated to structured format
+    expect(state?.period).toEqual({ type: '5h', windowHours: 5, sliding: true });
+  });
+
+  it('should migrate legacy string period "monthly" to structured monthly period on load', async () => {
+    const legacyState = {
+      version: '1.0',
+      lastSync: new Date().toISOString(),
+      states: {
+        '2': {
+          planId: 2,
+          used: 200,
+          limit: 1000,
+          period: 'monthly', // legacy string format
+          lastUpdated: new Date().toISOString(),
+          resetAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+      },
+    };
+
+    await writeFile(quotaPath, JSON.stringify(legacyState), 'utf-8');
+
+    await quotaManager.initialize([
+      { id: 2, quota: { limit: 1000, period: { type: 'monthly', expiresOn: 1 } } },
+    ]);
+
+    const state = quotaManager.getQuotaState(2);
+    expect(state).toBeDefined();
+    expect(state?.used).toBe(200);
+    expect(state?.period).toEqual({ type: 'monthly', expiresOn: 1 });
+  });
+
+  it('should migrate legacy string period "total" to structured total period on load', async () => {
+    const legacyState = {
+      version: '1.0',
+      lastSync: new Date().toISOString(),
+      states: {
+        '3': {
+          planId: 3,
+          used: 500,
+          limit: 5000,
+          period: 'total', // legacy string format
+          lastUpdated: new Date().toISOString(),
+          resetAt: null,
+        },
+      },
+    };
+
+    await writeFile(quotaPath, JSON.stringify(legacyState), 'utf-8');
+
+    await quotaManager.initialize([
+      { id: 3, quota: { limit: 5000, period: { type: 'total' } } },
+    ]);
+
+    const state = quotaManager.getQuotaState(3);
+    expect(state).toBeDefined();
+    expect(state?.used).toBe(500);
+    expect(state?.period).toEqual({ type: 'total' });
+  });
+
+  it('should serialize structured period objects correctly in persist round-trip', async () => {
+    await quotaManager.initialize([
+      { id: 1, quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } } },
+      { id: 2, quota: { limit: 500, period: { type: 'weekly', weekday: 5 } } },
+      { id: 3, quota: { limit: 1000, period: { type: 'monthly', expiresOn: 15 } } },
+      { id: 4, quota: { limit: 5000, period: { type: 'total' } } },
+    ]);
+
+    await quotaManager.persist();
+
+    // Read the raw file and verify structured period is serialized correctly
+    const content = await readFile(quotaPath, 'utf-8');
+    const data = JSON.parse(content);
+
+    expect(data.states['1'].period).toEqual({ type: '5h', windowHours: 5, sliding: true });
+    expect(data.states['2'].period).toEqual({ type: 'weekly', weekday: 5 });
+    expect(data.states['3'].period).toEqual({ type: 'monthly', expiresOn: 15 });
+    expect(data.states['4'].period).toEqual({ type: 'total' });
+  });
+
+  it('should handle mixed legacy and structured periods in persisted state', async () => {
+    const mixedState = {
+      version: '1.0',
+      lastSync: new Date().toISOString(),
+      states: {
+        '1': {
+          planId: 1,
+          used: 10,
+          limit: 100,
+          period: 'daily', // legacy
+          lastUpdated: new Date().toISOString(),
+          resetAt: new Date(Date.now() + 3600000).toISOString(),
+        },
+        '2': {
+          planId: 2,
+          used: 20,
+          limit: 500,
+          period: { type: 'weekly', weekday: 3 }, // already structured
+          lastUpdated: new Date().toISOString(),
+          resetAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+      },
+    };
+
+    await writeFile(quotaPath, JSON.stringify(mixedState), 'utf-8');
+
+    await quotaManager.initialize([
+      { id: 1, quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } } },
+      { id: 2, quota: { limit: 500, period: { type: 'weekly', weekday: 3 } } },
+    ]);
+
+    const state1 = quotaManager.getQuotaState(1);
+    const state2 = quotaManager.getQuotaState(2);
+
+    // Legacy should be migrated
+    expect(state1?.period).toEqual({ type: '5h', windowHours: 5, sliding: true });
+    expect(state1?.used).toBe(10);
+    // Structured should pass through unchanged
+    expect(state2?.period).toEqual({ type: 'weekly', weekday: 3 });
+    expect(state2?.used).toBe(20);
+  });
 });
 
 describe('createQuotaManager', () => {
