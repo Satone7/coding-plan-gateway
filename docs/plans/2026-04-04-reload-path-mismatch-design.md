@@ -31,19 +31,19 @@ Alternatives considered:
 |------|------|--------|
 | `src/services/gateway-notifier.ts` | 140 | `/internal/reload` → `/api/internal/reload` |
 
-### Tests (4 files)
+### Tests (2 files changed)
 
 | File | Lines | Change |
 |------|-------|--------|
 | `tests/unit/services/gateway-notifier.test.ts` | 62 | Update expected URL |
-| `tests/integration/request-tracing.test.ts` | 100, 106 | Update test URL paths |
-| `tests/integration/cli/realtime-key.test.ts` | 152, 164 | Update test URL paths |
-| `tests/e2e/e2e-cli.test.ts` | 270 | Update E2E test path |
+| `tests/e2e/e2e-cli.test.ts` | 267, 270 | Update E2E test path |
 
 ### No Change Needed
 
+- `tests/integration/request-tracing.test.ts` — registers a mock route directly on a fresh Fastify instance (no `/api` prefix), not the actual reload endpoint
+- `tests/integration/cli/realtime-key.test.ts` — registers `registerReloadRoutes` directly on a fresh Fastify instance (no `/api` prefix)
+- `tests/unit/routes/internal/reload.test.ts` — tests the route handler in isolation without prefix
 - `src/cli/commands/key.ts:83` — fallback URL already correct
-- `tests/unit/routes/internal/reload.test.ts` — registers without prefix
 - `src/routes/internal/reload.ts`, `src/app.ts`, `src/config/defaults.ts` — all correct
 
 ## Testing

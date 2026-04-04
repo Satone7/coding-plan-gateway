@@ -264,10 +264,10 @@ describe('E2E CLI Operations', () => {
   });
 
   describe('Reload Endpoint (T012)', () => {
-    it.skipIf(!dockerAvailable || !gatewayRunning)('should allow POST /internal/reload without authentication', () => {
+    it.skipIf(!dockerAvailable || !gatewayRunning)('should allow POST /api/internal/reload without authentication', () => {
       // Test that the reload endpoint is accessible without API key
       const result = wgetGateway(
-        '/internal/reload',
+        '/api/internal/reload',
         'POST',
         '{"type":"api-keys"}',
         { 'Content-Type': 'application/json' }
