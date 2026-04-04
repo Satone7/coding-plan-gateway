@@ -18,6 +18,7 @@ modelAliases:
   minimax-m2.7: MiniMax-M2.7
 
 plans:
+  # Plan with 5-hour sliding window quota period
   - id: 1
     name: "Ark Coding Plan"
     baseUrl: "https://ark.cn-beijing.volces.com/api/coding"
@@ -30,11 +31,8 @@ plans:
       - "glm-4.7"
     quota:
       limit: 90000
-      period: "monthly"
-      # expiresOn: Day of month (1-31) when quota resets. If not set, defaults to 1st of each month.
-      # Example: 15 = quota resets on the 15th of each month
-      # Note: If the day doesn't exist in a month (e.g., 31), uses the last day of that month
-      expiresOn: 1
+      period:
+        type: "5h"          # 5-hour sliding window
     # timeout: Request timeout in seconds. Defaults to 30 if not specified.
     timeout: 180
     # status: Plan operational status
@@ -43,6 +41,8 @@ plans:
     #   error    - Plan has an error (system-managed, not settable)
     #   exhausted - Plan quota is exhausted (system-managed, not settable)
     status: "active"
+
+  # Plan with weekly quota period (resets every Monday)
   - id: 2
     name: "Ali Coding Plan"
     baseUrl: "https://coding.dashscope.aliyuncs.com/apps/anthropic"
@@ -54,22 +54,39 @@ plans:
       - "kimi-k2.5"
       - "MiniMax-M2.5"
     quota:
-      limit: 90000
-      period: "monthly"
-      # expiresOn: Day of month (1-31) when quota resets. If not set, defaults to 1st of each month.
-      # Example: 15 = quota resets on the 15th of each month
-      # Note: If the day doesn't exist in a month (e.g., 31), uses the last day of that month
-      expiresOn: 27
-    # timeout: Request timeout in seconds. Defaults to 30 if not specified.
+      limit: 50000
+      period:
+        type: "weekly"
+        weekday: 1          # 1=Monday, 2=Tuesday, ..., 7=Sunday (ISO 8601)
     timeout: 180
-    # status: Plan operational status
-    #   active   - Plan is running and accepting requests (default)
-    #   paused   - Plan is paused, not accepting requests
-    #   error    - Plan has an error (system-managed, not settable)
-    #   exhausted - Plan quota is exhausted (system-managed, not settable)
     status: "active"
 
-# Alternative: Use expiresAt for one-time absolute expiration (ISO 8601 datetime)
-# expiresAt takes precedence over expiresOn when both are specified
-# Example: "2025-12-31T23:59:59Z" - plan expires at this specific datetime
-# Note: expiresAt is for one-time expiration, expiresOn is for recurring monthly resets
+  # Plan with monthly quota period (resets on 27th of each month)
+  - id: 3
+    name: "Moonshot Coding Plan"
+    baseUrl: "https://api.moonshot.cn/v1"
+    apiKey: "YOUR_API_KEY_HERE"
+    models:
+      - "kimi-k2.5"
+      - "glm-5"
+    quota:
+      limit: 100000
+      period:
+        type: "monthly"
+        expiresOn: 27       # Day of month (1-31) when quota resets
+    timeout: 180
+    status: "active"
+
+# Period type reference:
+#   type: "5h"       - 5-hour sliding window (resets 5 hours from last reset)
+#   type: "weekly"   - Resets at 00:00 UTC on the configured weekday
+#                      weekday: 1 (Mon) through 7 (Sun)
+#   type: "monthly"  - Resets at 00:00 UTC on the configured day of month
+#                      expiresOn: 1-31 (defaults to 1, uses last day if month is shorter)
+#   type: "total"    - Never resets (lifetime quota)
+
+# Legacy format (still supported via auto-migration):
+#   quota:
+#     limit: 90000
+#     period: "monthly"    # String format auto-migrated to structured object
+#     expiresOn: 1

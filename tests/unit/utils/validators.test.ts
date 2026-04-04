@@ -105,10 +105,16 @@ describe('Validators', () => {
   });
 
   describe('quotaPeriodSchema', () => {
-    it('should accept valid periods', () => {
-      expect(quotaPeriodSchema.safeParse('daily').success).toBe(true);
-      expect(quotaPeriodSchema.safeParse('monthly').success).toBe(true);
-      expect(quotaPeriodSchema.safeParse('total').success).toBe(true);
+    it('should accept valid structured periods', () => {
+      expect(quotaPeriodSchema.safeParse({ type: '5h', windowHours: 5, sliding: true }).success).toBe(true);
+      expect(quotaPeriodSchema.safeParse({ type: 'monthly', expiresOn: 1 }).success).toBe(true);
+      expect(quotaPeriodSchema.safeParse({ type: 'total' }).success).toBe(true);
+      expect(quotaPeriodSchema.safeParse({ type: 'weekly', weekday: 1 }).success).toBe(true);
+    });
+
+    it('should reject legacy string periods', () => {
+      expect(quotaPeriodSchema.safeParse('daily').success).toBe(false);
+      expect(quotaPeriodSchema.safeParse('monthly').success).toBe(false);
     });
 
     it('should reject invalid periods', () => {
@@ -121,7 +127,7 @@ describe('Validators', () => {
     it('should validate a valid quota config', () => {
       const result = quotaConfigSchema.safeParse({
         limit: 100,
-        period: 'daily',
+        period: { type: '5h', windowHours: 5, sliding: true },
       });
       expect(result.success).toBe(true);
     });
@@ -139,7 +145,7 @@ describe('Validators', () => {
         baseUrl: 'https://api.example.com',
         apiKey: 'secret-key',
         models: ['model-1', 'model-2'],
-        quota: { limit: 100, period: 'daily' },
+        quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } },
       });
       expect(result.success).toBe(true);
     });
@@ -150,7 +156,7 @@ describe('Validators', () => {
         baseUrl: 'https://api.example.com',
         apiKey: 'secret-key',
         models: ['model-1'],
-        quota: { limit: 100, period: 'daily' },
+        quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } },
       });
       expect(result.success).toBe(false);
     });
@@ -161,7 +167,7 @@ describe('Validators', () => {
         baseUrl: 'https://api.example.com',
         apiKey: 'secret-key',
         models: [],
-        quota: { limit: 100, period: 'daily' },
+        quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } },
       });
       expect(result.success).toBe(false);
     });

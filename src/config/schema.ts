@@ -83,6 +83,10 @@ export const quotaPeriodSchema = z.discriminatedUnion('type', [
 export const quotaConfigSchema = z.object({
   limit: z.number().int().positive(),
   period: quotaPeriodSchema,
+  // Legacy expiration fields inside quota (kept for backward compat with old YAML configs)
+  // These are applied by configToPlan in the repository layer
+  expiresOn: z.number().int().min(1).max(31).optional(),
+  expiresAt: z.string().datetime().optional(),
 });
 
 /**
