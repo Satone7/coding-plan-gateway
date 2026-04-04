@@ -961,6 +961,12 @@ export class PlanUsageTracker {
 
         if (period.type === '5h') {
           // 5h sliding window: check if the current resetAt has passed
+          // NOTE: Usage history cleanup uses daily granularity (YYYY-MM-DD keys), so
+          // records are pruned by calendar date rather than exact 5h window boundary.
+          // This is a design trade-off — same-day records from before the window are
+          // kept, and all of yesterday's records may be deleted even if some fall
+          // within the window. Actual quota enforcement is handled correctly by
+          // QuotaManager with time-based sliding via `resetAt` timestamps.
           const currentResetAt = plan.quota.resetAt;
           if (currentResetAt && now >= currentResetAt) {
             // Window has expired — delete records from before the sliding window start
