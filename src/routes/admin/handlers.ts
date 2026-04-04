@@ -11,6 +11,7 @@ import type { QuotaManager } from '@/services/quota-manager';
 import type { PlanUsageTracker } from '@/services/plan-usage-tracker';
 import { logger } from '@/utils/logger';
 import { createGatewayError } from '@/types';
+import type { QuotaPeriod } from '@/types';
 import { usageAdjustmentRequestSchema } from '@/types/plan-usage';
 import { planIdParamSchema, quotaPeriodSchema } from '@/utils/validators';
 
@@ -73,7 +74,7 @@ interface PlanResponse {
   models: string[];
   quota: {
     limit: number;
-    period: string;
+    period: QuotaPeriod;
   };
   timeout: number;
   status: string;
@@ -95,7 +96,7 @@ interface QuotaStatusResponse {
   used: number;
   limit: number;
   remaining: number;
-  period: string;
+  period: QuotaPeriod;
   resetAt: string | null;
   lastUpdated: string;
 }
@@ -155,7 +156,7 @@ function toPlanResponse(
     name: string;
     baseUrl: string;
     models: string[];
-    quota: { limit: number; period: string };
+    quota: { limit: number; period: QuotaPeriod };
     timeout: number;
     status: string;
     enable?: boolean;
@@ -277,7 +278,7 @@ interface PlanUsageReportData {
     end: string;
   };
   dailyBreakdown: DailyPlanUsageResponse[];
-  quotaPeriod: string;
+  quotaPeriod: QuotaPeriod | 'daily' | 'monthly' | 'total';
   resetAt: string | null;
 }
 
@@ -339,7 +340,7 @@ interface PlanUsageSummaryItem {
   used: number;
   remaining: number;
   percentage: number;
-  quotaPeriod: string;
+  quotaPeriod: QuotaPeriod;
   resetAt: string | null;
 }
 

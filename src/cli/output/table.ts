@@ -15,6 +15,7 @@ import type {
   PlanUsageSummaryDisplay,
   AdjustmentResultDisplay,
 } from '@/types/cli';
+import type { QuotaPeriod } from '@/types/coding-plan';
 import type { CreateKeyResult } from '@/services/api-key-manager';
 
 /**
@@ -52,6 +53,29 @@ function truncate(str: string, maxLength: number): string {
  */
 function pad(str: string, length: number): string {
   return str.padEnd(length);
+}
+
+/**
+ * Format a QuotaPeriod into a human-readable string for table display.
+ */
+function formatQuotaPeriod(period: QuotaPeriod | 'daily' | 'monthly' | 'total'): string {
+  // Handle legacy string values for backward compat
+  if (typeof period === 'string') {
+    return period;
+  }
+
+  switch (period.type) {
+    case '5h':
+      return '5h (sliding)';
+    case 'weekly': {
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return `weekly (${days[period.weekday - 1]})`;
+    }
+    case 'monthly':
+      return `monthly (${period.expiresOn ?? 1}th)`;
+    case 'total':
+      return 'total';
+  }
 }
 
 /**
@@ -389,7 +413,7 @@ Examples:
     lines.push(`  Used:        ${report.totalRequests.toLocaleString()}`);
     lines.push(`  Remaining:   ${report.remaining.toLocaleString()}`);
     lines.push(`  Percentage:  ${report.percentage}%`);
-    lines.push(`  Period:      ${report.quotaPeriod}`);
+    lines.push(`  Period:      ${formatQuotaPeriod(report.quotaPeriod)}`);
     if (report.resetAt) {
       lines.push(`  Resets:      ${formatDateTime(report.resetAt)}`);
     }
@@ -441,7 +465,7 @@ Examples:
       const used = plan.used.toLocaleString().padStart(8);
       const remaining = plan.remaining.toLocaleString().padStart(10);
       const percentage = plan.percentage.toString().padStart(3);
-      const period = plan.quotaPeriod.padEnd(9);
+      const period = formatQuotaPeriod(plan.quotaPeriod).padEnd(9);
       const reset = plan.resetAt ? formatDateTime(plan.resetAt) : 'N/A';
 
       lines.push(`  ${name} ${limit} ${used} ${remaining} ${percentage}%  ${period} ${reset}`);
