@@ -334,7 +334,7 @@ export class QuotaManager {
 
     state.used = 0;
     state.lastUpdated = new Date();
-    state.resetAt = calculateResetAt(state.period);
+    state.resetAt = calculateResetAt(state.period, state.resetAt);
 
     logger.info('Quota reset', { planId });
   }
@@ -500,10 +500,10 @@ export class QuotaManager {
 
     for (const [planId, state] of this.quotaStates) {
       if (state.resetAt && now >= state.resetAt) {
-        // Reset quota
+        // Reset quota; pass current resetAt for sliding window recalculation
         state.used = 0;
         state.lastUpdated = now;
-        state.resetAt = calculateResetAt(state.period);
+        state.resetAt = calculateResetAt(state.period, state.resetAt);
 
         logger.info('Quota auto-reset', {
           planId,

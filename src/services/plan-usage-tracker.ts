@@ -26,6 +26,7 @@ import { planUsageDataStorageSchema, adjustmentHistoryStorageSchema } from '@/ty
 import { logger } from '@/utils/logger';
 import { PLAN_USAGE_DEFAULTS } from '@/config/defaults';
 import { calculateEffectiveExpiration } from '@/utils/expiration';
+import type { QuotaPeriod } from '@/types/coding-plan';
 
 /**
  * PlanUsageTracker configuration.
@@ -302,18 +303,87 @@ export class PlanUsageTracker {
 
   /**
    * Calculate the next reset date based on quota period.
-   * Respects expiresOn and expiresAt from plan configuration.
+   * Accepts both the new structured QuotaPeriod and legacy string periods.
+   * Respects expiresOn and expiresAt from plan configuration (for legacy and monthly).
    *
-   * @param period - The quota period type
+   * @param period - The quota period (new structured type or legacy string)
    * @param expiresOn - Optional day of month (1-31) for custom reset
    * @param expiresAt - Optional ISO 8601 datetime for absolute expiration
    * @returns The next reset date, or null for total period
    */
   calculateResetAt(
-    period: 'daily' | 'monthly' | 'total',
+    period: QuotaPeriod | 'daily' | 'monthly' | 'total',
     expiresOn?: number,
     expiresAt?: string
   ): Date | null {
+    // Handle structured QuotaPeriod
+    if (typeof period === 'object') {
+      if (period.type === 'total') {
+        return null;
+      }
+
+      if (period.type === '5h') {
+        const now = new Date();
+        return new Date(now.getTime() + period.windowHours * 60 * 60 * 1000);
+      }
+
+      if (period.type === 'weekly') {
+        const now = new Date();
+        const targetJsDay = period.weekday % 7; // ISO -> JS day
+        const currentJsDay = now.getUTCDay();
+        let daysUntilTarget = targetJsDay - currentJsDay;
+        if (daysUntilTarget <= 0) {
+          daysUntilTarget += 7;
+        }
+        const nextReset = new Date(now);
+        nextReset.setUTCDate(nextReset.getUTCDate() + daysUntilTarget);
+        nextReset.setUTCHours(0, 0, 0, 0);
+        return nextReset;
+      }
+
+      if (period.type === 'monthly') {
+        // If expiresAt is provided at the plan level, use it
+        if (expiresAt !== undefined) {
+          const expiration = new Date(expiresAt);
+          if (!isNaN(expiration.getTime())) {
+            return new Date(
+              expiration.getFullYear(),
+              expiration.getMonth(),
+              expiration.getDate(),
+              0, 0, 0, 0
+            );
+          }
+        }
+
+        // Use the period's own expiresOn, or fallback to parameter
+        const targetDay = period.expiresOn ?? expiresOn ?? 1;
+        const now = new Date();
+        const currentYear = now.getUTCFullYear();
+        const currentMonth = now.getUTCMonth();
+        const currentDay = now.getUTCDate();
+
+        const daysInCurrentMonth = new Date(Date.UTC(currentYear, currentMonth + 1, 0)).getUTCDate();
+        const clampedDay = Math.min(targetDay, daysInCurrentMonth);
+
+        if (currentDay < clampedDay) {
+          return new Date(Date.UTC(currentYear, currentMonth, clampedDay, 0, 0, 0, 0));
+        }
+
+        let nextMonth = currentMonth + 1;
+        let nextYear = currentYear;
+        if (nextMonth > 11) {
+          nextMonth = 0;
+          nextYear++;
+        }
+        const daysInNextMonth = new Date(Date.UTC(nextYear, nextMonth + 1, 0)).getUTCDate();
+        const nextClampedDay = Math.min(targetDay, daysInNextMonth);
+        return new Date(Date.UTC(nextYear, nextMonth, nextClampedDay, 0, 0, 0, 0));
+      }
+
+      return null;
+    }
+
+    // Handle legacy string period (backward compatibility)
     if (period === 'total') {
       return null;
     }
@@ -359,11 +429,22 @@ export class PlanUsageTracker {
   /**
    * Calculate the reset date for a plan based on its quota configuration.
    * This is a convenience method that extracts the relevant fields from a PlanInfo object.
+   * Supports both new structured QuotaPeriod and legacy string period.
    *
    * @param planInfo - The plan information containing quota configuration
    * @returns The next reset date, or null for total period
    */
   calculateResetDate(planInfo: PlanInfo): Date | null {
+    // If period is already a structured object, pass it directly
+    if (typeof planInfo.quota.period === 'object') {
+      return this.calculateResetAt(
+        planInfo.quota.period,
+        planInfo.quota.expiresOn,
+        planInfo.quota.expiresAt
+      );
+    }
+
+    // Legacy string period
     return this.calculateResetAt(
       planInfo.quota.period,
       planInfo.quota.expiresOn,

@@ -645,6 +645,82 @@ describe('PlanUsageTracker', () => {
       expect(tracker.getTotalUsage(1)).toBe(1);
     });
   });
+
+  describe('calculateResetAt with structured QuotaPeriod', () => {
+    it('should return null for total structured period', async () => {
+      await tracker.initialize();
+
+      const resetDate = tracker.calculateResetAt({ type: 'total' });
+      expect(resetDate).toBeNull();
+    });
+
+    it('should calculate 5h sliding window reset', async () => {
+      await tracker.initialize();
+
+      const before = new Date();
+      const resetDate = tracker.calculateResetAt({ type: '5h', windowHours: 5, sliding: true });
+      const after = new Date();
+
+      expect(resetDate).not.toBeNull();
+      const minExpected = before.getTime() + 5 * 60 * 60 * 1000;
+      const maxExpected = after.getTime() + 5 * 60 * 60 * 1000;
+      expect(resetDate!.getTime()).toBeGreaterThanOrEqual(minExpected);
+      expect(resetDate!.getTime()).toBeLessThanOrEqual(maxExpected);
+    });
+
+    it('should calculate weekly reset at configured weekday', async () => {
+      await tracker.initialize();
+
+      const resetDate = tracker.calculateResetAt({ type: 'weekly', weekday: 1 });
+      expect(resetDate).not.toBeNull();
+      // Should be a Monday (JS day 1)
+      expect(resetDate!.getUTCDay()).toBe(1);
+      expect(resetDate!.getUTCHours()).toBe(0);
+    });
+
+    it('should calculate weekly reset for Sunday (weekday=7)', async () => {
+      await tracker.initialize();
+
+      const resetDate = tracker.calculateResetAt({ type: 'weekly', weekday: 7 });
+      expect(resetDate).not.toBeNull();
+      // Sunday in JS is day 0
+      expect(resetDate!.getUTCDay()).toBe(0);
+    });
+
+    it('should calculate monthly reset with structured period and expiresOn', async () => {
+      await tracker.initialize();
+
+      const resetDate = tracker.calculateResetAt({ type: 'monthly', expiresOn: 27 });
+      expect(resetDate).not.toBeNull();
+      expect(resetDate!.getUTCDate()).toBe(27);
+    });
+
+    it('should calculate monthly reset without expiresOn (defaults to 1st)', async () => {
+      await tracker.initialize();
+
+      const resetDate = tracker.calculateResetAt({ type: 'monthly' });
+      expect(resetDate).not.toBeNull();
+      expect(resetDate!.getUTCDate()).toBe(1);
+    });
+
+    it('should handle structured monthly with plan-level expiresAt override', async () => {
+      await tracker.initialize();
+
+      const futureDate = new Date();
+      futureDate.setMonth(futureDate.getMonth() + 2);
+      futureDate.setDate(15);
+      futureDate.setHours(23, 59, 59, 999);
+
+      const resetDate = tracker.calculateResetAt(
+        { type: 'monthly', expiresOn: 27 },
+        undefined,
+        futureDate.toISOString()
+      );
+
+      expect(resetDate).not.toBeNull();
+      expect(resetDate!.getDate()).toBe(futureDate.getDate());
+    });
+  });
 });
 
 describe('createPlanUsageTracker', () => {
