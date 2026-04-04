@@ -137,7 +137,7 @@ export class GatewayNotifier {
    * @returns True if notification was successful, false otherwise
    */
   async notifyReload(type: ReloadType): Promise<boolean> {
-    const url = `${this.gatewayUrl}/internal/reload`;
+    const url = `${this.gatewayUrl}/api/internal/reload`;
 
     try {
       logger.debug('Notifying gateway to reload', { url, type });
