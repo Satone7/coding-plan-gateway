@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { Divider } from '../components/Divider';
 import { formatCompactNumber, renderBar, getColor } from '../utils';
+import { useTheme } from '../context';
 import type { DashboardState } from '../hooks/useDashboardState';
 
 interface ModelsViewProps {
@@ -10,25 +11,26 @@ interface ModelsViewProps {
 }
 
 export function ModelsView({ state, columns }: ModelsViewProps) {
+  const { theme } = useTheme();
   const models = Object.entries(state.modelUsages).sort((a, b) => b[1].requests - a[1].requests);
 
   return (
     <Box flexDirection="column" width="100%" flexGrow={1}>
-      <Divider width={columns} title="🤖 MODELS USAGE" color="cyan" />
+      <Divider width={columns} title="🤖 MODELS USAGE" color={theme.brand} />
       {models.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
           {(() => {
             const totalRequests = Math.max(1, Object.values(state.modelUsages).reduce((sum, u) => sum + u.requests, 0));
             return models.map(([name, usage]) => {
-              const percent = Math.min(100, Math.round((usage.requests / totalRequests) * 100)); 
-              
+              const percent = Math.min(100, Math.round((usage.requests / totalRequests) * 100));
+
               return (
                 <Box key={name} flexDirection="row" marginBottom={1}>
-                  <Box width={20}><Text bold color="yellow">{name}</Text></Box>
+                  <Box width={20}><Text bold color={theme.brand}>{name}</Text></Box>
                   <Box flexDirection="column">
                     <Box flexDirection="row">
                       <Box width={15}><Text>Requests: </Text></Box>
-                      <Box width={12}><Text color={getColor(percent)}>{renderBar(percent, 10)}</Text></Box>
+                      <Box width={12}><Text color={getColor(percent, theme)}>{renderBar(percent, 10)}</Text></Box>
                       <Text>{formatCompactNumber(usage.requests)} req</Text>
                     </Box>
                     <Box flexDirection="row">
@@ -42,7 +44,7 @@ export function ModelsView({ state, columns }: ModelsViewProps) {
           })()}
         </Box>
       ) : (
-        <Text color="gray">  No models found.</Text>
+        <Text color={theme.muted}>  No models found.</Text>
       )}
     </Box>
   );
