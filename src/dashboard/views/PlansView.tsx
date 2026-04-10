@@ -27,7 +27,7 @@ export function PlansView({ state, columns }: PlansViewProps) {
               const quotaPercent = Math.min(100, Math.round((usage.requests / totalRequests) * 100));
               const tokensPercent = Math.min(100, Math.round((usage.tokens / totalTokens) * 100));
               const rpm = usage.rpm || 0;
-              const rpmPercent = Math.min(100, Math.round((rpm / 100) * 100));
+              const rpmPercent = Math.min(100, Math.round((rpm / 20) * 100));
 
               return (
                 <Box key={name} flexDirection="row" marginBottom={1}>
