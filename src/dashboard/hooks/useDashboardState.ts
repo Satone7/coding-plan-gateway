@@ -280,8 +280,20 @@ export function useDashboardState(): DashboardState {
             return;
           }
           try {
-            const log = JSON.parse(line) as LogEntry;
-            processLogEntry(log, setState);
+            const parsed = JSON.parse(line);
+            if (parsed.type === 'snapshot') {
+              setState(prev => ({
+                ...prev,
+                completedRequests: parsed.data.completedRequests,
+                failedRequests: parsed.data.failedRequests,
+                planUsages: { ...prev.planUsages, ...parsed.data.planUsages },
+                modelUsages: { ...prev.modelUsages, ...parsed.data.modelUsages },
+                apiKeyUsages: { ...prev.apiKeyUsages, ...parsed.data.apiKeyUsages },
+                recentErrors: parsed.data.recentErrors.slice(0, 5),
+              }));
+            } else {
+              processLogEntry(parsed as LogEntry, setState);
+            }
           } catch (e) {
             // Ignore malformed JSON
           }

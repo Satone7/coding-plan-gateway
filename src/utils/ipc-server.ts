@@ -6,6 +6,7 @@ export class IpcServer {
   private server: net.Server | null = null;
   private clients: Set<net.Socket> = new Set();
   private socketPath: string;
+  private onClientConnect?: (socket: net.Socket) => void;
 
   constructor(socketPath: string = process.env.IPC_SOCKET_PATH || '/tmp/coding-plan-gateway.sock') {
     this.socketPath = socketPath;
@@ -26,6 +27,7 @@ export class IpcServer {
       this.server = net.createServer((socket) => {
         this.clients.add(socket);
         logger.debug('IPC client connected', { clientsCount: this.clients.size, component: 'ipc-server' });
+        this.onClientConnect?.(socket);
 
         socket.on('end', () => {
           this.clients.delete(socket);
@@ -74,6 +76,19 @@ export class IpcServer {
         resolve();
       });
     });
+  }
+
+  public onConnect(callback: (socket: net.Socket) => void): void {
+    this.onClientConnect = callback;
+  }
+
+  public sendToClient(socket: net.Socket, data: unknown): void {
+    try {
+      socket.write(JSON.stringify(data) + '\n');
+    } catch {
+      this.clients.delete(socket);
+      socket.destroy();
+    }
   }
 
   public broadcast(data: unknown): void {
