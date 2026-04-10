@@ -245,6 +245,7 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
 
   if (!group || Object.keys(group).length === 0) return null;
 
+  const legacyPeriod = group.quotaPeriod as string;
   const plan: PlanConfig = {
     id,
     name: group.name as string,
@@ -253,7 +254,11 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
     models: (group.models as string).split(',').map(m => m.trim()).filter(Boolean),
     quota: {
       limit: parseInt(group.quotaLimit as string),
-      period: group.quotaPeriod as 'daily' | 'monthly' | 'total'
+      period: legacyPeriod === 'monthly'
+        ? { type: 'monthly', expiresOn: group.expiresOn ? parseInt(group.expiresOn as string, 10) : undefined }
+        : legacyPeriod === 'daily'
+          ? { type: '5h', windowHours: 5, sliding: true as const }
+          : { type: 'total' },
     },
     status: existing?.status || 'active',
     enable: group.enable as boolean
