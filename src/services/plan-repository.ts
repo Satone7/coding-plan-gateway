@@ -173,6 +173,7 @@ export class FilePlanRepository implements IPlanRepository {
       weight: input.weight,
       enable: input.enable ?? true,
       modelAliases: input.modelAliases,
+      provider: input.provider,
       createdAt: now,
       updatedAt: now,
     };
@@ -221,6 +222,7 @@ export class FilePlanRepository implements IPlanRepository {
       weight: updates.weight !== undefined ? updates.weight : existing.weight,
       enable: updates.enable !== undefined ? updates.enable : existing.enable,
       modelAliases: updates.modelAliases !== undefined ? updates.modelAliases : existing.modelAliases,
+      provider: updates.provider !== undefined ? updates.provider : existing.provider,
       updatedAt: now,
     };
 
@@ -454,6 +456,7 @@ export class FilePlanRepository implements IPlanRepository {
       weight: config.weight,
       enable: config.enable ?? true,
       modelAliases: config.modelAliases,
+      provider: config.provider,
       createdAt: now,
       updatedAt: now,
     };
@@ -493,6 +496,7 @@ export class FilePlanRepository implements IPlanRepository {
       weight: plan.weight,
       enable: plan.enable ?? true,
       modelAliases: plan.modelAliases,
+      provider: plan.provider,
     };
   }
 
