@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { ProviderPreset, UsageAdapter, UsageResult } from '@/types';
+import type { CodingPlan, CreateCodingPlanInput, ProviderPreset, UsageAdapter, UsageResult } from '@/types';
 
 describe('ProviderPreset type', () => {
   it('should accept a valid preset with all fields', () => {
@@ -47,5 +47,36 @@ describe('UsageAdapter type', () => {
     };
     const result = await adapter.queryUsage('test-key');
     expect(result.percentage).toBe(50);
+  });
+});
+
+describe('CodingPlan with provider field', () => {
+  it('should accept CodingPlan with provider', () => {
+    const plan: CodingPlan = {
+      id: 1,
+      name: 'Zhipu Plan',
+      baseUrl: 'https://open.bigmodel.cn/api/anthropic',
+      apiKeyEncrypted: 'enc:xxx',
+      models: ['glm-5.1'],
+      quota: { limit: 1000, period: { type: '5h', windowHours: 5, sliding: true } },
+      timeout: 300,
+      status: 'active',
+      provider: 'zhipu',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    expect(plan.provider).toBe('zhipu');
+  });
+
+  it('should accept CreateCodingPlanInput with provider', () => {
+    const input: CreateCodingPlanInput = {
+      name: 'Zhipu Plan',
+      baseUrl: 'https://open.bigmodel.cn/api/anthropic',
+      apiKey: 'test-key',
+      models: ['glm-5.1'],
+      quota: { limit: 1000, period: { type: '5h', windowHours: 5, sliding: true } },
+      provider: 'zhipu',
+    };
+    expect(input.provider).toBe('zhipu');
   });
 });
