@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { configSchema, planConfigSchema, type PlanConfig, type Config } from './schema';
 import { encryptApiKey } from './encryption';
 import { DEFAULT_REQUEST_TIMEOUT_SEC, CONFIG_VERSION } from './defaults';
+import { getBuiltinProvider } from './builtin-providers';
 import { migrateConfigFile } from './migrations';
 import { logger } from '@/utils/logger';
 
@@ -129,15 +130,31 @@ function parseConfigContent(content: string, filePath: string): unknown {
 
 /**
  * Normalize plan configuration with defaults.
+ * When a plan has a `provider`, fills in baseUrl/models/modelAliases from preset.
  */
 function normalizePlanConfig(plan: PlanConfig): PlanConfig {
-  return {
+  let normalized = {
     ...plan,
     id: plan.id ?? uuidv4(),
     timeout: plan.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
     status: plan.status ?? 'active',
     enable: plan.enable ?? true,
   };
+
+  // Apply provider preset defaults
+  if (plan.provider) {
+    const preset = getBuiltinProvider(plan.provider);
+    if (preset) {
+      normalized = {
+        ...normalized,
+        baseUrl: normalized.baseUrl ?? preset.baseUrl,
+        models: normalized.models ?? [...preset.models],
+        modelAliases: normalized.modelAliases ?? preset.defaultModelAliases,
+      };
+    }
+  }
+
+  return normalized;
 }
 
 /**
