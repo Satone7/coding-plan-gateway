@@ -94,10 +94,9 @@ export interface QuotaConfig {
  *   baseUrl: 'https://api.moonshot.cn/v1',
  *   apiKeyEncrypted: 'enc:...',
  *   models: ['kimi-k2.5', 'kimi-k2'],
- *   quota: { limit: 1000, period: 'monthly' },
+ *   quota: { limit: 1000, period: { type: 'monthly', expiresOn: 28 } },
  *   timeout: 30,
  *   status: 'active',
- *   expiresOn: 28, // Expires on 28th of each month
  *   weight: 2, // Higher priority for load balancing
  *   createdAt: new Date(),
  *   updatedAt: new Date(),
