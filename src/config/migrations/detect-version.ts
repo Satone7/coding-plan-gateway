@@ -49,7 +49,7 @@ function parseVersion(raw: unknown): number | null {
   if (typeof raw === 'string') {
     // Handle "1.0" format → parse major part
     if (raw.includes('.')) {
-      const major = parseInt(raw.split('.')[0], 10);
+      const major = parseInt(raw.split('.')[0] ?? '0', 10);
       return Number.isNaN(major) || major < 0 ? null : major;
     }
     const num = parseInt(raw, 10);

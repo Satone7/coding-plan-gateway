@@ -21,7 +21,6 @@ import {
 import { logger } from '@/utils/logger';
 import { planSupportsModel } from '@/utils/model-alias';
 import { DEFAULT_REQUEST_TIMEOUT_SEC } from '@/config/defaults';
-import { ensureStructuredPeriod, isLegacyPeriod } from '@/utils/quota-period-migration';
 import type { PlanIdCounter } from './plan-id-counter';
 
 /**
@@ -320,8 +319,9 @@ export class FilePlanRepository implements IPlanRepository {
           ? (parsed as { plans: unknown[] }).plans
           : [];
 
-      // Migrate legacy string-based quota periods before Zod validation
-      const migratedPlans = this.migratePlans(plansData);
+      // Config migration is handled by the startup engine (migrateConfigFile).
+      // Plans should already be in the latest format at this point.
+      const migratedPlans = plansData;
 
       // Validate and convert to CodingPlan objects
       const config = planConfigSchema.array().parse(migratedPlans);
@@ -494,38 +494,6 @@ export class FilePlanRepository implements IPlanRepository {
       enable: plan.enable ?? true,
       modelAliases: plan.modelAliases,
     };
-  }
-
-  /**
-   * Migrate legacy string-based quota periods to structured format.
-   * Operates on raw parsed data before Zod validation.
-   */
-  private migratePlans(plansData: unknown[]): unknown[] {
-    return plansData.map((plan) => {
-      if (!plan || typeof plan !== 'object') return plan;
-      const rawPlan = plan as Record<string, unknown>;
-
-      if (!rawPlan.quota || typeof rawPlan.quota !== 'object') return plan;
-      const rawQuota = rawPlan.quota as Record<string, unknown>;
-
-      // Check if period is in legacy string format
-      if (isLegacyPeriod(rawQuota.period)) {
-        // Collect expiresOn from quota level or plan level
-        const expiresOn = (rawQuota.expiresOn as number | undefined)
-          ?? (rawPlan.expiresOn as number | undefined);
-
-        // Migrate to structured period
-        rawQuota.period = ensureStructuredPeriod(rawQuota.period, expiresOn);
-
-        // Remove top-level expiresOn if it was only used for migration
-        // (keep it if quota also had one, as quota takes precedence)
-        if (rawQuota.expiresOn === undefined && rawPlan.expiresOn !== undefined) {
-          delete rawPlan.expiresOn;
-        }
-      }
-
-      return plan;
-    });
   }
 
   /**

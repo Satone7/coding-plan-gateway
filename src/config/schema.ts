@@ -137,7 +137,7 @@ export const planConfigSchema = z.object({
  * Full configuration schema (root).
  */
 export const configSchema = z.object({
-  version: z.string().optional(),
+  version: z.union([z.number().int().min(0), z.string()]).optional(),
   plans: z.array(planConfigSchema).default([]),
   loadBalancing: loadBalanceConfigSchema.optional(),
 });

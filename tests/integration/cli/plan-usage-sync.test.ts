@@ -222,7 +222,7 @@ describe('Plan Usage Sync with Running Server', () => {
       // Create a plan
       const plan = await repository.save(createMockPlanInput({
         name: 'Test Plan',
-        quota: { limit: 1000, period: 'monthly' }
+        quota: { limit: 1000, period: { type: 'monthly' } }
       }));
       await quotaManager.initialize([plan]);
 

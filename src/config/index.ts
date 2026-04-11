@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { configSchema, planConfigSchema, type PlanConfig, type Config } from './schema';
 import { encryptApiKey } from './encryption';
 import { DEFAULT_REQUEST_TIMEOUT_SEC, CONFIG_VERSION } from './defaults';
+import { migrateConfigFile } from './migrations';
 import { logger } from '@/utils/logger';
 
 /**
@@ -167,7 +168,21 @@ export async function loadConfig(
     size: content.length,
   });
 
-  const parsed = parseConfigContent(content, absolutePath);
+  // Run config migration if needed (before parsing)
+  const migrationResult = await migrateConfigFile(absolutePath);
+  if (migrationResult.migrated) {
+    logger.info('Configuration file was migrated', {
+      fromVersion: migrationResult.fromVersion,
+      toVersion: migrationResult.toVersion,
+      backupPath: migrationResult.backupPath,
+    });
+  }
+
+  // Re-read content after migration (file may have been updated)
+  const finalContent = migrationResult.migrated
+    ? await readFile(absolutePath, 'utf-8')
+    : content;
+  const parsed = parseConfigContent(finalContent, absolutePath);
 
   // Expand environment variables
   const expanded = expandEnvVarsInObject(parsed);

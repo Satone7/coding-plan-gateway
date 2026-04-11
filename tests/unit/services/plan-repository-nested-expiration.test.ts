@@ -36,7 +36,9 @@ plans:
       - "test-model"
     quota:
       limit: 90000
-      period: "monthly"
+      period:
+        type: "monthly"
+        expiresOn: 27
       expiresOn: 27
     timeout: 180
     status: "active"
@@ -66,7 +68,8 @@ plans:
       - "test-model"
     quota:
       limit: 90000
-      period: "monthly"
+      period:
+        type: "monthly"
       expiresAt: "${expiresAt}"
     timeout: 180
     status: "active"
@@ -96,7 +99,8 @@ plans:
       - "test-model"
     quota:
       limit: 90000
-      period: "monthly"
+      period:
+        type: "monthly"
     expiresOn: 15
     timeout: 180
     status: "active"
@@ -131,7 +135,7 @@ plans:
       models: ['test-model'],
       quota: {
         limit: 50000,
-        period: 'monthly',
+        period: { type: 'monthly', expiresOn: 10 },
         expiresOn: 10,
       },
     });
@@ -175,119 +179,6 @@ plans:
     expect(plans[0]?.quota.expiresOn).toBe(27);
     expect(plans[0]?.quota.expiresAt).toBeUndefined();
     expect(plans[0]?.expiresOn).toBe(27);
-  });
-
-  it('should auto-migrate legacy string period "monthly" with quota-level expiresOn', async () => {
-    const configPath = join(tempDir, 'config.yaml');
-    const fs = await import('fs/promises');
-
-    // Write old-format config: period as string, expiresOn inside quota
-    const configContent = `
-plans:
-  - id: 1
-    name: "Legacy Plan"
-    baseUrl: "https://api.example.com"
-    apiKey: "test-key"
-    models:
-      - "test-model"
-    quota:
-      limit: 90000
-      period: "monthly"
-      expiresOn: 15
-    timeout: 180
-    status: "active"
-`;
-    await fs.writeFile(configPath, configContent, 'utf-8');
-
-    const repository = new FilePlanRepository(configPath);
-    const plans = await repository.findAll();
-
-    expect(plans).toHaveLength(1);
-    // Period should be migrated to structured format
-    expect(plans[0]?.quota.period).toEqual({ type: 'monthly', expiresOn: 15 });
-    // expiresOn should be available at both quota and plan level
-    expect(plans[0]?.expiresOn).toBe(15);
-  });
-
-  it('should auto-migrate legacy string period "monthly" with top-level expiresOn', async () => {
-    const configPath = join(tempDir, 'config.yaml');
-    const fs = await import('fs/promises');
-
-    // Write old-format config: period as string, expiresOn at plan level
-    const configContent = `
-plans:
-  - id: 1
-    name: "Legacy Plan"
-    baseUrl: "https://api.example.com"
-    apiKey: "test-key"
-    models:
-      - "test-model"
-    quota:
-      limit: 90000
-      period: "monthly"
-    expiresOn: 27
-    timeout: 180
-    status: "active"
-`;
-    await fs.writeFile(configPath, configContent, 'utf-8');
-
-    const repository = new FilePlanRepository(configPath);
-    const plans = await repository.findAll();
-
-    expect(plans).toHaveLength(1);
-    expect(plans[0]?.quota.period).toEqual({ type: 'monthly', expiresOn: 27 });
-    expect(plans[0]?.expiresOn).toBe(27);
-  });
-
-  it('should auto-migrate legacy string period "daily" to 5h', async () => {
-    const configPath = join(tempDir, 'config.yaml');
-    const fs = await import('fs/promises');
-
-    const configContent = `
-plans:
-  - id: 1
-    name: "Daily Plan"
-    baseUrl: "https://api.example.com"
-    apiKey: "test-key"
-    models:
-      - "test-model"
-    quota:
-      limit: 5000
-      period: "daily"
-    timeout: 30
-`;
-    await fs.writeFile(configPath, configContent, 'utf-8');
-
-    const repository = new FilePlanRepository(configPath);
-    const plans = await repository.findAll();
-
-    expect(plans).toHaveLength(1);
-    expect(plans[0]?.quota.period).toEqual({ type: '5h', windowHours: 5, sliding: true });
-  });
-
-  it('should auto-migrate legacy string period "total"', async () => {
-    const configPath = join(tempDir, 'config.yaml');
-    const fs = await import('fs/promises');
-
-    const configContent = `
-plans:
-  - id: 1
-    name: "Total Plan"
-    baseUrl: "https://api.example.com"
-    apiKey: "test-key"
-    models:
-      - "test-model"
-    quota:
-      limit: 999999
-      period: "total"
-`;
-    await fs.writeFile(configPath, configContent, 'utf-8');
-
-    const repository = new FilePlanRepository(configPath);
-    const plans = await repository.findAll();
-
-    expect(plans).toHaveLength(1);
-    expect(plans[0]?.quota.period).toEqual({ type: 'total' });
   });
 
   it('should load new structured period format without migration', async () => {
