@@ -67,19 +67,14 @@ export class ZhipuUsageAdapter implements UsageAdapter {
           ? Math.max(...tokenLimits.map((l) => l.percentage))
           : 0;
 
-      // Derive approximate used/limit from percentage
-      // Since the API only gives percentages, we estimate limit=10000 units
-      const estimatedLimit = 10000;
-      const estimatedUsed = Math.round((maxPercentage / 100) * estimatedLimit);
-
       logger.debug('Zhipu usage queried', {
         percentage: maxPercentage,
         windowCount: tokenLimits.length,
       });
 
       return {
-        used: estimatedUsed,
-        limit: estimatedLimit,
+        used: 0,
+        limit: 0,
         percentage: maxPercentage,
         raw: body,
       };

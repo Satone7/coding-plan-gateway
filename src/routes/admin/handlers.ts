@@ -15,6 +15,7 @@ import type { QuotaPeriod } from '@/types';
 import { usageAdjustmentRequestSchema } from '@/types/plan-usage';
 import { planIdParamSchema, quotaPeriodSchema } from '@/utils/validators';
 import { modelAliasesSchema } from '@/config/schema';
+import { getBuiltinProvider } from '@/config/builtin-providers';
 
 /**
  * Request with planId parameter.
@@ -483,17 +484,31 @@ export function createAdminHandlers(
 
       const input = validationResult.data;
 
+      // Apply provider preset defaults when provider is specified
+      let baseUrl: string | undefined = input.baseUrl;
+      let models: string[] | undefined = input.models;
+      let modelAliases: Record<string, string> | undefined = input.modelAliases;
+
+      if (input.provider) {
+        const preset = getBuiltinProvider(input.provider);
+        if (preset) {
+          baseUrl = baseUrl || preset.baseUrl;
+          models = models && models.length > 0 ? models : [...preset.models];
+          modelAliases = modelAliases || preset.defaultModelAliases;
+        }
+      }
+
       // Create the plan
       const plan = await repository.save({
         name: input.name,
-        baseUrl: input.baseUrl ?? '',
+        baseUrl: baseUrl ?? '',
         apiKey: input.apiKey,
-        models: input.models ?? [],
+        models: models ?? [],
         quota: input.quota ?? { limit: 0, period: { type: '5h', windowHours: 5, sliding: true } },
         timeout: input.timeout,
         enable: input.enable,
         provider: input.provider,
-        modelAliases: input.modelAliases,
+        modelAliases,
       });
 
       logger.info('Plan created via API', {

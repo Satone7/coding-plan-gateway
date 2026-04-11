@@ -4,6 +4,7 @@
  * On inner adapter failure, returns stale cache if available.
  */
 
+import { createHash } from 'crypto';
 import type { UsageAdapter, UsageResult } from '@/types';
 import { logger } from '@/utils/logger';
 
@@ -17,7 +18,7 @@ interface CacheEntry {
 
 /**
  * Wraps a UsageAdapter with in-memory TTL caching.
- * Keyed by provider ID (all plans for the same provider share a cache entry).
+ * Keyed by provider ID + API key hash (different API keys may have different quotas).
  * On inner adapter failure, returns stale cache if available.
  */
 export class CachedUsageAdapter implements UsageAdapter {
@@ -39,7 +40,7 @@ export class CachedUsageAdapter implements UsageAdapter {
   }
 
   async queryUsage(apiKey: string): Promise<UsageResult> {
-    const cacheKey = this.inner.providerId;
+    const cacheKey = `${this.inner.providerId}:${createHash('sha256').update(apiKey).digest('hex').slice(0, 16)}`;
     const cached = this.cache.get(cacheKey);
     const now = Date.now();
 

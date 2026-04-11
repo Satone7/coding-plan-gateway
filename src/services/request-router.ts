@@ -94,29 +94,26 @@ export class RequestRouter {
    * Filter plans to only those with remaining quota.
    */
   private async filterByQuota(plans: CodingPlan[]): Promise<CodingPlan[]> {
-    if (!this.quotaManager) {
+    const qm = this.quotaManager;
+    if (!qm) {
       return plans;
     }
 
-    const results: CodingPlan[] = [];
-    for (const plan of plans) {
-      if (plan.provider && this.providerRegistry?.hasUsageApi(plan.provider)) {
-        const apiKey = await this.repository.getDecryptedApiKey(plan.id);
-        const hasQuota = await this.quotaManager.hasRemainingQuotaAsync(
-          plan.id,
-          apiKey ?? undefined,
-          plan.provider
-        );
-        if (hasQuota) {
-          results.push(plan);
+    const checks = await Promise.all(
+      plans.map(async (plan) => {
+        if (plan.provider && this.providerRegistry?.hasUsageApi(plan.provider)) {
+          const apiKey = await this.repository.getDecryptedApiKey(plan.id);
+          const hasQuota = await qm.hasRemainingQuotaAsync(
+            plan.id,
+            apiKey ?? undefined,
+            plan.provider
+          );
+          return hasQuota ? plan : null;
         }
-      } else {
-        if (this.quotaManager.hasRemainingQuota(plan.id)) {
-          results.push(plan);
-        }
-      }
-    }
-    return results;
+        return qm.hasRemainingQuota(plan.id) ? plan : null;
+      })
+    );
+    return checks.filter((p): p is CodingPlan => p !== null);
   }
 
   /**

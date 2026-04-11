@@ -41,8 +41,8 @@ describe('ZhipuUsageAdapter', () => {
     const result = await adapter.queryUsage('test-api-key');
 
     expect(result.percentage).toBe(45.2);
-    expect(result.used).toBeGreaterThan(0);
-    expect(result.limit).toBeGreaterThan(0);
+    expect(result.used).toBe(0);
+    expect(result.limit).toBe(0);
     expect(mockFetch).toHaveBeenCalledTimes(1);
 
     // Verify the URL contains the quota/limit endpoint
