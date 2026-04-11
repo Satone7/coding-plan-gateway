@@ -66,6 +66,7 @@ module.exports = {
         '@typescript-eslint/await-thenable': 'off',
         '@typescript-eslint/no-var-requires': 'off',
         '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+        '@typescript-eslint/unbound-method': 'off',
         'max-lines-per-function': 'off',
       },
     },

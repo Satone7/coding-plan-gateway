@@ -39,7 +39,7 @@ describe('UsageAdapter type', () => {
     const adapter: UsageAdapter = {
       providerId: 'test',
       cacheTTL: 300,
-      queryUsage: async (apiKey: string): Promise<UsageResult> => ({
+      queryUsage: async (_apiKey: string): Promise<UsageResult> => ({
         used: 50,
         limit: 100,
         percentage: 50,
