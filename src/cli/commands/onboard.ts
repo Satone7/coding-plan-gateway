@@ -2,16 +2,16 @@ import * as p from '@clack/prompts';
 import color from 'picocolors';
 import { copyFile, access } from 'fs/promises';
 import { dirname, join, basename } from 'path';
-import { loadConfig, saveConfig, createEmptyConfig } from '@/config';
+import { loadConfig, saveConfig, createEmptyConfig, type NormalizedConfig, type NormalizedPlanConfig } from '@/config';
 import { configSchema } from '@/config/schema';
 import type { CliContext } from '@/types/cli';
-import type { Config, PlanConfig } from '@/config/schema';
+import type { Config } from '@/config/schema';
 
 export async function handleOnboardCommand(context: CliContext): Promise<void> {
   p.intro(color.bgCyan(color.black(' CPG Onboard Wizard ')));
 
   // 1. Load config
-  let config: Config;
+  let config: NormalizedConfig;
   try {
     config = await loadConfig(context.configPath);
   } catch (error) {
@@ -88,7 +88,7 @@ export async function handleOnboardCommand(context: CliContext): Promise<void> {
   p.outro('Onboarding complete!');
 }
 
-async function managePlans(config: Config) {
+async function managePlans(config: NormalizedConfig) {
   let back = false;
   while (!back) {
     const options = config.plans.map(plan => ({
@@ -157,7 +157,7 @@ async function managePlans(config: Config) {
   }
 }
 
-async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<PlanConfig | null> {
+async function promptPlanDetails(id: number, existing?: NormalizedPlanConfig): Promise<NormalizedPlanConfig | null> {
   const group = await p.group({
     name: () => p.text({
       message: 'Plan Name',
@@ -246,7 +246,7 @@ async function promptPlanDetails(id: number, existing?: PlanConfig): Promise<Pla
   if (!group || Object.keys(group).length === 0) return null;
 
   const legacyPeriod = group.quotaPeriod as string;
-  const plan: PlanConfig = {
+  const plan: NormalizedPlanConfig = {
     id,
     name: group.name as string,
     baseUrl: group.baseUrl as string,

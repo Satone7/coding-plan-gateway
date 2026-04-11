@@ -13,6 +13,7 @@ import type {
   UpdateCodingPlanInput,
 } from '@/types';
 import { planConfigSchema, type PlanConfig } from '@/config/schema';
+import { normalizePlanConfig, type NormalizedPlanConfig } from '@/config';
 import {
   encryptApiKey,
   decryptApiKey,
@@ -327,9 +328,10 @@ export class FilePlanRepository implements IPlanRepository {
 
       // Validate and convert to CodingPlan objects
       const config = planConfigSchema.array().parse(migratedPlans);
+      const normalized = config.map(normalizePlanConfig);
 
       this.plans = new Map();
-      for (const planConfig of config) {
+      for (const planConfig of normalized) {
         const plan = this.configToPlan(planConfig);
         this.plans.set(plan.id, plan);
       }
@@ -408,7 +410,7 @@ export class FilePlanRepository implements IPlanRepository {
    * Convert a PlanConfig to a CodingPlan.
    * Handles both integer and UUID IDs for migration compatibility.
    */
-  private configToPlan(config: PlanConfig): CodingPlan {
+  private configToPlan(config: NormalizedPlanConfig): CodingPlan {
     const now = new Date();
 
     // Handle ID: prefer integer, generate if missing or if UUID (legacy)
