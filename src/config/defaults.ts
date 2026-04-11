@@ -88,9 +88,15 @@ export const RETRY_DEFAULTS = {
 export const API_VERSION = '1.0.0';
 
 /**
- * Configuration file format version.
+ * Latest supported configuration format version.
+ * Increment this when the config schema changes.
  */
-export const CONFIG_VERSION = '1.0';
+export const LATEST_CONFIG_VERSION = 1;
+
+/**
+ * @deprecated Use LATEST_CONFIG_VERSION instead. Kept for backward compat.
+ */
+export const CONFIG_VERSION = String(LATEST_CONFIG_VERSION);
 
 /**
  * API key prefix for Coding Plan Gateway keys.
