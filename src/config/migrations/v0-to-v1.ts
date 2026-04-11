@@ -8,7 +8,13 @@ type LegacyPeriod = (typeof LEGACY_PERIODS)[number];
 
 export function migrateV0ToV1(config: Record<string, unknown>): Record<string, unknown> {
   const plans = (config.plans as Record<string, unknown>[]) ?? [];
-  let nextId = 1;
+
+  // Collect existing integer IDs to avoid duplicates
+  const existingIds = plans
+    .filter((p): p is Record<string, unknown> & { id: number } =>
+      typeof p?.id === 'number')
+    .map(p => p.id);
+  let nextId = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
 
   for (const plan of plans) {
     if (!plan || typeof plan !== 'object') continue;

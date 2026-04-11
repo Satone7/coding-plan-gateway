@@ -128,6 +128,34 @@ describe('migrateV0ToV1', () => {
     expect((result.plans as any[])[0].id).toBe(42);
   });
 
+  it('should avoid duplicate IDs when existing integer IDs are present', () => {
+    const config: Record<string, unknown> = {
+      plans: [
+        {
+          id: 1,
+          name: 'Plan A',
+          baseUrl: 'https://a.example.com',
+          apiKey: 'key-a',
+          models: ['model-a'],
+          quota: { limit: 100, period: 'daily' },
+        },
+        {
+          id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+          name: 'Plan B',
+          baseUrl: 'https://b.example.com',
+          apiKey: 'key-b',
+          models: ['model-b'],
+          quota: { limit: 200, period: 'total' },
+        },
+      ],
+    };
+
+    const result = migrateV0ToV1(config);
+    const plans = result.plans as any[];
+    expect(plans[0].id).toBe(1);
+    expect(plans[1].id).toBe(2);
+  });
+
   it('should be idempotent — running on already-migrated config is safe', () => {
     const config: Record<string, unknown> = {
       version: 1,

@@ -161,12 +161,6 @@ export async function loadConfig(
   logger.info(`Loading configuration from ${absolutePath}`);
 
   const content = await readFile(absolutePath, 'utf-8');
-  const md5Hash = createHash('md5').update(content).digest('hex');
-  logger.info('Configuration file loaded', {
-    path: absolutePath,
-    md5: md5Hash,
-    size: content.length,
-  });
 
   // Run config migration if needed (before parsing)
   const migrationResult = await migrateConfigFile(absolutePath);
@@ -182,6 +176,15 @@ export async function loadConfig(
   const finalContent = migrationResult.migrated
     ? await readFile(absolutePath, 'utf-8')
     : content;
+
+  // Compute hash from post-migration content to ensure consistency
+  const md5Hash = createHash('md5').update(finalContent).digest('hex');
+  logger.info('Configuration file loaded', {
+    path: absolutePath,
+    md5: md5Hash,
+    size: finalContent.length,
+  });
+
   const parsed = parseConfigContent(finalContent, absolutePath);
 
   // Expand environment variables

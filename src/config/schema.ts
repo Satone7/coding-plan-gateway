@@ -58,7 +58,7 @@ const fiveHourPeriodSchema = z.object({
 
 const weeklyPeriodSchema = z.object({
   type: z.literal('weekly'),
-  weekday: z.number().int().min(1).max(7),
+  weekday: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]),
 });
 
 const monthlyPeriodSchema = z.object({

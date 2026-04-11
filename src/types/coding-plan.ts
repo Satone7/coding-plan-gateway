@@ -26,7 +26,7 @@ export interface FiveHourPeriod {
  */
 export interface WeeklyPeriod {
   type: 'weekly';
-  weekday: number;
+  weekday: 1 | 2 | 3 | 4 | 5 | 6 | 7;
 }
 
 /**
@@ -71,9 +71,11 @@ export interface QuotaConfig {
   limit: number;
   /** Quota reset period (structured discriminated union) */
   period: QuotaPeriod;
-  /** Expiration day of month (for monthly periods) */
+  /** Expiration day of month (for monthly periods). Kept for backward compatibility;
+   *  prefer the `expiresOn` field inside the period object as source of truth. */
   expiresOn?: number;
-  /** Expiration timestamp (ISO datetime string) */
+  /** Expiration timestamp (ISO datetime string). Kept for backward compatibility;
+   *  prefer the `expiresAt` field inside the period object as source of truth. */
   expiresAt?: string;
 }
 
