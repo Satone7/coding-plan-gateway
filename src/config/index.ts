@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { configSchema, planConfigSchema, type PlanConfig, type Config } from './schema';
 import { encryptApiKey } from './encryption';
 import { DEFAULT_REQUEST_TIMEOUT_SEC, CONFIG_VERSION } from './defaults';
+import { migrateConfigFile } from './migrations';
 import { logger } from '@/utils/logger';
 
 /**
@@ -160,14 +161,31 @@ export async function loadConfig(
   logger.info(`Loading configuration from ${absolutePath}`);
 
   const content = await readFile(absolutePath, 'utf-8');
-  const md5Hash = createHash('md5').update(content).digest('hex');
+
+  // Run config migration if needed (before parsing)
+  const migrationResult = await migrateConfigFile(absolutePath);
+  if (migrationResult.migrated) {
+    logger.info('Configuration file was migrated', {
+      fromVersion: migrationResult.fromVersion,
+      toVersion: migrationResult.toVersion,
+      backupPath: migrationResult.backupPath,
+    });
+  }
+
+  // Re-read content after migration (file may have been updated)
+  const finalContent = migrationResult.migrated
+    ? await readFile(absolutePath, 'utf-8')
+    : content;
+
+  // Compute hash from post-migration content to ensure consistency
+  const md5Hash = createHash('md5').update(finalContent).digest('hex');
   logger.info('Configuration file loaded', {
     path: absolutePath,
     md5: md5Hash,
-    size: content.length,
+    size: finalContent.length,
   });
 
-  const parsed = parseConfigContent(content, absolutePath);
+  const parsed = parseConfigContent(finalContent, absolutePath);
 
   // Expand environment variables
   const expanded = expandEnvVarsInObject(parsed);

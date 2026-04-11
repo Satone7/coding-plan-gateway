@@ -71,6 +71,12 @@ export interface QuotaConfig {
   limit: number;
   /** Quota reset period (structured discriminated union) */
   period: QuotaPeriod;
+  /** Expiration day of month (for monthly periods). Kept for backward compatibility;
+   *  prefer the `expiresOn` field inside the period object as source of truth. */
+  expiresOn?: number;
+  /** Expiration timestamp (ISO datetime string). Kept for backward compatibility;
+   *  prefer the `expiresAt` field inside the period object as source of truth. */
+  expiresAt?: string;
 }
 
 /**
@@ -88,10 +94,9 @@ export interface QuotaConfig {
  *   baseUrl: 'https://api.moonshot.cn/v1',
  *   apiKeyEncrypted: 'enc:...',
  *   models: ['kimi-k2.5', 'kimi-k2'],
- *   quota: { limit: 1000, period: 'monthly' },
+ *   quota: { limit: 1000, period: { type: 'monthly', expiresOn: 28 } },
  *   timeout: 30,
  *   status: 'active',
- *   expiresOn: 28, // Expires on 28th of each month
  *   weight: 2, // Higher priority for load balancing
  *   createdAt: new Date(),
  *   updatedAt: new Date(),

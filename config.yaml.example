@@ -1,4 +1,4 @@
-version: "1.0"
+version: 1
 
 # Model aliases configuration
 # Maps user-provided alias names to canonical model names
@@ -85,8 +85,5 @@ plans:
 #                      expiresOn: 1-31 (defaults to 1, uses last day if month is shorter)
 #   type: "total"    - Never resets (lifetime quota)
 
-# Legacy format (still supported via auto-migration):
-#   quota:
-#     limit: 90000
-#     period: "monthly"    # String format auto-migrated to structured object
-#     expiresOn: 1
+# Legacy config formats are automatically migrated on startup.
+# A backup is created before any migration.

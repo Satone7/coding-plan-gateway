@@ -224,14 +224,14 @@ describe('PlanRepository', () => {
 
     it('should update quota partially', async () => {
       const created = await repository.save(
-        createMockPlanInput({ quota: { limit: 100, period: 'daily' } })
+        createMockPlanInput({ quota: { limit: 100, period: { type: '5h', windowHours: 5, sliding: true } } })
       );
       const updated = await repository.update(created.id, {
         quota: { limit: 200 },
       });
 
       expect(updated.quota.limit).toBe(200);
-      expect(updated.quota.period).toBe('daily');
+      expect(updated.quota.period).toEqual({ type: '5h', windowHours: 5, sliding: true });
     });
 
     it('should update status', async () => {
@@ -297,7 +297,7 @@ describe('PlanRepository', () => {
             baseUrl: 'https://manual.example.com',
             apiKey: 'manual-key',
             models: ['manual-model'],
-            quota: { limit: 100, period: 'monthly' },
+            quota: { limit: 100, period: { type: 'monthly' } },
           },
         ],
       });

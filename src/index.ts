@@ -9,6 +9,7 @@ import 'dotenv/config';
 import { createApp, startServer } from './app';
 import { logger, addLogListener } from './utils/logger';
 import { ipcServer } from './utils/ipc-server';
+import { dashboardMetrics } from './utils/dashboard-metrics';
 import { loadConfig } from './config';
 import { createQuotaManager } from './services/quota-manager';
 import { createApiKeyManager } from './services/api-key-manager';
@@ -95,7 +96,13 @@ async function main(): Promise<void> {
     // Start IPC server
     try {
       await ipcServer.start();
-      addLogListener((entry) => ipcServer.broadcast(entry));
+      addLogListener((entry) => {
+        dashboardMetrics.processEntry(entry);
+        ipcServer.broadcast(entry);
+      });
+      ipcServer.onConnect((socket) => {
+        ipcServer.sendToClient(socket, { type: 'snapshot', data: dashboardMetrics.getSnapshot() });
+      });
     } catch (err) {
       logger.error('Failed to start IPC server', err as Error);
     }

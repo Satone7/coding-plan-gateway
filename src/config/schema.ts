@@ -53,17 +53,17 @@ export const loadBalanceConfigSchema = z.object({
 const fiveHourPeriodSchema = z.object({
   type: z.literal('5h'),
   windowHours: z.number().int().min(1).max(24).optional().default(5),
-  sliding: z.boolean().optional().default(true),
+  sliding: z.literal(true).optional().default(true),
 });
 
 const weeklyPeriodSchema = z.object({
   type: z.literal('weekly'),
-  weekday: z.number().int().min(1).max(7),
+  weekday: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]),
 });
 
 const monthlyPeriodSchema = z.object({
   type: z.literal('monthly'),
-  expiresOn: z.number().int().min(1).max(31).optional().default(1),
+  expiresOn: z.number().int().min(1).max(31).optional(),
 });
 
 const totalPeriodSchema = z.object({
@@ -137,7 +137,7 @@ export const planConfigSchema = z.object({
  * Full configuration schema (root).
  */
 export const configSchema = z.object({
-  version: z.string().optional(),
+  version: z.union([z.number().int().min(0), z.string()]).optional(),
   plans: z.array(planConfigSchema).default([]),
   loadBalancing: loadBalanceConfigSchema.optional(),
 });

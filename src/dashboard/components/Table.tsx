@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import { useTheme } from '../context';
 
 export interface TableProps {
   data: Record<string, any>[];
@@ -7,12 +8,14 @@ export interface TableProps {
 }
 
 export function Table({ data, columns }: TableProps) {
+  const { theme } = useTheme();
+
   if (!data || data.length === 0) {
-    return <Text color="gray">No data</Text>;
+    return <Text color={theme.muted}>No data</Text>;
   }
 
   const cols = columns || Object.keys(data[0] || {});
-  
+
   // Calculate column widths
   const colWidths: Record<string, number> = {};
   cols.forEach(col => {
@@ -30,7 +33,7 @@ export function Table({ data, columns }: TableProps) {
       <Box flexDirection="row">
         {cols.map((col) => (
           <Box key={`header-${col}`} width={colWidths[col]}>
-            <Text bold color="cyan" underline>{col}</Text>
+            <Text bold color={theme.brand} underline>{col}</Text>
           </Box>
         ))}
       </Box>

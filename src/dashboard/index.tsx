@@ -5,6 +5,7 @@ import { loadAuthConfig } from '../config/auth-config';
 import { createApiKeyManager } from '../services/api-key-manager';
 import type { ApiKey } from '../types/api-key';
 import { logger } from '../utils/logger';
+import { ThemeProvider, useTheme } from './context';
 
 import { Divider } from './components/Divider';
 import { HomeView } from './views/HomeView';
@@ -28,6 +29,7 @@ const Dashboard = () => {
   const [isErrorsExpanded, setIsErrorsExpanded] = useState(false);
   const [showHeaders, setShowHeaders] = useState(false);
   const [currentView, setCurrentView] = useState<'home' | 'plans' | 'models' | 'keys' | 'health'>('home');
+  const { theme, themeDisplayName, cycleTheme } = useTheme();
 
   useInput((input, key) => {
     const char = input.toLowerCase();
@@ -35,6 +37,8 @@ const Dashboard = () => {
       setIsErrorsExpanded(prev => !prev);
     } else if (char === 't') {
       setShowHeaders(prev => !prev);
+    } else if (char === 's') {
+      cycleTheme();
     } else if (char === '1') {
       setCurrentView('plans');
     } else if (char === '2') {
@@ -77,14 +81,14 @@ const Dashboard = () => {
         // Ignore errors if file doesn't exist yet
       }
     };
-    
+
     void loadKeys();
-    
+
     // Poll for API key changes every 5 seconds
     const interval = setInterval(() => {
       void loadKeys();
     }, 5000);
-    
+
     return () => clearInterval(interval);
   }, []);
 
@@ -97,15 +101,15 @@ const Dashboard = () => {
     <Box width={size.columns} height={size.rows} flexDirection="column">
       {/* Global Header */}
       <Box flexDirection="row" justifyContent="space-between">
-        <Text bold color="cyan">🚀 CODING PLAN GATEWAY DASHBOARD</Text>
+        <Text bold color={theme.brand}>🚀 CODING PLAN GATEWAY DASHBOARD</Text>
         <Text>🕐 {timeString}</Text>
       </Box>
-      <Divider width={size.columns} color="cyan" char="═" />
+      <Divider width={size.columns} color={theme.brand} char="═" />
       <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
         <Text>
-          📊 Active: <Text bold color="green">{activeRequests.length}</Text>  ✅ Completed: <Text bold color="blue">{state.completedRequests}</Text>  ❌ Failed: <Text bold color="red">{state.failedRequests}</Text>
+          📊 Active: <Text bold color={theme.success}>{activeRequests.length}</Text>  ✅ Completed: <Text bold color={theme.brand}>{state.completedRequests}</Text>  ❌ Failed: <Text bold color={theme.error}>{state.failedRequests}</Text>
         </Text>
-        <Text color="gray">[Press 1-4: Plans|Models|Keys|Health]</Text>
+        <Text color={theme.muted}>[Press 1-4: Plans|Models|Keys|Health]</Text>
       </Box>
 
       {/* Main View Area */}
@@ -120,16 +124,19 @@ const Dashboard = () => {
       </Box>
 
       {/* Global Footer */}
-      <Divider width={size.columns} color="cyan" char="═" />
+      <Divider width={size.columns} color={theme.brand} char="═" />
       <Box flexDirection="row">
-        <Text color="cyan">[1]</Text><Text>Plans  </Text>
-        <Text color="cyan">[2]</Text><Text>Models  </Text>
-        <Text color="cyan">[3]</Text><Text>API Keys  </Text>
-        <Text color="cyan">[4]</Text><Text>Health  </Text>
-        <Text color="cyan">[H]</Text><Text>ome  </Text>
-        <Text color="cyan">[E]</Text><Text>rrors  </Text>
-        <Text color="cyan">[T]</Text><Text>oggle Headers  </Text>
-        <Text color="cyan">[Q]</Text><Text>uit</Text>
+        <Text color={theme.brand}>[1]</Text><Text>Plans  </Text>
+        <Text color={theme.brand}>[2]</Text><Text>Models  </Text>
+        <Text color={theme.brand}>[3]</Text><Text>API Keys  </Text>
+        <Text color={theme.brand}>[4]</Text><Text>Health  </Text>
+        <Text color={theme.brand}>[H]</Text><Text>ome  </Text>
+        <Text color={theme.brand}>[E]</Text><Text>rrors  </Text>
+        <Text color={theme.brand}>[T]</Text><Text>oggle Headers  </Text>
+        <Text color={theme.brand}>[S]</Text><Text>kin  </Text>
+        <Text color={theme.brand}>[Q]</Text><Text>uit</Text>
+        <Box flexGrow={1} />
+        <Text color={theme.muted}>Theme: {themeDisplayName}</Text>
       </Box>
     </Box>
   );
@@ -137,4 +144,8 @@ const Dashboard = () => {
 
 // Clear screen and render
 console.clear();
-render(<Dashboard />);
+render(
+  <ThemeProvider>
+    <Dashboard />
+  </ThemeProvider>,
+);
