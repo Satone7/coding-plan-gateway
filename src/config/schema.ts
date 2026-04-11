@@ -101,22 +101,22 @@ export const modelAliasesSchema = z
 
 /**
  * Plan configuration schema (from YAML/JSON).
- * ID can be either integer (preferred) or UUID (legacy, for migration).
+ * When `provider` is set, `baseUrl`, `models`, and `quota` become optional
+ * (defaults come from the provider preset).
  */
 export const planConfigSchema = z.object({
   id: z.union([
-    z.number().int().positive().max(Number.MAX_SAFE_INTEGER), // Integer ID (preferred)
-    z.string().uuid(), // UUID (legacy, for migration)
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    z.string().uuid(),
   ]).optional(),
   name: z.string().min(1).max(100),
-  baseUrl: z.string().url(),
+  provider: z.string().min(1).optional(),
+  baseUrl: z.string().url().optional(),
   apiKey: z.string().min(1),
-  models: z.array(z.string().min(1)).min(1),
-  quota: quotaConfigSchema,
+  models: z.array(z.string().min(1)).min(1).optional(),
+  quota: quotaConfigSchema.optional(),
   timeout: z.number().int().min(1).optional(),
   status: z.enum(['active', 'paused']).optional(),
-  // Legacy expiration fields (kept for backward compat during migration)
-  // These are applied by migration logic when period is old string format
   expiresOn: z.number().int().min(1).max(31).optional(),
   expiresAt: z.string().datetime().optional(),
   weight: z.number().int().min(1).max(100).optional(),
@@ -124,8 +124,17 @@ export const planConfigSchema = z.object({
   modelAliases: modelAliasesSchema.optional(),
 }).refine(
   (plan) => {
+    if (!plan.provider) {
+      return plan.baseUrl !== undefined && plan.models !== undefined && plan.quota !== undefined;
+    }
+    return true;
+  },
+  { message: 'baseUrl, models, and quota are required when provider is not set' }
+).refine(
+  (plan) => {
     if (!plan.modelAliases) return true;
-    const modelsLower = plan.models.map((m: string) => m.toLowerCase());
+    const models = plan.models ?? [];
+    const modelsLower = models.map((m: string) => m.toLowerCase());
     return Object.values(plan.modelAliases).every(
       (target) => modelsLower.includes(target.toLowerCase())
     );
@@ -134,11 +143,23 @@ export const planConfigSchema = z.object({
 );
 
 /**
+ * Provider override schema for config-level customization.
+ */
+const providerOverrideSchema = z.object({
+  name: z.string().min(1).optional(),
+  baseUrl: z.string().url().optional(),
+  models: z.array(z.string().min(1)).min(1).optional(),
+  defaultModelAliases: modelAliasesSchema.optional(),
+  hasUsageApi: z.boolean().optional(),
+});
+
+/**
  * Full configuration schema (root).
  */
 export const configSchema = z.object({
   version: z.union([z.number().int().min(0), z.string()]).optional(),
   plans: z.array(planConfigSchema).default([]),
+  providers: z.record(z.string().min(1), providerOverrideSchema).optional(),
   loadBalancing: loadBalanceConfigSchema.optional(),
 });
 
