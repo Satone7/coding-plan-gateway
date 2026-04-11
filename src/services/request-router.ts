@@ -9,6 +9,7 @@ import { PlanSelector, createPlanSelector, type SelectionContext } from '@/servi
 import { resolveCanonicalName } from '@/utils/model-alias';
 import { CircuitBreaker, createCircuitBreaker } from '@/services/circuit-breaker';
 import type { QuotaManager } from '@/services/quota-manager';
+import type { ProviderRegistry } from '@/services/provider-registry';
 import { RpmTracker, createRpmTracker } from '@/services/rpm-tracker';
 import type { CodingPlan, QuotaState } from '@/types';
 import type { LoadBalanceConfig } from '@/types/load-balancing';
@@ -62,6 +63,7 @@ export class RequestRouter {
   private readonly quotaManager: QuotaManager | null;
   private readonly rpmTracker: RpmTracker;
   private readonly loadBalanceConfig: LoadBalanceConfig;
+  private readonly providerRegistry: ProviderRegistry | null;
 
   /**
    * Create a new RequestRouter.
@@ -69,7 +71,8 @@ export class RequestRouter {
   constructor(
     repository: IPlanRepository,
     quotaManager?: QuotaManager,
-    loadBalanceConfig?: LoadBalanceConfig
+    loadBalanceConfig?: LoadBalanceConfig,
+    providerRegistry?: ProviderRegistry
   ) {
     this.repository = repository;
     this.loadBalanceConfig = loadBalanceConfig ?? DEFAULT_LOAD_BALANCE_CONFIG;
@@ -77,6 +80,7 @@ export class RequestRouter {
     this.planSelector = createPlanSelector(this.loadBalanceConfig, this.rpmTracker);
     this.circuitBreaker = createCircuitBreaker();
     this.quotaManager = quotaManager ?? null;
+    this.providerRegistry = providerRegistry ?? null;
   }
 
   /**
@@ -89,11 +93,30 @@ export class RequestRouter {
   /**
    * Filter plans to only those with remaining quota.
    */
-  private filterByQuota(plans: CodingPlan[]): CodingPlan[] {
+  private async filterByQuota(plans: CodingPlan[]): Promise<CodingPlan[]> {
     if (!this.quotaManager) {
       return plans;
     }
-    return plans.filter((plan) => this.quotaManager!.hasRemainingQuota(plan.id));
+
+    const results: CodingPlan[] = [];
+    for (const plan of plans) {
+      if (plan.provider && this.providerRegistry?.hasUsageApi(plan.provider)) {
+        const apiKey = await this.repository.getDecryptedApiKey(plan.id);
+        const hasQuota = await this.quotaManager.hasRemainingQuotaAsync(
+          plan.id,
+          apiKey ?? undefined,
+          plan.provider
+        );
+        if (hasQuota) {
+          results.push(plan);
+        }
+      } else {
+        if (this.quotaManager.hasRemainingQuota(plan.id)) {
+          results.push(plan);
+        }
+      }
+    }
+    return results;
   }
 
   /**
@@ -156,7 +179,7 @@ export class RequestRouter {
     }
 
     // Filter out exhausted plans if quota manager is available
-    const plansWithQuota = this.filterByQuota(availablePlans);
+    const plansWithQuota = await this.filterByQuota(availablePlans);
 
     if (plansWithQuota.length === 0) {
       return this.handleAllExhausted(searchModel, requestId, availablePlans.length);
@@ -300,7 +323,7 @@ export class RequestRouter {
     const available = this.filterByCircuit(activePlans);
 
     // Filter by quota if quota manager is available
-    return this.filterByQuota(available);
+    return await this.filterByQuota(available);
   }
 
   /**
@@ -369,7 +392,8 @@ export class RequestRouter {
 export function createRequestRouter(
   repository: IPlanRepository,
   quotaManager?: QuotaManager,
-  loadBalanceConfig?: LoadBalanceConfig
+  loadBalanceConfig?: LoadBalanceConfig,
+  providerRegistry?: ProviderRegistry
 ): RequestRouter {
-  return new RequestRouter(repository, quotaManager, loadBalanceConfig);
+  return new RequestRouter(repository, quotaManager, loadBalanceConfig, providerRegistry);
 }
