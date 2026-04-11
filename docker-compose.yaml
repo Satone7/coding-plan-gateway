@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      pull: true
+      pull: false
     container_name: coding-plan-gateway
     ports:
       - "${PORT:-8080}:${PORT:-8080}"
@@ -51,7 +51,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
-      pull: true
+      pull: false
     container_name: coding-plan-gateway-dev
     ports:
       - "8080:8080"
