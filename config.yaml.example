@@ -1,89 +1,52 @@
-version: 1
+# Coding Plan Gateway Configuration
+version: "1.0"
 
-# Model aliases configuration
-# Maps user-provided alias names to canonical model names
-modelAliases:
-  # GPT aliases
-  gpt-4: gpt-4-turbo
-  gpt-4-32k: gpt-4-32k-context
-  gpt-3.5-turbo: gpt-3.5-turbo-0125
-
-  # Claude aliases
-  claude-3: claude-3-opus-20240229
-  claude-3-sonnet: claude-3-sonnet-20240229
-  claude-3-haiku: claude-3-haiku-20240307
-
-  # MiniMax aliases
-  minimax-m2.5: MiniMax-M2.5
-  minimax-m2.7: MiniMax-M2.7
+# Provider presets override (optional)
+# Override built-in defaults or add custom providers.
+# Built-in providers: zhipu, volcengine, ali
+#
+# providers:
+#   zhipu:
+#     baseUrl: https://custom-zhipu-proxy.example.com
+#     models:
+#       - glm-5.1
+#       - glm-5-turbo
+#   my-custom:
+#     name: My Custom Provider
+#     baseUrl: https://api.custom.com/v1
+#     models: [model-a]
+#     hasUsageApi: false
 
 plans:
-  # Plan with 5-hour sliding window quota period
+  # Example: Using a provider preset with usage API (no quota needed)
+  # - name: My Zhipu Plan
+  #   provider: zhipu
+  #   apiKey: YOUR_ZHIPU_API_KEY_HERE
+
+  # Example: Using a provider preset without usage API (quota required)
+  # - name: My Volcengine Plan
+  #   provider: volcengine
+  #   apiKey: YOUR_ARK_API_KEY_HERE
+  #   quota:
+  #     limit: 90000
+  #     period:
+  #       type: monthly
+  #       expiresOn: 1
+
+  # Example: Fully manual plan (no provider preset)
   - id: 1
-    name: "Ark Coding Plan"
-    baseUrl: "https://ark.cn-beijing.volces.com/api/coding"
-    apiKey: "YOUR_API_KEY_HERE"
+    name: Example Plan
+    baseUrl: https://api.example.com/v1
+    apiKey: YOUR_API_KEY_HERE
     models:
-      - "ark-code-latest"
-      - "doubao-seed-2.0-code"
-      - "kimi-k2.5"
-      - "minimax-m2.5"
-      - "glm-4.7"
+      - model-1
+      - model-2
     quota:
-      limit: 90000
+      limit: 1000
       period:
-        type: "5h"          # 5-hour sliding window
-    # timeout: Request timeout in seconds. Defaults to 30 if not specified.
-    timeout: 180
-    # status: Plan operational status
-    #   active   - Plan is running and accepting requests (default)
-    #   paused   - Plan is paused, not accepting requests
-    #   error    - Plan has an error (system-managed, not settable)
-    #   exhausted - Plan quota is exhausted (system-managed, not settable)
-    status: "active"
-
-  # Plan with weekly quota period (resets every Monday)
-  - id: 2
-    name: "Ali Coding Plan"
-    baseUrl: "https://coding.dashscope.aliyuncs.com/apps/anthropic"
-    apiKey: "YOUR_API_KEY_HERE"
-    models:
-      - "qwen3.5-plus"
-      - "glm-5"
-      - "glm-4.7"
-      - "kimi-k2.5"
-      - "MiniMax-M2.5"
-    quota:
-      limit: 50000
-      period:
-        type: "weekly"
-        weekday: 1          # 1=Monday, 2=Tuesday, ..., 7=Sunday (ISO 8601)
-    timeout: 180
-    status: "active"
-
-  # Plan with monthly quota period (resets on 27th of each month)
-  - id: 3
-    name: "Moonshot Coding Plan"
-    baseUrl: "https://api.moonshot.cn/v1"
-    apiKey: "YOUR_API_KEY_HERE"
-    models:
-      - "kimi-k2.5"
-      - "glm-5"
-    quota:
-      limit: 100000
-      period:
-        type: "monthly"
-        expiresOn: 27       # Day of month (1-31) when quota resets
-    timeout: 180
-    status: "active"
-
-# Period type reference:
-#   type: "5h"       - 5-hour sliding window (resets 5 hours from last reset)
-#   type: "weekly"   - Resets at 00:00 UTC on the configured weekday
-#                      weekday: 1 (Mon) through 7 (Sun)
-#   type: "monthly"  - Resets at 00:00 UTC on the configured day of month
-#                      expiresOn: 1-31 (defaults to 1, uses last day if month is shorter)
-#   type: "total"    - Never resets (lifetime quota)
-
-# Legacy config formats are automatically migrated on startup.
-# A backup is created before any migration.
+        type: 5h
+        windowHours: 5
+        sliding: true
+    timeout: 300
+    status: active
+    enable: true
