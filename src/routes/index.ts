@@ -13,6 +13,7 @@ import { createPlanIdCounter } from '@/services/plan-id-counter';
 import { isMigrationNeeded, performMigration } from '@/migration/uuid-to-int';
 import type { QuotaManager } from '@/services/quota-manager';
 import type { PlanUsageTracker } from '@/services/plan-usage-tracker';
+import type { ProviderRegistry } from '@/services/provider-registry';
 import { createRequestProxy } from '@/services/request-proxy';
 import { dirname, join } from 'path';
 import { loadConfig } from '@/config';
@@ -27,7 +28,8 @@ import { loadConfig } from '@/config';
 export async function registerRoutes(
   app: FastifyInstance,
   quotaManager?: QuotaManager,
-  planUsageTracker?: PlanUsageTracker
+  planUsageTracker?: PlanUsageTracker,
+  providerRegistry?: ProviderRegistry
 ): Promise<void> {
   logger.info('Registering routes...');
 
@@ -113,6 +115,7 @@ export async function registerRoutes(
     repository,
     proxy,
     quotaManager,
+    providerRegistry,
     prefix: '/api/v1',
   });
 
@@ -120,6 +123,7 @@ export async function registerRoutes(
     repository,
     proxy,
     quotaManager,
+    providerRegistry,
     prefix: '/api/v1',
   });
 

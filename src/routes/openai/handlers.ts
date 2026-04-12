@@ -11,6 +11,7 @@ import type { IPlanRepository } from '@/services/plan-repository';
 import { RequestRouter, createRequestRouter } from '@/services/request-router';
 import { RequestProxy } from '@/services/request-proxy';
 import { QuotaManager } from '@/services/quota-manager';
+import type { ProviderRegistry } from '@/services/provider-registry';
 import { logger } from '@/utils/logger';
 import { createGatewayError } from '@/types';
 import {
@@ -222,9 +223,10 @@ async function attemptFailover(
 export function createOpenAIHandlers(
   repository: IPlanRepository,
   proxy: RequestProxy,
-  quotaManager?: QuotaManager
+  quotaManager?: QuotaManager,
+  providerRegistry?: ProviderRegistry
 ): OpenAIHandlers {
-  const router = createRequestRouter(repository, quotaManager);
+  const router = createRequestRouter(repository, quotaManager, undefined, providerRegistry);
   const services: HandlerServices = { repository, proxy, router };
 
   return {

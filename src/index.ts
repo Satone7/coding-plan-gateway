@@ -17,6 +17,9 @@ import { createUsageTracker } from './services/usage-tracker';
 import { createPlanUsageTracker } from './services/plan-usage-tracker';
 import { createExpirationScheduler } from './services/expiration-scheduler';
 import { createPlanRepository } from './services/plan-repository';
+import { createProviderRegistry } from './services/provider-registry';
+import { ZhipuUsageAdapter } from './services/usage-adapters/zhipu-adapter';
+import { CachedUsageAdapter } from './services/usage-adapters/cached-adapter';
 import { loadAuthConfig } from './config/auth-config';
 import { loadPlanUsageConfig } from './config/defaults';
 
@@ -39,12 +42,19 @@ async function main(): Promise<void> {
     const configPath = process.env.CONFIG_PATH ?? './config.yaml';
     const config = await loadConfig(configPath, encryptionKey);
 
+    // Create and initialize provider registry with usage adapters
+    const providerRegistry = createProviderRegistry(config.providers);
+    providerRegistry.registerUsageAdapter(
+      new CachedUsageAdapter(new ZhipuUsageAdapter(), 300)
+    );
+
     // Create and initialize quota manager
     const quotaManager = createQuotaManager({
       quotaStatePath: process.env.QUOTA_STATE_PATH,
       syncIntervalMs: process.env.QUOTA_SYNC_INTERVAL
         ? parseInt(process.env.QUOTA_SYNC_INTERVAL, 10)
         : undefined,
+      providerRegistry,
     });
     // Filter plans to only include those with numeric IDs (UUID IDs need migration first)
     const plansWithNumericIds = config.plans.filter(
@@ -112,6 +122,7 @@ async function main(): Promise<void> {
       port: parseInt(process.env.PORT ?? '8080', 10),
       logLevel: process.env.LOG_LEVEL ?? 'info',
       quotaManager,
+      providerRegistry,
       apiKeyManager,
       usageTracker,
       planUsageTracker,

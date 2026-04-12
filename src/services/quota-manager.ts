@@ -562,6 +562,6 @@ export class QuotaManager {
  * @param config - Configuration options
  * @returns A new QuotaManager instance
  */
-export function createQuotaManager(config?: QuotaManagerConfig): QuotaManager {
+export function createQuotaManager(config?: QuotaManagerConfig & { providerRegistry?: ProviderRegistry }): QuotaManager {
   return new QuotaManager(config);
 }
