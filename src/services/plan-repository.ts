@@ -351,13 +351,27 @@ export class FilePlanRepository implements IPlanRepository {
 
   /**
    * Persist plans to file.
+   * Preserves non-plan fields (version, providers, loadBalancing, etc.)
+   * by reading the existing file and merging plans into it.
    */
   private async persist(): Promise<void> {
     const plans = Array.from(this.plans.values()).map((p) =>
       this.planToConfig(p)
     );
 
-    const content = this.serializeContent({ plans });
+    // Preserve non-plan fields from the existing file
+    let existingData: Record<string, unknown> = {};
+    try {
+      const existingContent = await readFile(this.filePath, 'utf-8');
+      const parsed = this.parseContent(existingContent);
+      if (parsed && typeof parsed === 'object') {
+        existingData = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // File may not exist yet or be empty — start fresh
+    }
+
+    const content = this.serializeContent({ ...existingData, plans });
 
     // Write to temp file first, then rename for atomicity
     const tempPath = `${this.filePath}.tmp`;

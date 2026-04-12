@@ -504,7 +504,7 @@ export function createAdminHandlers(
         baseUrl: baseUrl ?? '',
         apiKey: input.apiKey,
         models: models ?? [],
-        quota: input.quota ?? { limit: 0, period: { type: '5h', windowHours: 5, sliding: true } },
+        quota: input.quota ?? { limit: Number.MAX_SAFE_INTEGER, period: { type: 'total' } },
         timeout: input.timeout,
         enable: input.enable,
         provider: input.provider,

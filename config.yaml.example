@@ -1,5 +1,5 @@
 # Coding Plan Gateway Configuration
-version: "1.0"
+version: 1
 
 # Provider presets override (optional)
 # Override built-in defaults or add custom providers.
