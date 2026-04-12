@@ -14,6 +14,8 @@ import { createGatewayError } from '@/types';
 import type { QuotaPeriod } from '@/types';
 import { usageAdjustmentRequestSchema } from '@/types/plan-usage';
 import { planIdParamSchema, quotaPeriodSchema } from '@/utils/validators';
+import { modelAliasesSchema } from '@/config/schema';
+import { getBuiltinProvider } from '@/config/builtin-providers';
 
 /**
  * Request with planId parameter.
@@ -34,22 +36,33 @@ interface PlanIdParam {
  */
 const createPlanBodySchema = z.object({
   name: z.string().min(1).max(100),
-  baseUrl: z.string().url(),
+  provider: z.string().min(1).optional(),
+  baseUrl: z.string().url().optional(),
   apiKey: z.string().min(1),
-  models: z.array(z.string().min(1)).min(1),
+  models: z.array(z.string().min(1)).min(1).optional(),
   quota: z.object({
     limit: z.number().int().positive(),
     period: quotaPeriodSchema,
-  }),
+  }).optional(),
   timeout: z.number().int().min(1).optional(),
   enable: z.boolean().optional().default(true),
-});
+  modelAliases: modelAliasesSchema.optional(),
+}).refine(
+  (data) => {
+    if (!data.provider) {
+      return data.baseUrl !== undefined && data.models !== undefined && data.quota !== undefined;
+    }
+    return true;
+  },
+  { message: 'baseUrl, models, and quota are required when provider is not set' }
+);
 
 /**
  * Update plan request body schema.
  */
 const updatePlanBodySchema = z.object({
   name: z.string().min(1).max(100).optional(),
+  provider: z.string().min(1).optional(),
   baseUrl: z.string().url().optional(),
   apiKey: z.string().min(1).optional(),
   models: z.array(z.string().min(1)).min(1).optional(),
@@ -62,6 +75,7 @@ const updatePlanBodySchema = z.object({
   timeout: z.number().int().min(1).optional(),
   status: z.enum(['active', 'paused']).optional(),
   enable: z.boolean().optional(),
+  modelAliases: modelAliasesSchema.optional(),
 });
 
 /**
@@ -70,6 +84,7 @@ const updatePlanBodySchema = z.object({
 interface PlanResponse {
   id: number;
   name: string;
+  provider?: string;
   baseUrl: string;
   models: string[];
   quota: {
@@ -79,6 +94,7 @@ interface PlanResponse {
   timeout: number;
   status: string;
   enable?: boolean;
+  modelAliases?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
   usage?: {
@@ -154,12 +170,14 @@ function toPlanResponse(
   plan: {
     id: number;
     name: string;
+    provider?: string;
     baseUrl: string;
     models: string[];
     quota: { limit: number; period: QuotaPeriod };
     timeout: number;
     status: string;
     enable?: boolean;
+    modelAliases?: Record<string, string>;
     createdAt: Date;
     updatedAt: Date;
   },
@@ -171,12 +189,14 @@ function toPlanResponse(
   return {
     id: plan.id,
     name: plan.name,
+    provider: plan.provider,
     baseUrl: plan.baseUrl,
     models: plan.models,
     quota: plan.quota,
     timeout: plan.timeout,
     status: plan.status,
     enable: plan.enable,
+    modelAliases: plan.modelAliases,
     createdAt: plan.createdAt.toISOString(),
     updatedAt: plan.updatedAt.toISOString(),
     usage: quotaState
@@ -464,15 +484,31 @@ export function createAdminHandlers(
 
       const input = validationResult.data;
 
+      // Apply provider preset defaults when provider is specified
+      let baseUrl: string | undefined = input.baseUrl;
+      let models: string[] | undefined = input.models;
+      let modelAliases: Record<string, string> | undefined = input.modelAliases;
+
+      if (input.provider) {
+        const preset = getBuiltinProvider(input.provider);
+        if (preset) {
+          baseUrl = baseUrl || preset.baseUrl;
+          models = models && models.length > 0 ? models : [...preset.models];
+          modelAliases = modelAliases || preset.defaultModelAliases;
+        }
+      }
+
       // Create the plan
       const plan = await repository.save({
         name: input.name,
-        baseUrl: input.baseUrl,
+        baseUrl: baseUrl ?? '',
         apiKey: input.apiKey,
-        models: input.models,
-        quota: input.quota,
+        models: models ?? [],
+        quota: input.quota ?? { limit: Number.MAX_SAFE_INTEGER, period: { type: 'total' } },
         timeout: input.timeout,
         enable: input.enable,
+        provider: input.provider,
+        modelAliases,
       });
 
       logger.info('Plan created via API', {

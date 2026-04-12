@@ -13,6 +13,7 @@ import type {
   UpdateCodingPlanInput,
 } from '@/types';
 import { planConfigSchema, type PlanConfig } from '@/config/schema';
+import { normalizePlanConfig, type NormalizedPlanConfig } from '@/config';
 import {
   encryptApiKey,
   decryptApiKey,
@@ -173,6 +174,7 @@ export class FilePlanRepository implements IPlanRepository {
       weight: input.weight,
       enable: input.enable ?? true,
       modelAliases: input.modelAliases,
+      provider: input.provider,
       createdAt: now,
       updatedAt: now,
     };
@@ -221,6 +223,7 @@ export class FilePlanRepository implements IPlanRepository {
       weight: updates.weight !== undefined ? updates.weight : existing.weight,
       enable: updates.enable !== undefined ? updates.enable : existing.enable,
       modelAliases: updates.modelAliases !== undefined ? updates.modelAliases : existing.modelAliases,
+      provider: updates.provider !== undefined ? updates.provider : existing.provider,
       updatedAt: now,
     };
 
@@ -325,9 +328,10 @@ export class FilePlanRepository implements IPlanRepository {
 
       // Validate and convert to CodingPlan objects
       const config = planConfigSchema.array().parse(migratedPlans);
+      const normalized = config.map(normalizePlanConfig);
 
       this.plans = new Map();
-      for (const planConfig of config) {
+      for (const planConfig of normalized) {
         const plan = this.configToPlan(planConfig);
         this.plans.set(plan.id, plan);
       }
@@ -347,13 +351,27 @@ export class FilePlanRepository implements IPlanRepository {
 
   /**
    * Persist plans to file.
+   * Preserves non-plan fields (version, providers, loadBalancing, etc.)
+   * by reading the existing file and merging plans into it.
    */
   private async persist(): Promise<void> {
     const plans = Array.from(this.plans.values()).map((p) =>
       this.planToConfig(p)
     );
 
-    const content = this.serializeContent({ plans });
+    // Preserve non-plan fields from the existing file
+    let existingData: Record<string, unknown> = {};
+    try {
+      const existingContent = await readFile(this.filePath, 'utf-8');
+      const parsed = this.parseContent(existingContent);
+      if (parsed && typeof parsed === 'object') {
+        existingData = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // File may not exist yet or be empty — start fresh
+    }
+
+    const content = this.serializeContent({ ...existingData, plans });
 
     // Write to temp file first, then rename for atomicity
     const tempPath = `${this.filePath}.tmp`;
@@ -406,7 +424,7 @@ export class FilePlanRepository implements IPlanRepository {
    * Convert a PlanConfig to a CodingPlan.
    * Handles both integer and UUID IDs for migration compatibility.
    */
-  private configToPlan(config: PlanConfig): CodingPlan {
+  private configToPlan(config: NormalizedPlanConfig): CodingPlan {
     const now = new Date();
 
     // Handle ID: prefer integer, generate if missing or if UUID (legacy)
@@ -454,6 +472,7 @@ export class FilePlanRepository implements IPlanRepository {
       weight: config.weight,
       enable: config.enable ?? true,
       modelAliases: config.modelAliases,
+      provider: config.provider,
       createdAt: now,
       updatedAt: now,
     };
@@ -493,6 +512,7 @@ export class FilePlanRepository implements IPlanRepository {
       weight: plan.weight,
       enable: plan.enable ?? true,
       modelAliases: plan.modelAliases,
+      provider: plan.provider,
     };
   }
 

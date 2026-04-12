@@ -19,6 +19,12 @@ export type {
   UpdateCodingPlanInput,
 } from './coding-plan';
 
+// Provider preset types
+export type { ProviderPreset } from './provider';
+
+// Usage adapter types
+export type { UsageResult, UsageAdapter } from './usage-adapter';
+
 // Quota types
 export type {
   QuotaState,

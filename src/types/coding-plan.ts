@@ -143,6 +143,9 @@ export interface CodingPlan {
   /** Model aliases specific to this plan. Maps user-provided alias to canonical model name. */
   modelAliases?: Record<string, string>;
 
+  /** Provider preset ID. When set, baseUrl/models/quota use preset defaults if not specified. */
+  provider?: string;
+
   /** Creation timestamp */
   createdAt: Date;
 
@@ -165,6 +168,7 @@ export interface CreateCodingPlanInput {
   weight?: number;
   enable?: boolean;
   modelAliases?: Record<string, string>;
+  provider?: string;
 }
 
 /**
@@ -183,4 +187,5 @@ export interface UpdateCodingPlanInput {
   weight?: number;
   enable?: boolean;
   modelAliases?: Record<string, string>;
+  provider?: string;
 }

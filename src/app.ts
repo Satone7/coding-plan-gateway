@@ -15,6 +15,7 @@ import { DEFAULT_SERVER_CONFIG } from '@/config/defaults';
 import type { QuotaManager } from '@/services/quota-manager';
 import type { ApiKeyManager } from '@/services/api-key-manager';
 import type { UsageTracker } from '@/services/usage-tracker';
+import type { ProviderRegistry } from '@/services/provider-registry';
 
 /**
  * Application configuration options.
@@ -28,6 +29,8 @@ export interface AppOptions extends Partial<FastifyServerOptions> {
   logLevel?: string;
   /** Quota manager for graceful shutdown */
   quotaManager?: QuotaManager;
+  /** Provider registry for usage API integration */
+  providerRegistry?: ProviderRegistry;
   /** API key manager for authentication */
   apiKeyManager?: ApiKeyManager;
   /** Usage tracker for recording API usage */
@@ -80,7 +83,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   registerErrorHandler(app);
 
   // Register routes
-  await registerRoutes(app, options.quotaManager, options.planUsageTracker);
+  await registerRoutes(app, options.quotaManager, options.planUsageTracker, options.providerRegistry);
 
   // Register internal API key routes if apiKeyManager is provided
   if (options.apiKeyManager) {

@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { configSchema, planConfigSchema, type PlanConfig, type Config } from './schema';
 import { encryptApiKey } from './encryption';
 import { DEFAULT_REQUEST_TIMEOUT_SEC, CONFIG_VERSION } from './defaults';
+import { getBuiltinProvider } from './builtin-providers';
 import { migrateConfigFile } from './migrations';
 import { logger } from '@/utils/logger';
 
@@ -128,16 +129,52 @@ function parseConfigContent(content: string, filePath: string): unknown {
 }
 
 /**
- * Normalize plan configuration with defaults.
+ * Normalized plan configuration where baseUrl, models, and quota are guaranteed.
+ * After normalization, these fields are always present — either from user input
+ * or from provider preset defaults.
  */
-function normalizePlanConfig(plan: PlanConfig): PlanConfig {
-  return {
+export type NormalizedPlanConfig = PlanConfig & Required<Pick<PlanConfig, 'baseUrl' | 'models' | 'quota'>>;
+
+/**
+ * Configuration with all plans normalized (baseUrl, models, quota guaranteed).
+ */
+export type NormalizedConfig = Omit<Config, 'plans'> & { plans: NormalizedPlanConfig[] };
+
+/**
+ * Normalize plan configuration with defaults.
+ * When a plan has a `provider`, fills in baseUrl/models/quota/modelAliases from preset.
+ */
+export function normalizePlanConfig(plan: PlanConfig): NormalizedPlanConfig {
+  let normalized: PlanConfig = {
     ...plan,
     id: plan.id ?? uuidv4(),
     timeout: plan.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
     status: plan.status ?? 'active',
     enable: plan.enable ?? true,
   };
+
+  // Apply provider preset defaults
+  if (plan.provider) {
+    const preset = getBuiltinProvider(plan.provider);
+    if (preset) {
+      normalized = {
+        ...normalized,
+        baseUrl: normalized.baseUrl ?? preset.baseUrl,
+        models: normalized.models ?? [...preset.models],
+        modelAliases: normalized.modelAliases ?? preset.defaultModelAliases,
+      };
+    }
+  }
+
+  // Provider plans without explicit quota get an unlimited default
+  if (!normalized.quota) {
+    normalized = {
+      ...normalized,
+      quota: { limit: Number.MAX_SAFE_INTEGER, period: { type: 'total' } },
+    };
+  }
+
+  return normalized as NormalizedPlanConfig;
 }
 
 /**
@@ -150,7 +187,7 @@ function normalizePlanConfig(plan: PlanConfig): PlanConfig {
 export async function loadConfig(
   configPath: string,
   encryptionKey?: string
-): Promise<Config> {
+): Promise<NormalizedConfig> {
   const absolutePath = resolve(configPath);
 
   if (!(await fileExists(absolutePath))) {
@@ -228,7 +265,7 @@ export async function loadConfig(
 
   logger.info(`Loaded ${config.plans.length} plan(s) from configuration`);
 
-  return config;
+  return config as NormalizedConfig;
 }
 
 /**
@@ -268,7 +305,7 @@ export async function saveConfig(
 /**
  * Validate a plan configuration.
  */
-export function validatePlanConfig(data: unknown): PlanConfig {
+export function validatePlanConfig(data: unknown): NormalizedPlanConfig {
   const result = planConfigSchema.safeParse(data);
 
   if (!result.success) {
@@ -282,7 +319,7 @@ export function validatePlanConfig(data: unknown): PlanConfig {
 /**
  * Create an empty configuration.
  */
-export function createEmptyConfig(): Config {
+export function createEmptyConfig(): NormalizedConfig {
   return {
     version: CONFIG_VERSION,
     plans: [],

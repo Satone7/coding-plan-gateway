@@ -13,6 +13,7 @@ import { logger } from '@/utils/logger';
 import { DEFAULT_QUOTA_SYNC_CONFIG } from '@/config/defaults';
 import { ensureStructuredPeriod } from '@/utils/quota-period-migration';
 import type { PlanUsageTracker } from './plan-usage-tracker';
+import type { ProviderRegistry } from './provider-registry';
 
 /**
  * QuotaManager configuration.
@@ -77,15 +78,17 @@ export class QuotaManager {
   private syncInterval: NodeJS.Timeout | null = null;
   private initialized: boolean = false;
   private planUsageTracker: PlanUsageTracker | null = null;
+  private readonly providerRegistry: ProviderRegistry | null;
 
   /**
    * Create a new QuotaManager.
    *
    * @param config - Configuration options
    */
-  constructor(config: QuotaManagerConfig = {}) {
+  constructor(config: QuotaManagerConfig & { providerRegistry?: ProviderRegistry } = {}) {
     this.quotaStatePath = resolve(config.quotaStatePath ?? './quota-state.json');
     this.syncIntervalMs = config.syncIntervalMs ?? DEFAULT_QUOTA_SYNC_CONFIG.syncIntervalMs;
+    this.providerRegistry = config.providerRegistry ?? null;
   }
 
   /**
@@ -186,6 +189,40 @@ export class QuotaManager {
       return false;
     }
     return state.used < state.limit;
+  }
+
+  /**
+   * Async version of hasRemainingQuota that can query usage APIs.
+   * For plans with a usage-API-enabled provider, queries the adapter.
+   * Falls back to synchronous local state for other plans.
+   */
+  async hasRemainingQuotaAsync(
+    planId: number,
+    decryptedApiKey?: string,
+    provider?: string
+  ): Promise<boolean> {
+    if (provider && this.providerRegistry?.hasUsageApi(provider)) {
+      const adapter = this.providerRegistry.getUsageAdapter(provider);
+      if (adapter && decryptedApiKey) {
+        try {
+          const usage = await adapter.queryUsage(decryptedApiKey);
+          logger.debug('Usage API quota check', {
+            planId,
+            provider,
+            percentage: usage.percentage,
+          });
+          return usage.percentage < 100;
+        } catch (error) {
+          logger.warn('Usage API query failed, treating as quota available', {
+            planId,
+            provider,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return true;
+        }
+      }
+    }
+    return this.hasRemainingQuota(planId);
   }
 
   /**
@@ -525,6 +562,6 @@ export class QuotaManager {
  * @param config - Configuration options
  * @returns A new QuotaManager instance
  */
-export function createQuotaManager(config?: QuotaManagerConfig): QuotaManager {
+export function createQuotaManager(config?: QuotaManagerConfig & { providerRegistry?: ProviderRegistry }): QuotaManager {
   return new QuotaManager(config);
 }
