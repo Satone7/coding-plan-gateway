@@ -48,3 +48,14 @@ export const BUILTIN_PROVIDER_IDS: readonly string[] = BUILTIN_PROVIDERS.map((p)
 export function getBuiltinProvider(id: string): ProviderPreset | undefined {
   return BUILTIN_PROVIDERS.find((p) => p.id === id);
 }
+
+/**
+ * Look up a built-in provider by its baseUrl (exact match, trailing-slash tolerant).
+ *
+ * @param baseUrl - The base URL to match against
+ * @returns The provider preset, or undefined if not found
+ */
+export function getBuiltinProviderByBaseUrl(baseUrl: string): ProviderPreset | undefined {
+  const normalized = baseUrl.replace(/\/+$/, '');
+  return BUILTIN_PROVIDERS.find((p) => p.baseUrl.replace(/\/+$/, '') === normalized);
+}

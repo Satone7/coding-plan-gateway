@@ -6,13 +6,8 @@ import { PRESETS, THEME_NAMES } from './presets';
 const CUSTOM_THEME_FILE = 'dashboard-theme.json';
 
 function findThemeFile(): string | null {
-  const candidates = [
-    path.resolve(process.cwd(), CUSTOM_THEME_FILE),
-    path.resolve(__dirname, '../../../../', CUSTOM_THEME_FILE),
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
+  const p = path.resolve(process.cwd(), CUSTOM_THEME_FILE);
+  if (fs.existsSync(p)) return p;
   return null;
 }
 

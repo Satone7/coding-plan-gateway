@@ -21,6 +21,7 @@ import { createProviderRegistry } from './services/provider-registry';
 import { ZhipuUsageAdapter } from './services/usage-adapters/zhipu-adapter';
 import { CachedUsageAdapter } from './services/usage-adapters/cached-adapter';
 import { loadAuthConfig } from './config/auth-config';
+import { decryptApiKey, isApiKeyEncrypted } from './config/encryption';
 import { loadPlanUsageConfig } from './config/defaults';
 
 /**
@@ -40,7 +41,7 @@ async function main(): Promise<void> {
 
     // Load configuration
     const configPath = process.env.CONFIG_PATH ?? './config.yaml';
-    const config = await loadConfig(configPath, encryptionKey);
+    const config = await loadConfig(configPath, encryptionKey, { autoUpgrade: true });
 
     // Create and initialize provider registry with usage adapters
     const providerRegistry = createProviderRegistry(config.providers);
@@ -117,6 +118,66 @@ async function main(): Promise<void> {
       logger.error('Failed to start IPC server', err as Error);
     }
 
+    // Periodically fetch usage-API data for the dashboard
+    let usageRefreshTimer: NodeJS.Timeout | null = null;
+    const usageApiPlans = config.plans.filter(
+      (plan) => plan.provider && providerRegistry.hasUsageApi(plan.provider)
+    );
+    const nonUsageApiPlans = config.plans.filter(
+      (plan) => !plan.provider || !providerRegistry.hasUsageApi(plan.provider)
+    );
+
+    if (usageApiPlans.length > 0 || nonUsageApiPlans.length > 0) {
+      const refreshQuotaData = async (): Promise<void> => {
+        // Refresh usage-API plans
+        for (const plan of usageApiPlans) {
+          try {
+            const decryptedKey = isApiKeyEncrypted(plan.apiKey)
+              ? decryptApiKey(plan.apiKey, encryptionKey)
+              : plan.apiKey;
+            const adapter = providerRegistry.getUsageAdapter(plan.provider!);
+            if (!adapter) continue;
+            const result = await adapter.queryUsage(decryptedKey);
+            dashboardMetrics.setProviderUsage(plan.name, {
+              windows: (result.windows ?? []).map((w) => ({
+                type: w.type,
+                percentage: w.percentage,
+                windowLabel: w.windowLabel,
+                nextResetTime: w.nextResetTime,
+              })),
+              lastUpdated: new Date().toISOString(),
+            });
+          } catch (err) {
+            logger.debug('Failed to fetch usage-API data for dashboard', {
+              planName: plan.name,
+              error: (err as Error).message,
+            });
+          }
+        }
+
+        // Refresh local quota for non-usage-API plans
+        for (const plan of nonUsageApiPlans) {
+          const planId = typeof plan.id === 'number' ? plan.id : undefined;
+          if (!planId) continue;
+          const quotaState = quotaManager.getQuotaState(planId);
+          if (!quotaState) continue;
+          const percentage = quotaState.limit > 0
+            ? Math.round((quotaState.used / quotaState.limit) * 100)
+            : 0;
+          dashboardMetrics.setLocalQuota(plan.name, {
+            percentage,
+            resetAt: quotaState.resetAt?.toISOString() ?? null,
+            limit: quotaState.limit,
+            used: quotaState.used,
+          });
+        }
+      };
+
+      // Fetch immediately, then every 60s
+      void refreshQuotaData();
+      usageRefreshTimer = setInterval(refreshQuotaData, 60_000);
+    }
+
     // Create application with managers
     const app = await createApp({
       port: parseInt(process.env.PORT ?? '8080', 10),
@@ -145,6 +206,11 @@ async function main(): Promise<void> {
     app.addHook('onClose', async () => {
       logger.info('Shutting down IPC server...');
       await ipcServer.stop();
+    });
+
+    // Add shutdown hook for usage-API refresh timer
+    app.addHook('onClose', () => {
+      if (usageRefreshTimer) clearInterval(usageRefreshTimer);
     });
 
     // Start server

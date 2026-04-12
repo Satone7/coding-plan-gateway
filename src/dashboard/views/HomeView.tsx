@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { Divider } from '../components/Divider';
-import { formatCompactNumber, renderBar, getColor } from '../utils';
+import { formatCompactNumber, getColor, renderBar, renderBarWithLabel, formatResetTime, formatResetTimeFromIso } from '../utils';
 import { useTheme } from '../context';
 import type { DashboardState, ActiveRequest } from '../hooks/useDashboardState';
 
@@ -118,24 +118,49 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
         <Divider width={columns} title="📈 USAGE BY PLAN" color={theme.brand} />
         {topPlans.length > 0 ? (
           (() => {
-            const totalRequests = Math.max(1, Object.values(state.planUsages).reduce((sum, u) => sum + u.requests, 0));
-            const totalTokens = Math.max(1, Object.values(state.planUsages).reduce((sum, u) => sum + u.tokens, 0));
+            // Calculate dynamic column widths based on max values
+            const maxReqStr = Math.max(...Object.values(state.planUsages).map(u => formatCompactNumber(u.requests).length));
+            const reqWidth = maxReqStr + 4; // " req" suffix
+            const tokWidth = 8; // "xxx.xY tok" max
+            const rpmWidth = 6; // "xx RPM" max
 
             return topPlans.map(([name, usage]) => {
-              const quotaPercent = Math.min(100, Math.round((usage.requests / totalRequests) * 100));
-              const tokensPercent = Math.min(100, Math.round((usage.tokens / totalTokens) * 100));
               const rpm = usage.rpm || 0;
-              const rpmPercent = Math.min(100, Math.round((rpm / 20) * 100));
+              const providerData = state.providerUsage[name];
+              const localQuotaData = state.localQuota[name];
+
+              const reqStr = formatCompactNumber(usage.requests) + ' req';
+              const tokStr = formatCompactNumber(usage.tokens) + ' tok';
+              const rpmStr = rpm + ' RPM';
 
               return (
                 <Box key={name} flexDirection="row">
                   <Box width={10}><Text>{name}</Text></Box>
-                  <Box width={12}><Text color={getColor(quotaPercent, theme)}>{renderBar(quotaPercent, 8)}</Text></Box>
-                  <Box width={10}><Text>{formatCompactNumber(usage.requests)} req</Text></Box>
-                  <Box width={12}><Text color={getColor(tokensPercent, theme)}>{renderBar(tokensPercent, 8)}</Text></Box>
-                  <Box width={10}><Text>{formatCompactNumber(usage.tokens)} tok</Text></Box>
-                  <Box width={12}><Text color={getColor(rpmPercent, theme)}>{renderBar(rpmPercent, 8)}</Text></Box>
-                  <Box width={10}><Text color={theme.brand}>{rpm} RPM</Text></Box>
+                  <Box width={reqWidth}><Text>{reqStr}</Text></Box>
+                  <Text color={theme.muted}> | </Text>
+                  <Box width={tokWidth}><Text>{tokStr}</Text></Box>
+                  <Text color={theme.muted}> | </Text>
+                  <Box width={rpmWidth}><Text color={theme.brand}>{rpmStr}</Text></Box>
+                  <Text color={theme.muted}> | </Text>
+                  {/* Quota display */}
+                  {providerData && providerData.windows.length > 0 ? (
+                    // Usage-API plans: EXACT windows
+                    providerData.windows.map((win, i) => (
+                      <React.Fragment key={i}>
+                        {i > 0 && <Text color={theme.muted}> | </Text>}
+                        <Text color={getColor(win.percentage, theme)}>{renderBarWithLabel(win.percentage, 'EXACT')}</Text>
+                        <Text color={getColor(win.percentage, theme)}> {win.percentage.toFixed(0)}%{win.nextResetTime ? `/${formatResetTime(win.nextResetTime)}` : ''}</Text>
+                      </React.Fragment>
+                    ))
+                  ) : localQuotaData ? (
+                    // Local quota plans: GUESS
+                    <>
+                      <Text color={getColor(localQuotaData.percentage, theme)}>{renderBarWithLabel(localQuotaData.percentage, 'GUESS')}</Text>
+                      <Text color={getColor(localQuotaData.percentage, theme)}> {localQuotaData.percentage}%{localQuotaData.resetAt ? `/${formatResetTimeFromIso(localQuotaData.resetAt)}` : ''}</Text>
+                    </>
+                  ) : (
+                    <Text color={theme.muted}>no quota</Text>
+                  )}
                 </Box>
               );
             });

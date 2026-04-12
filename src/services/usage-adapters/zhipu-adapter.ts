@@ -3,7 +3,7 @@
  * Queries Zhipu's quota/limit API to get real-time usage percentages.
  */
 
-import type { UsageAdapter, UsageResult } from '@/types';
+import type { UsageAdapter, UsageResult, UsageWindow } from '@/types';
 import { logger } from '@/utils/logger';
 
 /**
@@ -13,7 +13,10 @@ interface ZhipuQuotaResponse {
   data: {
     limits: Array<{
       type: string;
+      unit: number;
+      number: number;
       percentage: number;
+      nextResetTime?: number;
     }>;
   };
 }
@@ -22,6 +25,26 @@ interface ZhipuQuotaResponse {
  * Base domain for Zhipu platform.
  */
 const ZHIPU_BASE_DOMAIN = 'https://open.bigmodel.cn';
+
+/**
+ * Map Zhipu unit codes to human-readable labels.
+ * Unit codes observed:
+ * - 3 = hours
+ * - 4 = days
+ * - 6 = weeks
+ */
+function mapUnitToLabel(unit: number, numberVal: number): string {
+  switch (unit) {
+    case 3:
+      return `${numberVal}h`;
+    case 4:
+      return `${numberVal}d`;
+    case 6:
+      return `${numberVal}w`;
+    default:
+      return `${numberVal}u${unit}`;
+  }
+}
 
 /**
  * Usage adapter for Zhipu (bigmodel.cn) provider.
@@ -56,10 +79,17 @@ export class ZhipuUsageAdapter implements UsageAdapter {
       const body = (await response.json()) as ZhipuQuotaResponse;
       const limits = body?.data?.limits ?? [];
 
-      // Extract TOKENS_LIMIT percentages
+      // Extract TOKENS_LIMIT entries and build windows array
       const tokenLimits = limits.filter(
         (limit) => limit.type === 'TOKENS_LIMIT'
       );
+
+      const windows: UsageWindow[] = tokenLimits.map((limit) => ({
+        type: limit.type,
+        percentage: limit.percentage,
+        windowLabel: mapUnitToLabel(limit.unit, limit.number),
+        nextResetTime: limit.nextResetTime,
+      }));
 
       // Use the highest percentage across all windows
       const maxPercentage =
@@ -70,12 +100,14 @@ export class ZhipuUsageAdapter implements UsageAdapter {
       logger.debug('Zhipu usage queried', {
         percentage: maxPercentage,
         windowCount: tokenLimits.length,
+        windows: windows.map((w) => `${w.windowLabel}:${w.percentage}%`),
       });
 
       return {
         used: 0,
         limit: 0,
         percentage: maxPercentage,
+        windows,
         raw: body,
       };
     } catch (error) {

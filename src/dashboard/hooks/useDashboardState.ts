@@ -60,6 +60,23 @@ export interface LogEntry {
   };
 }
 
+export interface ProviderUsageData {
+  windows: Array<{
+    type: string;
+    percentage: number;
+    windowLabel: string;
+    nextResetTime?: number;
+  }>;
+  lastUpdated: string;
+}
+
+export interface LocalQuotaData {
+  percentage: number;
+  resetAt: string | null;
+  limit: number;
+  used: number;
+}
+
 export interface DashboardState {
   activeRequests: Record<string, ActiveRequest>;
   completedRequests: number;
@@ -67,6 +84,8 @@ export interface DashboardState {
   planUsages: Record<string, DimensionUsage>;
   modelUsages: Record<string, DimensionUsage>;
   apiKeyUsages: Record<string, DimensionUsage>;
+  providerUsage: Record<string, ProviderUsageData>;
+  localQuota: Record<string, LocalQuotaData>;
   recentLogs: LogEntry[];
   recentErrors: LogEntry[];
 }
@@ -194,6 +213,8 @@ export function useDashboardState(): DashboardState {
     planUsages: {},
     modelUsages: {},
     apiKeyUsages: {},
+    providerUsage: {},
+    localQuota: {},
     recentLogs: [],
     recentErrors: [],
   });
@@ -289,6 +310,8 @@ export function useDashboardState(): DashboardState {
                 planUsages: { ...prev.planUsages, ...parsed.data.planUsages },
                 modelUsages: { ...prev.modelUsages, ...parsed.data.modelUsages },
                 apiKeyUsages: { ...prev.apiKeyUsages, ...parsed.data.apiKeyUsages },
+                providerUsage: { ...parsed.data.providerUsage },
+                localQuota: { ...parsed.data.localQuota },
                 recentErrors: parsed.data.recentErrors.slice(0, 5),
               }));
             } else {

@@ -4,12 +4,31 @@
  * can receive a historical snapshot on connect.
  */
 
+export interface ProviderUsageSnapshot {
+  windows: Array<{
+    type: string;
+    percentage: number;
+    windowLabel: string;
+    nextResetTime?: number;
+  }>;
+  lastUpdated: string;
+}
+
+export interface LocalQuotaSnapshot {
+  percentage: number;
+  resetAt: string | null;
+  limit: number;
+  used: number;
+}
+
 export interface MetricsSnapshot {
   completedRequests: number;
   failedRequests: number;
   planUsages: Record<string, { requests: number; tokens: number }>;
   modelUsages: Record<string, { requests: number; tokens: number }>;
   apiKeyUsages: Record<string, { requests: number; tokens: number }>;
+  providerUsage: Record<string, ProviderUsageSnapshot>;
+  localQuota: Record<string, LocalQuotaSnapshot>;
   recentErrors: Array<{
     timestamp: string;
     level: string;
@@ -37,6 +56,8 @@ export class DashboardMetrics {
   private planUsages: Record<string, { requests: number; tokens: number }> = {};
   private modelUsages: Record<string, { requests: number; tokens: number }> = {};
   private apiKeyUsages: Record<string, { requests: number; tokens: number }> = {};
+  private providerUsage: Record<string, ProviderUsageSnapshot> = {};
+  private localQuota: Record<string, LocalQuotaSnapshot> = {};
   private recentErrors: MetricsSnapshot['recentErrors'] = [];
   private pendingRequests: Record<string, PendingRequest> = {};
 
@@ -110,8 +131,24 @@ export class DashboardMetrics {
       planUsages: { ...this.planUsages },
       modelUsages: { ...this.modelUsages },
       apiKeyUsages: { ...this.apiKeyUsages },
+      providerUsage: { ...this.providerUsage },
+      localQuota: { ...this.localQuota },
       recentErrors: [...this.recentErrors],
     };
+  }
+
+  setProviderUsage(
+    planName: string,
+    data: ProviderUsageSnapshot
+  ): void {
+    this.providerUsage[planName] = data;
+  }
+
+  setLocalQuota(
+    planName: string,
+    data: LocalQuotaSnapshot
+  ): void {
+    this.localQuota[planName] = data;
   }
 }
 

@@ -23,7 +23,7 @@ export type {
 export type { ProviderPreset } from './provider';
 
 // Usage adapter types
-export type { UsageResult, UsageAdapter } from './usage-adapter';
+export type { UsageResult, UsageAdapter, UsageWindow } from './usage-adapter';
 
 // Quota types
 export type {

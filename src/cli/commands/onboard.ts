@@ -2,10 +2,11 @@ import * as p from '@clack/prompts';
 import color from 'picocolors';
 import { copyFile, access } from 'fs/promises';
 import { dirname, join, basename } from 'path';
-import { loadConfig, saveConfig, createEmptyConfig, type NormalizedConfig, type NormalizedPlanConfig } from '@/config';
+import { loadConfig, saveConfig, createEmptyConfig, normalizePlanConfig, type NormalizedConfig, type NormalizedPlanConfig } from '@/config';
 import { configSchema } from '@/config/schema';
+import { BUILTIN_PROVIDERS, getBuiltinProvider } from '@/config/builtin-providers';
 import type { CliContext } from '@/types/cli';
-import type { Config } from '@/config/schema';
+import type { Config, PlanConfig } from '@/config/schema';
 
 export async function handleOnboardCommand(context: CliContext): Promise<void> {
   p.intro(color.bgCyan(color.black(' CPG Onboard Wizard ')));
@@ -115,7 +116,7 @@ async function managePlans(config: NormalizedConfig) {
       }, 0);
       const newPlan = await promptPlanDetails(maxId + 1);
       if (newPlan) {
-        config.plans.push(newPlan);
+        config.plans.push(normalizePlanConfig(newPlan));
         p.log.success(`Plan ${newPlan.name} added.`);
       }
     } else if (typeof action === 'string' && action.startsWith('edit:')) {
@@ -148,7 +149,7 @@ async function managePlans(config: NormalizedConfig) {
         } else if (editAction === 'update') {
           const updatedPlan = await promptPlanDetails(planId, plan);
           if (updatedPlan) {
-            config.plans[planIndex] = updatedPlan;
+            config.plans[planIndex] = normalizePlanConfig(updatedPlan);
             p.log.success('Plan updated.');
           }
         }
@@ -157,61 +158,41 @@ async function managePlans(config: NormalizedConfig) {
   }
 }
 
-async function promptPlanDetails(id: number, existing?: NormalizedPlanConfig): Promise<NormalizedPlanConfig | null> {
-  const group = await p.group({
+async function promptPlanDetails(id: number, existing?: NormalizedPlanConfig): Promise<PlanConfig | null> {
+  // Phase 1: Provider preset selection
+  const providerOptions = [
+    { value: '', label: 'Custom (manual configuration)' },
+    ...BUILTIN_PROVIDERS.map((preset) => ({
+      value: preset.id,
+      label: `${preset.name}  ${color.dim(preset.baseUrl)}`,
+    })),
+  ];
+
+  const selectedProviderId = await p.select({
+    message: 'Select Provider Preset',
+    options: providerOptions,
+    initialValue: existing?.provider ?? '',
+  });
+
+  if (p.isCancel(selectedProviderId)) return null;
+
+  const selectedPreset = selectedProviderId ? getBuiltinProvider(selectedProviderId) : undefined;
+
+  if (selectedPreset) {
+    p.log.info(`Preset applied: ${selectedPreset.name} — skipping preset-provided fields.`);
+  }
+
+  // Phase 2: Build prompts dynamically — skip preset-provided fields
+  const groupDef: Record<string, () => Promise<unknown>> = {
     name: () => p.text({
       message: 'Plan Name',
-      initialValue: existing?.name || '',
+      initialValue: existing?.name || selectedPreset?.name || '',
       validate: value => (!value || value.length === 0) ? 'Name is required' : undefined
-    }),
-    baseUrl: () => p.text({
-      message: 'Base URL',
-      initialValue: existing?.baseUrl || '',
-      validate: value => (!value || value.length === 0) ? 'Base URL is required' : undefined
     }),
     apiKey: () => p.text({
       message: 'API Key',
       initialValue: existing?.apiKey || '',
       validate: value => (!value || value.length === 0) ? 'API Key is required' : undefined
-    }),
-    models: () => p.text({
-      message: 'Models (comma-separated)',
-      initialValue: existing?.models.join(',') || '',
-      validate: value => (!value || value.length === 0) ? 'At least one model is required' : undefined
-    }),
-    modelAliases: () => p.text({
-      message: 'Model Aliases (comma-separated alias:canonical, optional)',
-      initialValue: existing?.modelAliases ? Object.entries(existing.modelAliases).map(([k, v]) => `${k}:${v}`).join(',') : '',
-      validate: value => {
-        if (!value) return undefined;
-        const pairs = value.split(',');
-        for (const pair of pairs) {
-          const colonIndex = pair.indexOf(':');
-          if (colonIndex <= 0 || colonIndex === pair.length - 1) {
-            return 'Invalid format. Use alias:canonical (neither can be empty)';
-          }
-        }
-        return undefined;
-      }
-    }),
-    quotaLimit: () => p.text({
-      message: 'Quota Limit',
-      initialValue: existing?.quota.limit.toString() || '100000',
-      validate: value => (!value || isNaN(parseInt(value))) ? 'Must be a number' : undefined
-    }),
-    quotaPeriod: () => p.select({
-      message: 'Quota Period',
-      options: [
-        { value: 'daily', label: 'Daily' },
-        { value: 'monthly', label: 'Monthly' },
-        { value: 'total', label: 'Total' }
-      ],
-      initialValue: existing?.quota.period || 'monthly'
-    }),
-    expiresOn: () => p.text({
-      message: 'Expiration Day (1-31, optional, for monthly reset)',
-      initialValue: existing?.expiresOn?.toString() || existing?.quota?.expiresOn?.toString() || '',
-      validate: value => value && (isNaN(parseInt(value)) || parseInt(value) < 1 || parseInt(value) > 31) ? 'Must be between 1 and 31' : undefined
     }),
     expiresAt: () => p.text({
       message: 'Expiration Date (ISO format e.g., 2026-12-31T23:59:59Z, optional)',
@@ -234,9 +215,66 @@ async function promptPlanDetails(id: number, existing?: NormalizedPlanConfig): P
     }),
     enable: () => p.confirm({
       message: 'Enable this plan?',
-      initialValue: existing?.enable !== false // default to true if not explicitly set to false
-    })
-  }, {
+      initialValue: existing?.enable !== false
+    }),
+  };
+
+  // Only prompt for preset-duplicated fields when no preset selected
+  if (!selectedPreset) {
+    groupDef.baseUrl = () => p.text({
+      message: 'Base URL',
+      initialValue: existing?.baseUrl || '',
+      validate: value => (!value || value.length === 0) ? 'Base URL is required' : undefined
+    });
+    groupDef.models = () => p.text({
+      message: 'Models (comma-separated)',
+      initialValue: existing?.models.join(',') || '',
+      validate: value => (!value || value.length === 0) ? 'At least one model is required' : undefined
+    });
+    groupDef.modelAliases = () => p.text({
+      message: 'Model Aliases (comma-separated alias:canonical, optional)',
+      initialValue: existing?.modelAliases
+        ? Object.entries(existing.modelAliases).map(([k, v]) => `${k}:${v}`).join(',')
+        : '',
+      validate: value => {
+        if (!value) return undefined;
+        const pairs = value.split(',');
+        for (const pair of pairs) {
+          const colonIndex = pair.indexOf(':');
+          if (colonIndex <= 0 || colonIndex === pair.length - 1) {
+            return 'Invalid format. Use alias:canonical (neither can be empty)';
+          }
+        }
+        return undefined;
+      }
+    });
+  }
+
+  // Quota fields: skip entirely for usage-API providers; always prompt for custom/non-usage presets
+  const needsQuota = !selectedPreset || !selectedPreset.hasUsageApi;
+  if (needsQuota) {
+    groupDef.expiresOn = () => p.text({
+      message: 'Expiration Day (1-31, optional, for monthly reset)',
+      initialValue: existing?.expiresOn?.toString() || existing?.quota?.expiresOn?.toString() || '',
+      validate: value => value && (isNaN(parseInt(value)) || parseInt(value) < 1 || parseInt(value) > 31) ? 'Must be between 1 and 31' : undefined
+    });
+    groupDef.quotaLimit = () => p.text({
+      message: 'Quota Limit',
+      initialValue: existing?.quota.limit.toString() || '100000',
+      validate: value => (!value || isNaN(parseInt(value))) ? 'Must be a number' : undefined
+    });
+    groupDef.quotaPeriod = () => p.select({
+      message: 'Quota Period',
+      options: [
+        { value: 'daily', label: 'Daily' },
+        { value: 'monthly', label: 'Monthly' },
+        { value: 'total', label: 'Total' },
+      ],
+      initialValue: existing?.quota.period || 'monthly',
+    });
+  }
+
+  const group = await p.group(groupDef, {
     onCancel: () => {
       p.cancel('Operation cancelled.');
       return false;
@@ -246,23 +284,33 @@ async function promptPlanDetails(id: number, existing?: NormalizedPlanConfig): P
   if (!group || Object.keys(group).length === 0) return null;
 
   const legacyPeriod = group.quotaPeriod as string;
-  const plan: NormalizedPlanConfig = {
+  const plan: PlanConfig = {
     id,
     name: group.name as string,
-    baseUrl: group.baseUrl as string,
+    provider: selectedProviderId || undefined,
     apiKey: group.apiKey as string,
-    models: (group.models as string).split(',').map(m => m.trim()).filter(Boolean),
-    quota: {
+    status: existing?.status || 'active',
+    enable: group.enable as boolean,
+  };
+
+  // Only include preset-duplicated fields if they were prompted (no preset selected)
+  if (!selectedPreset) {
+    plan.baseUrl = group.baseUrl as string;
+    plan.models = (group.models as string).split(',').map(m => m.trim()).filter(Boolean);
+    plan.modelAliases = parseModelAliases(group.modelAliases as string);
+  }
+
+  // Quota: include only if prompted (non-usage-API preset or custom)
+  if (needsQuota && group.quotaLimit) {
+    plan.quota = {
       limit: parseInt(group.quotaLimit as string),
       period: legacyPeriod === 'monthly'
         ? { type: 'monthly', expiresOn: group.expiresOn ? parseInt(group.expiresOn as string, 10) : undefined }
         : legacyPeriod === 'daily'
           ? { type: '5h', windowHours: 5, sliding: true as const }
           : { type: 'total' },
-    },
-    status: existing?.status || 'active',
-    enable: group.enable as boolean
-  };
+    };
+  }
 
   if (group.expiresOn) {
     plan.expiresOn = parseInt(group.expiresOn as string, 10);
@@ -277,25 +325,28 @@ async function promptPlanDetails(id: number, existing?: NormalizedPlanConfig): P
     plan.timeout = parseInt(group.timeout as string, 10);
   }
   if (group.modelAliases) {
-    const aliasesValue = group.modelAliases as string;
-    const aliasesRecord: Record<string, string> = {};
-    const pairs = aliasesValue.split(',');
-    for (const pair of pairs) {
-      const colonIndex = pair.indexOf(':');
-      if (colonIndex > 0) {
-        const alias = pair.substring(0, colonIndex).trim();
-        const canonical = pair.substring(colonIndex + 1).trim();
-        if (alias && canonical) {
-          aliasesRecord[alias] = canonical;
-        }
-      }
-    }
-    if (Object.keys(aliasesRecord).length > 0) {
-      plan.modelAliases = aliasesRecord;
-    }
+    plan.modelAliases = parseModelAliases(group.modelAliases as string);
   }
 
   return plan;
+}
+
+/** Parse "alias:canonical" comma-separated string into a Record. */
+function parseModelAliases(value: string): Record<string, string> | undefined {
+  if (!value) return undefined;
+  const aliasesRecord: Record<string, string> = {};
+  const pairs = value.split(',');
+  for (const pair of pairs) {
+    const colonIndex = pair.indexOf(':');
+    if (colonIndex > 0) {
+      const alias = pair.substring(0, colonIndex).trim();
+      const canonical = pair.substring(colonIndex + 1).trim();
+      if (alias && canonical) {
+        aliasesRecord[alias] = canonical;
+      }
+    }
+  }
+  return Object.keys(aliasesRecord).length > 0 ? aliasesRecord : undefined;
 }
 
 async function manageLoadBalancing(config: Config) {

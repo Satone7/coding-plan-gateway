@@ -3,15 +3,15 @@
  * Loads and validates configuration from YAML/JSON files.
  */
 
-import { readFile, access } from 'fs/promises';
+import { readFile, access, copyFile } from 'fs/promises';
 import { constants } from 'fs';
-import { resolve, extname } from 'path';
+import { resolve, extname, dirname, basename } from 'path';
 import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { configSchema, planConfigSchema, type PlanConfig, type Config } from './schema';
 import { encryptApiKey } from './encryption';
-import { DEFAULT_REQUEST_TIMEOUT_SEC, CONFIG_VERSION } from './defaults';
-import { getBuiltinProvider } from './builtin-providers';
+import { DEFAULT_REQUEST_TIMEOUT_SEC, CONFIG_VERSION, LATEST_CONFIG_VERSION } from './defaults';
+import { getBuiltinProvider, getBuiltinProviderByBaseUrl } from './builtin-providers';
 import { migrateConfigFile } from './migrations';
 import { logger } from '@/utils/logger';
 
@@ -78,6 +78,30 @@ async function fileExists(filePath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Backup a config file before upgrading.
+ * Creates a timestamped .bak file, preferring /app/data in production.
+ */
+async function backupConfigFile(configPath: string): Promise<string> {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const fileName = basename(configPath);
+  let backupDir = dirname(configPath);
+
+  // Prefer /app/data for backups in production Docker container
+  if (process.env.NODE_ENV === 'production') {
+    try {
+      await access('/app/data');
+      backupDir = '/app/data';
+    } catch {
+      // Ignore if /app/data doesn't exist, use dirname(configPath)
+    }
+  }
+
+  const backupPath = `${backupDir}/${fileName}.${timestamp}.bak`;
+  await copyFile(configPath, backupPath);
+  return backupPath;
 }
 
 /**
@@ -166,6 +190,14 @@ export function normalizePlanConfig(plan: PlanConfig): NormalizedPlanConfig {
     }
   }
 
+  // Auto-detect provider from baseUrl if not explicitly set
+  if (!normalized.provider && normalized.baseUrl) {
+    const matched = getBuiltinProviderByBaseUrl(normalized.baseUrl);
+    if (matched) {
+      normalized.provider = matched.id;
+    }
+  }
+
   // Provider plans without explicit quota get an unlimited default
   if (!normalized.quota) {
     normalized = {
@@ -177,16 +209,137 @@ export function normalizePlanConfig(plan: PlanConfig): NormalizedPlanConfig {
   return normalized as NormalizedPlanConfig;
 }
 
+/** Compare two string arrays ignoring element order. */
+function arraysEqualUnordered(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.every((v, i) => v === sb[i]);
+}
+
+/** Shallow-equal two plain string→string objects. */
+function objectsEqual(
+  a: Record<string, string> | undefined,
+  b: Record<string, string> | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const ka = Object.keys(a).sort();
+  const kb = Object.keys(b).sort();
+  if (ka.length !== kb.length) return false;
+  return ka.every((k, i) => k === kb[i] && a[k] === b[k]);
+}
+
+/**
+ * Check whether the in-memory config has enrichment changes that should be persisted.
+ * Compares raw Zod-parsed plans against normalized plans.
+ */
+function checkNeedsUpgrade(config: NormalizedConfig, rawPlans: PlanConfig[]): boolean {
+  // Version format needs normalizing (e.g. "1.0" string → 1 number)
+  if (config.version !== LATEST_CONFIG_VERSION) return true;
+
+  return config.plans.some((plan, i) => {
+    const raw = rawPlans[i];
+    if (!raw) return false;
+
+    // Provider was auto-detected (not in raw config)
+    if (plan.provider && !raw.provider) return true;
+
+    // Provider present but config has redundant preset-duplicated fields
+    if (plan.provider) {
+      const preset = getBuiltinProvider(plan.provider);
+      if (!preset) return false;
+
+      if (raw.baseUrl === preset.baseUrl) return true;
+      if (raw.models && arraysEqualUnordered(raw.models, preset.models)) return true;
+      if (preset.hasUsageApi && raw.quota) return true;
+      if (raw.modelAliases && preset.defaultModelAliases &&
+          objectsEqual(raw.modelAliases, preset.defaultModelAliases)) return true;
+    }
+
+    return false;
+  });
+}
+
+/**
+ * Produce a clean config suitable for persisting to disk.
+ * For plans with a matching preset, removes redundant fields (baseUrl, models, quota for
+ * usage-API providers, modelAliases if matching defaults) and normalizes the version.
+ */
+function cleanConfigForPersist(config: NormalizedConfig, rawPlans: PlanConfig[]): Config {
+  const cleanedPlans: PlanConfig[] = config.plans.map((plan, i) => {
+    const raw = rawPlans[i];
+    const preset = plan.provider ? getBuiltinProvider(plan.provider) : undefined;
+    if (!preset || !raw?.provider) {
+      // No preset match or provider just auto-detected — strip preset fields if they match
+      if (plan.provider && preset) {
+        return cleanPlanFields(plan, preset);
+      }
+      return plan as PlanConfig;
+    }
+    return cleanPlanFields(plan, preset);
+  });
+  return {
+    ...config,
+    version: LATEST_CONFIG_VERSION,
+    plans: cleanedPlans,
+  };
+}
+
+/** Strip preset-duplicated fields from a single plan. */
+function cleanPlanFields(plan: NormalizedPlanConfig, preset: { baseUrl: string; models: string[]; hasUsageApi: boolean; defaultModelAliases?: Record<string, string> }): PlanConfig {
+  const result: PlanConfig = {
+    id: plan.id,
+    name: plan.name,
+    provider: plan.provider,
+    apiKey: plan.apiKey,
+    enable: plan.enable,
+    status: plan.status,
+  };
+
+  if (plan.timeout !== undefined && plan.timeout !== DEFAULT_REQUEST_TIMEOUT_SEC) result.timeout = plan.timeout;
+  if (plan.expiresOn !== undefined) result.expiresOn = plan.expiresOn;
+  if (plan.expiresAt !== undefined) result.expiresAt = plan.expiresAt;
+  if (plan.weight !== undefined) result.weight = plan.weight;
+
+  // Only include baseUrl/models if they differ from preset
+  if (plan.baseUrl !== preset.baseUrl) {
+    result.baseUrl = plan.baseUrl;
+  }
+  if (!arraysEqualUnordered(plan.models, preset.models)) {
+    result.models = plan.models;
+  }
+
+  // Include quota unless provider has usage API (usage API manages quota externally)
+  if (!preset.hasUsageApi && plan.quota) {
+    result.quota = plan.quota;
+  }
+
+  // Only include modelAliases if they differ from preset defaults
+  if (plan.modelAliases && preset.defaultModelAliases) {
+    if (!objectsEqual(plan.modelAliases, preset.defaultModelAliases)) {
+      result.modelAliases = plan.modelAliases;
+    }
+  } else if (plan.modelAliases && !preset.defaultModelAliases) {
+    result.modelAliases = plan.modelAliases;
+  }
+
+  return result;
+}
+
 /**
  * Load configuration from a file.
  *
  * @param configPath - Path to the configuration file
  * @param encryptionKey - Optional encryption key for API keys
+ * @param options - Optional settings
+ * @param options.autoUpgrade - If true, persist normalization enrichments back to disk
  * @returns The validated configuration
  */
 export async function loadConfig(
   configPath: string,
-  encryptionKey?: string
+  encryptionKey?: string,
+  options?: { autoUpgrade?: boolean }
 ): Promise<NormalizedConfig> {
   const absolutePath = resolve(configPath);
 
@@ -244,14 +397,29 @@ export async function loadConfig(
     throw new Error(`Invalid configuration:\n${errors.join('\n')}`);
   }
 
-  let config = result.data;
+  const rawPlans = result.data.plans;
 
   // Normalize plan configurations
-  config = {
-    ...config,
-    version: config.version ?? CONFIG_VERSION,
-    plans: config.plans.map(normalizePlanConfig),
-  };
+  const config = {
+    ...result.data,
+    version: result.data.version ?? CONFIG_VERSION,
+    plans: result.data.plans.map(normalizePlanConfig),
+  } as NormalizedConfig;
+
+  // Auto-upgrade: persist normalization enrichments back to disk
+  if (options?.autoUpgrade) {
+    if (checkNeedsUpgrade(config, rawPlans)) {
+      try {
+        const backupPath = await backupConfigFile(absolutePath);
+        logger.info('Config backed up before upgrade', { backupPath });
+        const cleanedConfig = cleanConfigForPersist(config, rawPlans);
+        await saveConfig(absolutePath, cleanedConfig, 'yaml');
+        logger.info('Config upgraded and persisted');
+      } catch (err) {
+        logger.warn('Failed to persist config upgrade, continuing with in-memory config', { error: (err as Error).message });
+      }
+    }
+  }
 
   // Encrypt API keys if encryption key provided
   if (encryptionKey) {
