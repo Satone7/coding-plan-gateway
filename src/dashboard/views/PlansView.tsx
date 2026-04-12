@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { Divider } from '../components/Divider';
-import { formatCompactNumber, renderBar, getColor, formatResetTime, formatResetTimeFromIso, calcBarWithLabelLayout } from '../utils';
+import { formatCompactNumber, renderBar, getColor, formatResetTime, formatResetTimeFromIso, calcBarLayout } from '../utils';
 import { useTheme } from '../context';
 import type { DashboardState } from '../hooks/useDashboardState';
 import type { ThemeColors } from '../theme/types';
@@ -47,15 +47,13 @@ export function PlansView({ state, columns }: PlansViewProps) {
 
               // Helper for quota bar with centered label
               const renderQuotaBar = (percent: number, label: 'EXACT' | 'GUESS') => {
-                const layout = calcBarWithLabelLayout(percent);
+                const layout = calcBarLayout(percent, label);
                 const progressColor = getColor(percent, theme);
                 return (
                   <>
-                    <Text color={progressColor}>{'▓'.repeat(layout.filledBefore)}</Text>
-                    <Text color={theme.muted}>{'░'.repeat(layout.emptyBefore)}</Text>
-                    <Text color={theme.muted}>{label}</Text>
-                    <Text color={progressColor}>{'▓'.repeat(layout.filledAfter)}</Text>
-                    <Text color={theme.muted}>{'░'.repeat(layout.emptyAfter)}</Text>
+                    {layout.map((item, i) => (
+                      <Text key={i} color={item.filled ? progressColor : theme.muted}>{item.char}</Text>
+                    ))}
                   </>
                 );
               };

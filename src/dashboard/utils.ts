@@ -29,31 +29,52 @@ export function renderBar(percent: number, length: number = 10): string {
 
 /**
  * Calculate bar layout with centered label.
- * Format: [filled/empty 2 chars]GUESS[filled/empty 2 chars]
- * Total width = 9 chars (2 + 5 + 2), label always centered.
+ * Progress flows left-to-right across all 7 positions: [2 bar chars][GUESS][2 bar chars]
+ * Each position is covered or not based on percentage.
  *
  * @param percent - Percentage (0-100)
- * @returns Object with filled before/after, empty before/after counts
+ * @param label - Label length (5 for EXACT/GUESS)
+ * @returns Array of 7 items: each is { filled: boolean, char: string }
+ *   - positions 0,1: ▓ or ░
+ *   - positions 2-6: label characters
+ *   - positions 7,8: ▓ or ░
  */
-export function calcBarWithLabelLayout(percent: number): {
-  filledBefore: number;
-  emptyBefore: number;
-  filledAfter: number;
-  emptyAfter: number;
-} {
-  const barLength = 4; // 2 before + 2 after
-  const totalFilled = Math.round((percent / 100) * barLength);
-  const clampedFilled = Math.max(0, Math.min(totalFilled, barLength));
+export function calcBarLayout(
+  percent: number,
+  label: string
+): Array<{ filled: boolean; char: string }> {
+  const totalPositions = 2 + label.length + 2; // 9 for EXACT/GUESS
+  const filledCount = Math.round((percent / 100) * totalPositions);
 
-  // Distribute filled blocks: half before label, half after
-  const filledBefore = Math.floor(clampedFilled / 2);
-  const filledAfter = clampedFilled - filledBefore;
+  const result: Array<{ filled: boolean; char: string }> = [];
 
-  // Each side has 2 chars total
-  const emptyBefore = 2 - filledBefore;
-  const emptyAfter = 2 - filledAfter;
+  // Left 2 bar positions
+  for (let i = 0; i < 2; i++) {
+    result.push({
+      filled: i < filledCount,
+      char: i < filledCount ? '▓' : '░',
+    });
+  }
 
-  return { filledBefore, emptyBefore, filledAfter, emptyAfter };
+  // Label positions
+  for (let i = 0; i < label.length; i++) {
+    const positionIndex = 2 + i;
+    result.push({
+      filled: positionIndex < filledCount,
+      char: label.charAt(i),
+    });
+  }
+
+  // Right 2 bar positions
+  for (let i = 0; i < 2; i++) {
+    const positionIndex = 2 + label.length + i;
+    result.push({
+      filled: positionIndex < filledCount,
+      char: positionIndex < filledCount ? '▓' : '░',
+    });
+  }
+
+  return result;
 }
 
 /**

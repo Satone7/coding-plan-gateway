@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { Divider } from '../components/Divider';
-import { formatCompactNumber, getColor, renderBar, calcBarWithLabelLayout, formatResetTime, formatResetTimeFromIso } from '../utils';
+import { formatCompactNumber, getColor, renderBar, calcBarLayout, formatResetTime, formatResetTimeFromIso } from '../utils';
 import { useTheme } from '../context';
 import type { DashboardState, ActiveRequest } from '../hooks/useDashboardState';
 
@@ -136,15 +136,13 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
 
               // Helper to render bar with centered label and proper coloring
               const renderQuotaBar = (percent: number, label: 'EXACT' | 'GUESS') => {
-                const layout = calcBarWithLabelLayout(percent);
+                const layout = calcBarLayout(percent, label);
                 const progressColor = getColor(percent, theme);
                 return (
                   <>
-                    <Text color={progressColor}>{'▓'.repeat(layout.filledBefore)}</Text>
-                    <Text color={theme.muted}>{'░'.repeat(layout.emptyBefore)}</Text>
-                    <Text color={theme.muted}>{label}</Text>
-                    <Text color={progressColor}>{'▓'.repeat(layout.filledAfter)}</Text>
-                    <Text color={theme.muted}>{'░'.repeat(layout.emptyAfter)}</Text>
+                    {layout.map((item, i) => (
+                      <Text key={i} color={item.filled ? progressColor : theme.muted}>{item.char}</Text>
+                    ))}
                   </>
                 );
               };
