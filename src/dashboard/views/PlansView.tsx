@@ -51,10 +51,11 @@ export function PlansView({ state, columns }: PlansViewProps) {
                 const progressColor = getColor(percent, theme);
                 return (
                   <>
-                    <Text color={progressColor}>{'▓'.repeat(layout.before)}</Text>
+                    <Text color={progressColor}>{'▓'.repeat(layout.filledBefore)}</Text>
+                    <Text color={theme.muted}>{'░'.repeat(layout.emptyBefore)}</Text>
                     <Text color={theme.muted}>{label}</Text>
-                    <Text color={progressColor}>{'▓'.repeat(layout.after)}</Text>
-                    <Text color={theme.muted}>{'░'.repeat(layout.empty)}</Text>
+                    <Text color={progressColor}>{'▓'.repeat(layout.filledAfter)}</Text>
+                    <Text color={theme.muted}>{'░'.repeat(layout.emptyAfter)}</Text>
                   </>
                 );
               };

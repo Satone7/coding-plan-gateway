@@ -28,24 +28,32 @@ export function renderBar(percent: number, length: number = 10): string {
 }
 
 /**
- * Calculate how many filled blocks go before the label to center it.
- * The bar format is: [filled-before][LABEL][filled-after][empty]
- * Total bar chars = 4, label = 5 chars (EXACT/GUESS), total visual width = 9 chars.
+ * Calculate bar layout with centered label.
+ * Format: [filled/empty 2 chars]GUESS[filled/empty 2 chars]
+ * Total width = 9 chars (2 + 5 + 2), label always centered.
  *
  * @param percent - Percentage (0-100)
- * @returns Object with before, label, after counts
+ * @returns Object with filled before/after, empty before/after counts
  */
-export function calcBarWithLabelLayout(percent: number): { before: number; after: number; empty: number } {
-  const barLength = 4;
+export function calcBarWithLabelLayout(percent: number): {
+  filledBefore: number;
+  emptyBefore: number;
+  filledAfter: number;
+  emptyAfter: number;
+} {
+  const barLength = 4; // 2 before + 2 after
   const totalFilled = Math.round((percent / 100) * barLength);
   const clampedFilled = Math.max(0, Math.min(totalFilled, barLength));
 
-  // Center the label: half of filled goes before, rest goes after
-  const before = Math.floor(clampedFilled / 2);
-  const after = clampedFilled - before;
-  const empty = barLength - clampedFilled;
+  // Distribute filled blocks: half before label, half after
+  const filledBefore = Math.floor(clampedFilled / 2);
+  const filledAfter = clampedFilled - filledBefore;
 
-  return { before, after, empty };
+  // Each side has 2 chars total
+  const emptyBefore = 2 - filledBefore;
+  const emptyAfter = 2 - filledAfter;
+
+  return { filledBefore, emptyBefore, filledAfter, emptyAfter };
 }
 
 /**
