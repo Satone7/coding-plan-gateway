@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { Divider } from '../components/Divider';
-import { formatCompactNumber, getColor, renderBar, renderBarWithLabel, formatResetTime, formatResetTimeFromIso } from '../utils';
+import { formatCompactNumber, getColor, renderBar, calcBarWithLabelLayout, formatResetTime, formatResetTimeFromIso } from '../utils';
 import { useTheme } from '../context';
 import type { DashboardState, ActiveRequest } from '../hooks/useDashboardState';
 
@@ -121,7 +121,8 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
             // Calculate dynamic column widths based on max values
             const maxReqStr = Math.max(...Object.values(state.planUsages).map(u => formatCompactNumber(u.requests).length));
             const reqWidth = maxReqStr + 4; // " req" suffix
-            const tokWidth = 8; // "xxx.xY tok" max
+            const maxTokStr = Math.max(...Object.values(state.planUsages).map(u => formatCompactNumber(u.tokens).length));
+            const tokWidth = maxTokStr + 4; // " tok" suffix
             const rpmWidth = 6; // "xx RPM" max
 
             return topPlans.map(([name, usage]) => {
@@ -132,6 +133,20 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
               const reqStr = formatCompactNumber(usage.requests) + ' req';
               const tokStr = formatCompactNumber(usage.tokens) + ' tok';
               const rpmStr = rpm + ' RPM';
+
+              // Helper to render bar with centered label and proper coloring
+              const renderQuotaBar = (percent: number, label: 'EXACT' | 'GUESS') => {
+                const layout = calcBarWithLabelLayout(percent);
+                const progressColor = getColor(percent, theme);
+                return (
+                  <>
+                    <Text color={progressColor}>{'▓'.repeat(layout.before)}</Text>
+                    <Text color={theme.muted}>{label}</Text>
+                    <Text color={progressColor}>{'▓'.repeat(layout.after)}</Text>
+                    <Text color={theme.muted}>{'░'.repeat(layout.empty)}</Text>
+                  </>
+                );
+              };
 
               return (
                 <Box key={name} flexDirection="row">
@@ -148,14 +163,14 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
                     providerData.windows.map((win, i) => (
                       <React.Fragment key={i}>
                         {i > 0 && <Text color={theme.muted}> | </Text>}
-                        <Text color={getColor(win.percentage, theme)}>{renderBarWithLabel(win.percentage, 'EXACT')}</Text>
+                        {renderQuotaBar(win.percentage, 'EXACT')}
                         <Text color={getColor(win.percentage, theme)}> {win.percentage.toFixed(0)}%{win.nextResetTime ? `/${formatResetTime(win.nextResetTime)}` : ''}</Text>
                       </React.Fragment>
                     ))
                   ) : localQuotaData ? (
                     // Local quota plans: GUESS
                     <>
-                      <Text color={getColor(localQuotaData.percentage, theme)}>{renderBarWithLabel(localQuotaData.percentage, 'GUESS')}</Text>
+                      {renderQuotaBar(localQuotaData.percentage, 'GUESS')}
                       <Text color={getColor(localQuotaData.percentage, theme)}> {localQuotaData.percentage}%{localQuotaData.resetAt ? `/${formatResetTimeFromIso(localQuotaData.resetAt)}` : ''}</Text>
                     </>
                   ) : (

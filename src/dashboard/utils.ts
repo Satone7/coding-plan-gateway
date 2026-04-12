@@ -28,20 +28,24 @@ export function renderBar(percent: number, length: number = 10): string {
 }
 
 /**
- * Render a bar with embedded label (like ▓▓EXACT░░).
- * The bar portion (excluding label) is 4 chars.
+ * Calculate how many filled blocks go before the label to center it.
+ * The bar format is: [filled-before][LABEL][filled-after][empty]
+ * Total bar chars = 4, label = 5 chars (EXACT/GUESS), total visual width = 9 chars.
  *
  * @param percent - Percentage (0-100)
- * @param label - Label text (EXACT or GUESS)
- * @returns String like "▓▓EXACT░░"
+ * @returns Object with before, label, after counts
  */
-export function renderBarWithLabel(percent: number, label: 'EXACT' | 'GUESS'): string {
+export function calcBarWithLabelLayout(percent: number): { before: number; after: number; empty: number } {
   const barLength = 4;
-  const filled = Math.round((percent / 100) * barLength);
-  const clampedFilled = Math.max(0, Math.min(filled, barLength));
+  const totalFilled = Math.round((percent / 100) * barLength);
+  const clampedFilled = Math.max(0, Math.min(totalFilled, barLength));
+
+  // Center the label: half of filled goes before, rest goes after
+  const before = Math.floor(clampedFilled / 2);
+  const after = clampedFilled - before;
   const empty = barLength - clampedFilled;
 
-  return '▓'.repeat(clampedFilled) + label + '░'.repeat(empty);
+  return { before, after, empty };
 }
 
 /**
