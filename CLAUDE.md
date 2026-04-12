@@ -17,10 +17,45 @@
 ## Key Architecture Decisions
 
 - Monolithic single-process architecture
-- File-based configuration storage (YAML)
+- File-based configuration storage (YAML) with versioned auto-migration on startup
 - In-memory quota tracking with periodic persistence
 - Dual API format support (OpenAI + Anthropic)
 - Quota-based load balancing
+- Provider preset system: built-in defaults (Zhipu, Volcengine, Ali) with config overrides and usage API adapters
+
+## Config Version Management
+
+Config files are **automatically migrated** on startup. When a config file with an older version is loaded, the system creates a backup (`config.yaml.v{N}.bak`) and applies all pending migrations sequentially before proceeding.
+
+**Key constants:**
+
+| Constant | File | Current Value |
+|----------|------|---------------|
+| `LATEST_CONFIG_VERSION` | `src/config/defaults.ts` | `1` |
+
+**Migration chain:** `src/config/migrations/registry.ts` — ordered array of `ConfigMigration` objects.
+
+**How it works:**
+
+1. `loadConfig()` calls `migrateConfigFile()` (`src/config/migrations/index.ts`)
+2. `detectConfigVersion()` reads the `version` field (missing → `0`, `"1.0"` → `1`)
+3. If version < `LATEST_CONFIG_VERSION`, backs up the file and runs all applicable migrations
+4. Each migration transforms raw JS objects and sets the target `version` field
+
+**When adding a breaking config change:**
+
+1. Increment `LATEST_CONFIG_VERSION` in `src/config/defaults.ts`
+2. Create migration file: `src/config/migrations/v{N}-to-v{N+1}.ts`
+3. Implement `ConfigMigration` interface (must be idempotent, no side effects)
+4. Register in `src/config/migrations/registry.ts` (append to array)
+5. Update `configSchema` in `src/config/schema.ts` for the new format
+6. Update `config.yaml.example`
+
+**Current migrations:**
+
+| Migration | File | Description |
+|-----------|------|-------------|
+| v0 → v1 | `src/config/migrations/v0-to-v1.ts` | String quota periods → structured objects, UUID IDs → integer IDs |
 
 ## Quick Reference
 
@@ -97,8 +132,31 @@ git merge <branch-name> --no-ff -m "merge: branch <branch-name> into master"
 2. Write tests first (TDD encouraged)
 3. Implement with standards compliance
 4. Run lint, type-check, tests
-5. Create PR with conventional commit style
-6. Merge after review approval
+5. Update CLAUDE.md if the branch introduces new architecture, config changes, or technology additions
+6. Create PR with conventional commit style
+7. Merge after review approval
+
+## PR Review Requirements
+
+### CLAUDE.md Update Check
+
+Every feature branch **must** update `CLAUDE.md` before merge. Reviewers must verify the following sections are current:
+
+| Section | When to update |
+|---------|---------------|
+| Key Architecture Decisions | New architectural patterns or subsystems added |
+| Config Version Management | `LATEST_CONFIG_VERSION` changes or new migrations added |
+| Active Technologies | New runtime dependencies or storage mechanisms introduced |
+| Recent Changes | Any merged feature |
+
+### Config Change Review
+
+PRs that modify `config.yaml.example`, `src/config/schema.ts`, or the plan config structure **must** be reviewed against the config migration system:
+
+1. **Version bump required** — If the change breaks backward compatibility (new required fields, renamed fields, removed fields), `LATEST_CONFIG_VERSION` in `src/config/defaults.ts` must be incremented
+2. **Migration required** — A new `src/config/migrations/v{N}-to-v{N+1}.ts` file must be created to upgrade existing configs, implementing the `ConfigMigration` interface
+3. **Registry update required** — The new migration must be appended to the `migrations` array in `src/config/migrations/registry.ts`
+4. **Additive-only changes** — If the change only adds optional fields (e.g., a new `provider` field with sensible defaults), no version bump or migration is needed — the existing schema and `normalizePlanConfig()` handle graceful backward compatibility
 
 ## Security Requirements
 
@@ -119,33 +177,17 @@ git merge <branch-name> --no-ff -m "merge: branch <branch-name> into master"
 - Critical paths require 100% coverage
 
 ## Active Technologies
-- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Vitest, Zod (validation), MSW (mocking) (001-coding-plan-gateway)
-- YAML/JSON files (current), PostgreSQL with Drizzle ORM (future migration path prepared) (001-coding-plan-gateway)
-- TypeScript 5.x, Node.js 20+ LTS + Fastify 4.x, Vitest, Zod, ESLint (002-fix-task-completion-issues)
-- YAML/JSON file-based configuration (002-fix-task-completion-issues)
-- TypeScript 5.x / Node.js 20+ LTS (infrastructure scripts), Dockerfile (container definitions) + Docker, Docker Compose v2, @anthropic-ai/claude-code (npm package) (003-e2e-docker-testing)
-- File-based (YAML config mounts, log volumes) (003-e2e-docker-testing)
-- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Zod (validation), Vitest (testing) (004-fix-e2e-exec)
-- YAML/JSON files (configuration), in-memory (quota tracking) (004-fix-e2e-exec)
-- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Zod (validation), bcrypt (key hashing), uuid (key ID generation) (005-api-key-management)
-- JSON files (api-keys.json for key metadata, usage-data.json for usage records) (005-api-key-management)
-- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Commander.js (CLI framework), Zod (validation), bcrypt (key hashing) (006-cpg-cli)
-- JSON files (api-keys.json, usage-data.json) (006-cpg-cli)
-- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Zod (validation), Vitest (testing), Docker (E2E) (007-fix-cli-reload)
-- JSON files (`api-keys.json`, `usage-data.json`) in Docker named volume (007-fix-cli-reload)
-- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Zod (validation), Commander.js (CLI), Vitest (testing) (008-plan-usage-stats)
-- JSON files (plan-usage-data.json, usage-adjustment-history.json) (008-plan-usage-stats)
-- YAML/JSON files (configuration), in-memory (RPM tracking, quota state) (009-enhance-routing-lb)
-- TypeScript 5.x (strict mode) + Fastify 4.x, Zod (validation), Vitest (testing) (010-plan-id-int)
-- JSON files (config.json, plan-id-counter.json, quota-state.json) (010-plan-id-int)
-- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Zod (validation), Vitest (testing), bcrypt (key hashing) (011-fix-usage-tracking)
-- JSON files (`plan-usage-data.json`, `usage-adjustment-history.json`) (011-fix-usage-tracking)
-- TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x (existing), no new dependencies required (012-request-latency-tracing)
-- In-memory per-request timing state (no persistence required) (012-request-latency-tracing)
-- TypeScript 5.x / Node.js 20+ LTS + Fastify 4.x, Zod (validation), yaml (for config parsing) (014-model-alias-config)
-- YAML file (config.yaml) - existing file-based configuration (014-model-alias-config)
+
+- **Core**: TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x
+- **Validation**: Zod (config + API schemas)
+- **Testing**: Vitest (unit), Docker Compose (E2E), MSW (HTTP mocking)
+- **CLI**: Commander.js
+- **Security**: bcrypt (key hashing), AES-256 (API key encryption at rest)
+- **Config**: YAML file-based with versioned auto-migration, environment variable expansion
+- **Storage**: YAML/JSON files (config, state), in-memory (quota, RPM, timing)
+- **Deployment**: Docker, Docker Compose v2
+- **Future**: PostgreSQL with Drizzle ORM (migration path prepared)
 
 ## Recent Changes
-- 012-request-latency-tracing: Added request latency tracing with ANSI color differentiation for concurrent requests
-- 007-fix-cli-reload: Fixed CLI reload endpoint registration, authentication exemption for internal routes, x-api-key header support
-- 001-coding-plan-gateway: Added TypeScript 5.x (strict mode) on Node.js 20+ LTS + Fastify 4.x, Vitest, Zod (validation), MSW (mocking)
+- feat/preset-providers: Added built-in provider presets (Zhipu, Volcengine, Ali), usage adapter system (Zhipu API), ProviderRegistry, `provider` field on plans
+- config-migration: Added versioned config migration system (v0→v1: quota period + UUID-to-int ID migration)
