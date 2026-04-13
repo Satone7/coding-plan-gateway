@@ -132,6 +132,40 @@ export class UsageApiCacheStore {
   }
 
   /**
+   * Write cache data to disk atomically with file locking.
+   * Ensures directory exists, acquires lock, writes to temp file, then renames.
+   */
+  private async writeToDisk(data: UsageApiCacheFile): Promise<void> {
+    // Ensure directory exists
+    const dir = dirname(this.cachePath);
+    await mkdir(dir, { recursive: true });
+
+    // Ensure file exists for locking (proper-lockfile requires file to exist)
+    try {
+      await access(this.cachePath, constants.F_OK);
+    } catch {
+      await writeFile(this.cachePath, '{}', 'utf-8');
+    }
+
+    // Use file locking to prevent concurrent writes
+    const release = await lockfile.lock(this.cachePath, {
+      retries: {
+        retries: 5,
+        minTimeout: 100,
+        maxTimeout: 1000,
+      },
+    });
+
+    try {
+      const tempPath = `${this.cachePath}.tmp`;
+      await writeFile(tempPath, JSON.stringify(data, null, 2) + '\n', 'utf-8');
+      await rename(tempPath, this.cachePath);
+    } finally {
+      await release();
+    }
+  }
+
+  /**
    * Persist cache to file.
    * Uses file locking to prevent concurrent write conflicts.
    */
@@ -148,41 +182,12 @@ export class UsageApiCacheStore {
       entries: entriesRecord,
     };
 
-    // Ensure directory exists
-    const dir = dirname(this.cachePath);
-    await mkdir(dir, { recursive: true });
+    await this.writeToDisk(data);
 
-    // Ensure file exists for locking (proper-lockfile requires file to exist)
-    try {
-      await access(this.cachePath, constants.F_OK);
-    } catch {
-      // File doesn't exist, create empty file
-      await writeFile(this.cachePath, '{}', 'utf-8');
-    }
-
-    // Use file locking to prevent concurrent writes
-    const release = await lockfile.lock(this.cachePath, {
-      retries: {
-        retries: 5,
-        minTimeout: 100,
-        maxTimeout: 1000,
-      },
+    logger.debug('Usage API cache persisted', {
+      path: this.cachePath,
+      entryCount: this.entries.size,
     });
-
-    try {
-      // Write to temp file first, then rename for atomicity
-      const tempPath = `${this.cachePath}.tmp`;
-      await writeFile(tempPath, JSON.stringify(data, null, 2) + '\n', 'utf-8');
-
-      await rename(tempPath, this.cachePath);
-
-      logger.debug('Usage API cache persisted', {
-        path: this.cachePath,
-        entryCount: this.entries.size,
-      });
-    } finally {
-      await release();
-    }
   }
 
   /**
@@ -196,35 +201,11 @@ export class UsageApiCacheStore {
       entries: {},
     };
 
-    // Ensure directory exists
-    const dir = dirname(this.cachePath);
-    await mkdir(dir, { recursive: true });
+    await this.writeToDisk(data);
 
-    // Create file for locking
-    await writeFile(this.cachePath, '{}', 'utf-8');
-
-    // Use file locking to prevent concurrent writes
-    const release = await lockfile.lock(this.cachePath, {
-      retries: {
-        retries: 5,
-        minTimeout: 100,
-        maxTimeout: 1000,
-      },
+    logger.debug('Empty usage API cache file created', {
+      path: this.cachePath,
     });
-
-    try {
-      // Write to temp file first, then rename for atomicity
-      const tempPath = `${this.cachePath}.tmp`;
-      await writeFile(tempPath, JSON.stringify(data, null, 2) + '\n', 'utf-8');
-
-      await rename(tempPath, this.cachePath);
-
-      logger.debug('Empty usage API cache file created', {
-        path: this.cachePath,
-      });
-    } finally {
-      await release();
-    }
   }
 
   /**

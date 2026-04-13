@@ -241,7 +241,7 @@ export interface UsageApiCacheWindow {
   percentage: number;
   /** Human-readable window label (e.g., '5h', '24h') */
   windowLabel: string;
-  /** Optional next reset timestamp (epoch seconds) */
+  /** Optional next reset timestamp (milliseconds since epoch) */
   nextResetTime?: number;
 }
 
