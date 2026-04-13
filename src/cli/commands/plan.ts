@@ -6,6 +6,8 @@ import { exit } from 'process';
 import { createPlanUsageTracker } from '@/services/plan-usage-tracker';
 import { createPlanRepository } from '@/services/plan-repository';
 import { createGatewayNotifier } from '@/services/gateway-notifier';
+import { createUsageApiCacheStore } from '@/services/usage-api-cache-store';
+import { createProviderRegistry } from '@/services/provider-registry';
 import {
   CLI_EXIT_CODES,
   type CliContext,
@@ -56,10 +58,13 @@ export async function handlePlanListCommand(context: CliContext): Promise<void> 
 
   const repository = createPlanRepository(configPath, encryptionKey);
   const tracker = createPlanUsageTracker({ planUsageDataPath: planUsageConfig.planUsageDataPath });
+  const usageApiCache = createUsageApiCacheStore({ cachePath: planUsageConfig.usageApiCachePath });
+  const providerRegistry = createProviderRegistry();
 
   try {
     await repository.reload();
     await tracker.initialize();
+    await usageApiCache.loadReadOnly();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(formatter.formatError(
@@ -77,6 +82,28 @@ export async function handlePlanListCommand(context: CliContext): Promise<void> 
 
   // Build plan usage summaries
   const summaries: PlanUsageSummaryDisplay[] = plans.map((plan) => {
+    const planId = plan.id;
+    const isUsageApi = plan.provider !== undefined && providerRegistry.hasUsageApi(plan.provider);
+
+    if (isUsageApi) {
+      const cacheEntry = usageApiCache.getEntry(planId);
+      return {
+        planId,
+        planName: plan.name,
+        isUsageApi: true,
+        usageApiPercentage: cacheEntry?.percentage ?? undefined,
+        usageApiWindows: cacheEntry?.windows ?? undefined,
+        isCacheStale: cacheEntry?.isStale ?? true,
+        limit: 0,
+        used: 0,
+        remaining: 0,
+        percentage: cacheEntry?.percentage ?? 0,
+        quotaPeriod: { type: 'total' },
+        resetAt: cacheEntry?.windows?.[0]?.nextResetTime ? new Date(cacheEntry.windows[0].nextResetTime) : null,
+      };
+    }
+
+    // Non-usageApi plans: use existing quota tracking logic
     const usage = tracker.getTotalUsage(plan.id);
     const remaining = plan.quota.limit - usage;
     const percentage = plan.quota.limit > 0 ? Math.round((usage / plan.quota.limit) * 100) : 0;
@@ -89,7 +116,7 @@ export async function handlePlanListCommand(context: CliContext): Promise<void> 
     );
 
     return {
-      planId: plan.id,
+      planId,
       planName: plan.name,
       limit: plan.quota.limit,
       used: usage,
