@@ -53,6 +53,7 @@ export interface LogEntry {
     provider?: {
       planName?: string;
       model?: string;
+      canonicalModel?: string;
     };
     tokens?: {
       total?: number;
@@ -175,11 +176,16 @@ function processLogEntry(log: LogEntry, setState: React.Dispatch<React.SetStateA
             };
           }
           
-          // Update Model Usage
+          // Update Model Usage - show alias routing with * marker
           if (context.provider && context.provider.model) {
-            const model = context.provider.model;
-            const prevUsage = newState.modelUsages[model] || { requests: 0, tokens: 0 };
-            newState.modelUsages[model] = {
+            const provider = context.provider as { model?: string; canonicalModel?: string };
+            const originalModel = provider.model!;
+            const canonicalModel = provider.canonicalModel;
+            const isAliasRouted = canonicalModel && canonicalModel !== originalModel;
+            const displayModel = isAliasRouted ? `${originalModel}*` : originalModel;
+
+            const prevUsage = newState.modelUsages[displayModel] || { requests: 0, tokens: 0 };
+            newState.modelUsages[displayModel] = {
               requests: prevUsage.requests + 1,
               tokens: prevUsage.tokens + tokens,
             };

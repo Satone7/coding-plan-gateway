@@ -285,6 +285,7 @@ export function createOpenAIHandlers(
         planId: plan.id,
         planName: plan.name,
         model,
+        canonicalModel: routingResult.canonicalName !== model ? routingResult.canonicalName : undefined,
         durationMs: 0,
         statusCode: 0,
       });

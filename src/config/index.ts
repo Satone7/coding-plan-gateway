@@ -206,6 +206,26 @@ export function normalizePlanConfig(plan: PlanConfig): NormalizedPlanConfig {
     };
   }
 
+  // Validate user-configured modelAliases targets (not preset defaults)
+  // Only validate if user explicitly set modelAliases and models are available
+  if (plan.modelAliases && normalized.modelAliases && normalized.models) {
+    const modelsLower = normalized.models.map((m: string) => m.toLowerCase());
+    for (const [alias, target] of Object.entries(plan.modelAliases)) {
+      const targetLower = target.toLowerCase();
+      if (!modelsLower.includes(targetLower)) {
+        logger.warn('Model alias target not found in plan models', {
+          planId: normalized.id,
+          planName: normalized.name,
+          alias,
+          target,
+          availableModels: normalized.models,
+        });
+        // Remove invalid alias to prevent routing errors
+        delete normalized.modelAliases![alias];
+      }
+    }
+  }
+
   return normalized as NormalizedPlanConfig;
 }
 
@@ -250,11 +270,12 @@ function checkNeedsUpgrade(config: NormalizedConfig, rawPlans: PlanConfig[]): bo
       const preset = getBuiltinProvider(plan.provider);
       if (!preset) return false;
 
+      // baseUrl matching preset should be removed
       if (raw.baseUrl === preset.baseUrl) return true;
-      if (raw.models && arraysEqualUnordered(raw.models, preset.models)) return true;
+      // models should be removed (user accepts preset models)
+      if (raw.models) return true;
+      // quota for usage-API providers should be removed
       if (preset.hasUsageApi && raw.quota) return true;
-      if (raw.modelAliases && preset.defaultModelAliases &&
-          objectsEqual(raw.modelAliases, preset.defaultModelAliases)) return true;
     }
 
     return false;
@@ -302,12 +323,9 @@ function cleanPlanFields(plan: NormalizedPlanConfig, preset: { baseUrl: string; 
   if (plan.expiresAt !== undefined) result.expiresAt = plan.expiresAt;
   if (plan.weight !== undefined) result.weight = plan.weight;
 
-  // Only include baseUrl/models if they differ from preset
+  // Only include baseUrl if it differs from preset (models always from preset)
   if (plan.baseUrl !== preset.baseUrl) {
     result.baseUrl = plan.baseUrl;
-  }
-  if (!arraysEqualUnordered(plan.models, preset.models)) {
-    result.models = plan.models;
   }
 
   // Include quota unless provider has usage API (usage API manages quota externally)
@@ -315,12 +333,8 @@ function cleanPlanFields(plan: NormalizedPlanConfig, preset: { baseUrl: string; 
     result.quota = plan.quota;
   }
 
-  // Only include modelAliases if they differ from preset defaults
-  if (plan.modelAliases && preset.defaultModelAliases) {
-    if (!objectsEqual(plan.modelAliases, preset.defaultModelAliases)) {
-      result.modelAliases = plan.modelAliases;
-    }
-  } else if (plan.modelAliases && !preset.defaultModelAliases) {
+  // Always include modelAliases if present (user configuration should persist)
+  if (plan.modelAliases) {
     result.modelAliases = plan.modelAliases;
   }
 

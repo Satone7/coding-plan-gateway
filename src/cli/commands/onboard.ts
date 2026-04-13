@@ -5,8 +5,73 @@ import { dirname, join, basename } from 'path';
 import { loadConfig, saveConfig, createEmptyConfig, normalizePlanConfig, type NormalizedConfig, type NormalizedPlanConfig } from '@/config';
 import { configSchema } from '@/config/schema';
 import { BUILTIN_PROVIDERS, getBuiltinProvider } from '@/config/builtin-providers';
+import { DEFAULT_REQUEST_TIMEOUT_SEC, LATEST_CONFIG_VERSION } from '@/config/defaults';
 import type { CliContext } from '@/types/cli';
 import type { Config, PlanConfig } from '@/config/schema';
+
+/** Compare two string arrays ignoring element order. */
+function arraysEqualUnordered(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.every((v, i) => v === sb[i]);
+}
+
+/** Strip preset-duplicated fields from a normalized plan for persisting. */
+function cleanPlanForPersist(plan: NormalizedPlanConfig): PlanConfig {
+  // No provider — keep all fields
+  if (!plan.provider) {
+    return plan as PlanConfig;
+  }
+
+  const preset = getBuiltinProvider(plan.provider);
+  if (!preset) {
+    return plan as PlanConfig;
+  }
+
+  const result: PlanConfig = {
+    id: plan.id,
+    name: plan.name,
+    provider: plan.provider,
+    apiKey: plan.apiKey,
+    enable: plan.enable,
+    status: plan.status,
+  };
+
+  // Keep timeout only if it differs from default
+  if (plan.timeout !== undefined && plan.timeout !== DEFAULT_REQUEST_TIMEOUT_SEC) {
+    result.timeout = plan.timeout;
+  }
+  if (plan.expiresOn !== undefined) result.expiresOn = plan.expiresOn;
+  if (plan.expiresAt !== undefined) result.expiresAt = plan.expiresAt;
+  if (plan.weight !== undefined) result.weight = plan.weight;
+
+  // Keep baseUrl only if it differs from preset
+  if (plan.baseUrl !== preset.baseUrl) {
+    result.baseUrl = plan.baseUrl;
+  }
+
+  // Keep quota only if provider doesn't have usage API
+  if (!preset.hasUsageApi && plan.quota) {
+    result.quota = plan.quota;
+  }
+
+  // Always keep user-configured modelAliases
+  if (plan.modelAliases) {
+    result.modelAliases = plan.modelAliases;
+  }
+
+  return result;
+}
+
+/** Clean normalized config for persisting to disk. */
+function cleanConfigForOnboard(config: NormalizedConfig): Config {
+  return {
+    version: LATEST_CONFIG_VERSION,
+    plans: config.plans.map(cleanPlanForPersist),
+    loadBalancing: config.loadBalancing,
+  };
+}
 
 export async function handleOnboardCommand(context: CliContext): Promise<void> {
   p.intro(color.bgCyan(color.black(' CPG Onboard Wizard ')));
@@ -55,7 +120,7 @@ export async function handleOnboardCommand(context: CliContext): Promise<void> {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const fileName = basename(context.configPath);
             let backupDir = dirname(context.configPath);
-            
+
             // Prefer /app/data for backups in production Docker container
             if (process.env.NODE_ENV === 'production') {
               try {
@@ -65,7 +130,7 @@ export async function handleOnboardCommand(context: CliContext): Promise<void> {
                 // Ignore if /app/data doesn't exist, use dirname(configPath)
               }
             }
-            
+
             const backupPath = join(backupDir, `${fileName}.${timestamp}.bak`);
             await copyFile(context.configPath, backupPath);
             p.log.info(`Original configuration backed up to ${backupPath}`);
@@ -73,7 +138,9 @@ export async function handleOnboardCommand(context: CliContext): Promise<void> {
             // Ignore if original config doesn't exist or backup fails
           }
 
-          await saveConfig(context.configPath, config, 'yaml');
+          // Clean config before saving (remove preset-duplicated fields)
+          const cleanedConfig = cleanConfigForOnboard(config);
+          await saveConfig(context.configPath, cleanedConfig, 'yaml');
           p.log.success(`Configuration saved to ${context.configPath}`);
           exit = true;
         } catch (error) {

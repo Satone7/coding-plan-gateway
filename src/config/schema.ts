@@ -133,6 +133,9 @@ export const planConfigSchema = z.object({
 ).refine(
   (plan) => {
     if (!plan.modelAliases) return true;
+    // When provider is set, models may come from preset - skip validation here
+    // (validated later in normalizePlanConfig with preset models)
+    if (plan.provider && !plan.models) return true;
     const models = plan.models ?? [];
     const modelsLower = models.map((m: string) => m.toLowerCase());
     return Object.values(plan.modelAliases).every(

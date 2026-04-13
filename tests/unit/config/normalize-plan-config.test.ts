@@ -211,7 +211,8 @@ describe('loadConfig autoUpgrade', () => {
     expect(updated).not.toContain('baseUrl:');
     expect(updated).not.toContain('models:');
     expect(updated).not.toContain('quota:');
-    expect(updated).not.toContain('modelAliases:');
+    // modelAliases is kept (user configuration should persist)
+    expect(updated).toContain('modelAliases:');
     expect(updated).toContain('version:');
     expect(updated).not.toContain('"1.0"');
   });
@@ -245,7 +246,7 @@ describe('loadConfig autoUpgrade', () => {
     expect(updated).toContain('provider: volcengine');
   });
 
-  it('keeps customized baseUrl/models that differ from preset', async () => {
+  it('keeps customized baseUrl but removes models (user accepts preset models)', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'cpg-test-'));
     const configPath = join(tempDir, 'config.yaml');
 
@@ -269,7 +270,9 @@ describe('loadConfig autoUpgrade', () => {
 
     const updated = await readFile(configPath, 'utf-8');
     expect(updated).toContain('baseUrl: https://proxy.example.com/anthropic');
-    expect(updated).toContain('glm-5.1');
+    // models removed (user accepts preset models)
+    expect(updated).not.toContain('models:');
+    expect(updated).not.toContain('glm-5.1');
     expect(updated).not.toContain('quota:');  // usage-API provider strips quota
   });
 

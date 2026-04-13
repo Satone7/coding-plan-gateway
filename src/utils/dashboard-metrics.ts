@@ -104,10 +104,14 @@ export class DashboardMetrics {
           this.planUsages[planName] = { requests: prev.requests + 1, tokens: prev.tokens + tokens };
         }
 
-        const model = (ctx.provider as { model?: string } | undefined)?.model;
+        const provider = ctx.provider as { model?: string; canonicalModel?: string } | undefined;
+        const model = provider?.model;
+        const canonicalModel = provider?.canonicalModel;
         if (model) {
-          const prev = this.modelUsages[model] ?? { requests: 0, tokens: 0 };
-          this.modelUsages[model] = { requests: prev.requests + 1, tokens: prev.tokens + tokens };
+          const isAliasRouted = canonicalModel && canonicalModel !== model;
+          const displayModel = isAliasRouted ? `${model}*` : model;
+          const prev = this.modelUsages[displayModel] ?? { requests: 0, tokens: 0 };
+          this.modelUsages[displayModel] = { requests: prev.requests + 1, tokens: prev.tokens + tokens };
         }
 
         const apiKey = this.pendingRequests[requestId]?.apiKey;

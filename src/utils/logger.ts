@@ -54,8 +54,8 @@ function notifyListeners(entry: LogEntry): void {
 export interface LogContext {
   /** Request ID for tracing */
   requestId?: string;
-  /** Plan ID being processed */
-  planId?: number;
+  /** Plan ID being processed (number or UUID string) */
+  planId?: number | string;
   /** Model being used */
   model?: string;
   /** Additional context */

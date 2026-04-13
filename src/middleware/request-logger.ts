@@ -24,7 +24,10 @@ export interface TokenUsage {
 export interface ProviderMetrics {
   planId: number;
   planName: string;
+  /** Original model name requested by user */
   model: string;
+  /** Canonical model name after alias resolution (set when model !== canonicalModel) */
+  canonicalModel?: string;
   durationMs: number;
   statusCode: number;
   tokenUsage?: TokenUsage;
@@ -111,6 +114,7 @@ export function responseLoggerMiddleware(
       planId: request.providerMetrics.planId,
       planName: request.providerMetrics.planName,
       model: request.providerMetrics.model,
+      canonicalModel: request.providerMetrics.canonicalModel,
       durationMs: request.providerMetrics.durationMs,
       statusCode: request.providerMetrics.statusCode,
     };
@@ -180,6 +184,7 @@ export function errorLoggerMiddleware(
 /**
  * Attach provider metrics to the request for logging.
  * Call this from handlers after a request is processed.
+ * Preserves existing canonicalModel if new metrics don't include it.
  *
  * @param request - The Fastify request object
  * @param metrics - Provider metrics to attach
@@ -188,7 +193,12 @@ export function attachProviderMetrics(
   request: FastifyRequest,
   metrics: ProviderMetrics
 ): void {
-  request.providerMetrics = metrics;
+  // Preserve existing canonicalModel if new metrics don't include it
+  if (request.providerMetrics?.canonicalModel && !metrics.canonicalModel) {
+    request.providerMetrics = { ...metrics, canonicalModel: request.providerMetrics.canonicalModel };
+  } else {
+    request.providerMetrics = metrics;
+  }
 }
 
 /**
