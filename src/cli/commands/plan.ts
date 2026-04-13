@@ -83,7 +83,7 @@ export async function handlePlanListCommand(context: CliContext): Promise<void> 
   // Build plan usage summaries
   const summaries: PlanUsageSummaryDisplay[] = plans.map((plan) => {
     const planId = plan.id;
-    const isUsageApi = plan.provider !== undefined && providerRegistry.hasUsageApi(plan.provider);
+    const isUsageApi = plan.provider !== undefined && providerRegistry.presetHasUsageApi(plan.provider);
 
     if (isUsageApi) {
       const cacheEntry = usageApiCache.getEntry(planId);
