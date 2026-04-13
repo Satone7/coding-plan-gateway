@@ -29,7 +29,7 @@ export const BUILTIN_PROVIDERS: readonly ProviderPreset[] = [
     id: 'ali',
     name: 'Ali / DashScope',
     baseUrl: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
-    models: ['qwen3.5-plus', 'glm-5', 'glm-4.7', 'kimi-k2.5', 'MiniMax-M2.5'],
+    models: ['qwen3.6-plus', 'qwen3.5-plus', 'glm-5', 'glm-4.7', 'kimi-k2.5', 'MiniMax-M2.5'],
     hasUsageApi: false,
   },
 ];
