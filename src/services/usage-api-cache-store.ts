@@ -9,41 +9,17 @@ import { readFile, writeFile, access } from 'fs/promises';
 import { constants } from 'fs';
 import { resolve, dirname } from 'path';
 import { mkdir, rename } from 'fs/promises';
+import lockfile from 'proper-lockfile';
 import { PLAN_USAGE_DEFAULTS } from '@/config/defaults';
+import { usageApiCacheFileSchema } from '@/types';
+import type { UsageApiCacheEntry, UsageApiCacheFile } from '@/types';
 import { logger } from '@/utils/logger';
-
-/**
- * Cache entry for a single plan's usage API data.
- */
-export interface UsageApiCacheEntry {
-  planId: number;
-  planName: string;
-  provider: string;
-  percentage: number;
-  windows: Array<{
-    type: string;
-    percentage: number;
-    windowLabel: string;
-    nextResetTime?: number;
-  }>;
-  lastUpdated: string;
-  expiresAt: string;
-}
 
 /**
  * Retrieved entry with stale status.
  */
 export interface UsageApiCacheEntryWithStatus extends UsageApiCacheEntry {
   isStale: boolean;
-}
-
-/**
- * File storage format.
- */
-interface UsageApiCacheFile {
-  version: string;
-  lastSync: string;
-  entries: Record<string, UsageApiCacheEntry>;
 }
 
 /**
@@ -74,16 +50,20 @@ export class UsageApiCacheStore {
    * Creates empty cache file if it doesn't exist.
    */
   async initialize(): Promise<void> {
-    await this.loadFromFile();
+    // Check if file exists
+    let fileExists = false;
+    try {
+      await access(this.cachePath, constants.R_OK);
+      fileExists = true;
+    } catch {
+      // File doesn't exist
+    }
 
-    // Create empty cache file if it doesn't exist
-    if (this.entries.size === 0) {
-      try {
-        await access(this.cachePath, constants.R_OK);
-      } catch {
-        // File doesn't exist, create it
-        await this.persist();
-      }
+    if (fileExists) {
+      await this.loadFromFile();
+    } else {
+      // Create empty cache file
+      await this.persistEmptyFile();
     }
 
     logger.info('UsageApiCacheStore initialized', {
@@ -153,6 +133,7 @@ export class UsageApiCacheStore {
 
   /**
    * Persist cache to file.
+   * Uses file locking to prevent concurrent write conflicts.
    */
   async persist(): Promise<void> {
     const entriesRecord: Record<string, UsageApiCacheEntry> = {};
@@ -171,20 +152,84 @@ export class UsageApiCacheStore {
     const dir = dirname(this.cachePath);
     await mkdir(dir, { recursive: true });
 
-    // Write to temp file first, then rename for atomicity
-    const tempPath = `${this.cachePath}.tmp`;
-    await writeFile(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+    // Ensure file exists for locking (proper-lockfile requires file to exist)
+    try {
+      await access(this.cachePath, constants.F_OK);
+    } catch {
+      // File doesn't exist, create empty file
+      await writeFile(this.cachePath, '{}', 'utf-8');
+    }
 
-    await rename(tempPath, this.cachePath);
-
-    logger.debug('Usage API cache persisted', {
-      path: this.cachePath,
-      entryCount: this.entries.size,
+    // Use file locking to prevent concurrent writes
+    const release = await lockfile.lock(this.cachePath, {
+      retries: {
+        retries: 5,
+        minTimeout: 100,
+        maxTimeout: 1000,
+      },
     });
+
+    try {
+      // Write to temp file first, then rename for atomicity
+      const tempPath = `${this.cachePath}.tmp`;
+      await writeFile(tempPath, JSON.stringify(data, null, 2) + '\n', 'utf-8');
+
+      await rename(tempPath, this.cachePath);
+
+      logger.debug('Usage API cache persisted', {
+        path: this.cachePath,
+        entryCount: this.entries.size,
+      });
+    } finally {
+      await release();
+    }
+  }
+
+  /**
+   * Persist empty cache file (for initialization).
+   * Uses file locking to prevent concurrent write conflicts.
+   */
+  private async persistEmptyFile(): Promise<void> {
+    const data: UsageApiCacheFile = {
+      version: '1.0',
+      lastSync: new Date().toISOString(),
+      entries: {},
+    };
+
+    // Ensure directory exists
+    const dir = dirname(this.cachePath);
+    await mkdir(dir, { recursive: true });
+
+    // Create file for locking
+    await writeFile(this.cachePath, '{}', 'utf-8');
+
+    // Use file locking to prevent concurrent writes
+    const release = await lockfile.lock(this.cachePath, {
+      retries: {
+        retries: 5,
+        minTimeout: 100,
+        maxTimeout: 1000,
+      },
+    });
+
+    try {
+      // Write to temp file first, then rename for atomicity
+      const tempPath = `${this.cachePath}.tmp`;
+      await writeFile(tempPath, JSON.stringify(data, null, 2) + '\n', 'utf-8');
+
+      await rename(tempPath, this.cachePath);
+
+      logger.debug('Empty usage API cache file created', {
+        path: this.cachePath,
+      });
+    } finally {
+      await release();
+    }
   }
 
   /**
    * Load cache from file.
+   * Uses file locking to prevent concurrent read/write conflicts.
    */
   private async loadFromFile(): Promise<void> {
     try {
@@ -194,11 +239,37 @@ export class UsageApiCacheStore {
       return;
     }
 
+    // Use file locking to prevent concurrent read/write conflicts
+    let release: (() => Promise<void>) | undefined;
+    try {
+      release = await lockfile.lock(this.cachePath, {
+        retries: {
+          retries: 5,
+          minTimeout: 100,
+          maxTimeout: 1000,
+        },
+      });
+    } catch (lockError) {
+      // If locking fails, proceed without lock (file may not exist yet)
+      logger.debug('Could not acquire lock for reading usage API cache, proceeding without lock', {
+        error: lockError instanceof Error ? lockError.message : String(lockError),
+      });
+    }
+
     try {
       const content = await readFile(this.cachePath, 'utf-8');
-      const data = JSON.parse(content) as UsageApiCacheFile;
+      const data = JSON.parse(content);
 
-      for (const [planIdStr, entry] of Object.entries(data.entries)) {
+      // Validate the storage format
+      const parsed = usageApiCacheFileSchema.safeParse(data);
+      if (!parsed.success) {
+        logger.warn('Invalid usage API cache format, starting fresh', {
+          errors: parsed.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`),
+        });
+        return;
+      }
+
+      for (const [planIdStr, entry] of Object.entries(parsed.data.entries)) {
         const planId = parseInt(planIdStr, 10);
         if (isNaN(planId)) {
           logger.warn('Skipping invalid planId in cache', { planIdStr });
@@ -209,12 +280,16 @@ export class UsageApiCacheStore {
 
       logger.debug('Loaded usage API cache from file', {
         entryCount: this.entries.size,
-        lastSync: data.lastSync,
+        lastSync: parsed.data.lastSync,
       });
     } catch (error) {
       logger.warn('Failed to load usage API cache, starting fresh', {
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      if (release) {
+        await release();
+      }
     }
   }
 

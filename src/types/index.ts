@@ -162,6 +162,9 @@ export type {
   AdjustmentRecordData,
   PlanUsageSummary,
   PlanInfo,
+  UsageApiCacheWindow,
+  UsageApiCacheEntry,
+  UsageApiCacheFile,
 } from './plan-usage';
 
 export {
@@ -172,6 +175,9 @@ export {
   adjustmentRecordDataSchema,
   adjustmentHistoryStorageSchema,
   usageAdjustmentRequestSchema,
+  usageApiCacheWindowSchema,
+  usageApiCacheEntrySchema,
+  usageApiCacheFileSchema,
 } from './plan-usage';
 
 // Load balancing types

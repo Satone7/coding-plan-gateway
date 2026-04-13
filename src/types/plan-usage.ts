@@ -230,3 +230,81 @@ export interface PlanInfo {
     expiresAt?: string;
   };
 }
+
+/**
+ * Usage API cache window entry.
+ */
+export interface UsageApiCacheWindow {
+  /** Window type (e.g., 'TOKENS_LIMIT', 'REQUESTS_LIMIT') */
+  type: string;
+  /** Usage percentage for this window */
+  percentage: number;
+  /** Human-readable window label (e.g., '5h', '24h') */
+  windowLabel: string;
+  /** Optional next reset timestamp (epoch seconds) */
+  nextResetTime?: number;
+}
+
+/**
+ * Usage API cache entry for a single plan.
+ */
+export interface UsageApiCacheEntry {
+  /** Plan identifier */
+  planId: number;
+  /** Plan display name */
+  planName: string;
+  /** Provider name (e.g., 'zhipu') */
+  provider: string;
+  /** Overall usage percentage */
+  percentage: number;
+  /** Per-window usage breakdown */
+  windows: UsageApiCacheWindow[];
+  /** Timestamp of last update */
+  lastUpdated: string;
+  /** Timestamp when cache entry expires */
+  expiresAt: string;
+}
+
+/**
+ * Usage API cache file storage format.
+ */
+export interface UsageApiCacheFile {
+  /** Storage format version */
+  version: string;
+  /** Timestamp of last sync */
+  lastSync: string;
+  /** Cache entries keyed by planId (as string) */
+  entries: Record<string, UsageApiCacheEntry>;
+}
+
+/**
+ * Zod schema for usage API cache window.
+ */
+export const usageApiCacheWindowSchema = z.object({
+  type: z.string(),
+  percentage: z.number().min(0).max(100),
+  windowLabel: z.string(),
+  nextResetTime: z.number().optional(),
+});
+
+/**
+ * Zod schema for usage API cache entry.
+ */
+export const usageApiCacheEntrySchema = z.object({
+  planId: z.number().int().positive(),
+  planName: z.string(),
+  provider: z.string(),
+  percentage: z.number().min(0).max(100),
+  windows: z.array(usageApiCacheWindowSchema),
+  lastUpdated: z.string(),
+  expiresAt: z.string(),
+});
+
+/**
+ * Zod schema for usage API cache file storage.
+ */
+export const usageApiCacheFileSchema = z.object({
+  version: z.string().default('1.0'),
+  lastSync: z.string(),
+  entries: z.record(z.string(), usageApiCacheEntrySchema),
+});
