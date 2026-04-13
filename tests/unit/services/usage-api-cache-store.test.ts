@@ -62,6 +62,40 @@ describe('UsageApiCacheStore', () => {
       expect(entry?.planName).toBe('Zhipu_3');
       expect(entry?.percentage).toBe(72);
     });
+
+    it('should handle corrupted JSON gracefully', async () => {
+      // Write invalid JSON
+      await writeFile(cachePath, 'not valid json { broken', 'utf-8');
+
+      const store = createUsageApiCacheStore({ cachePath });
+      await store.initialize();
+
+      // Should start with empty cache instead of crashing
+      const entries = store.getAllEntries();
+      expect(entries.size).toBe(0);
+    });
+
+    it('should handle invalid schema gracefully', async () => {
+      // Write JSON with invalid schema (missing required fields)
+      const invalidData = {
+        version: '1.0',
+        lastSync: '2026-04-13T03:00:00.000Z',
+        entries: {
+          '3': {
+            planId: 'not-a-number', // Invalid: should be number
+            planName: 'Zhipu_3',
+          },
+        },
+      };
+      await writeFile(cachePath, JSON.stringify(invalidData, null, 2), 'utf-8');
+
+      const store = createUsageApiCacheStore({ cachePath });
+      await store.initialize();
+
+      // Should start with empty cache instead of crashing
+      const entries = store.getAllEntries();
+      expect(entries.size).toBe(0);
+    });
   });
 
   describe('updateEntry and getEntry', () => {
