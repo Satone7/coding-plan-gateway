@@ -134,6 +134,7 @@ export const DEFAULT_GATEWAY_URL = 'http://localhost:8080';
 export const PLAN_USAGE_DEFAULTS = {
   planUsageDataPath: './data/plan-usage-data.json',
   adjustmentHistoryPath: './data/usage-adjustment-history.json',
+  usageApiCachePath: './data/usage-api-cache.json',
   syncIntervalMs: 60000, // 60 seconds
   retentionDays: 90,
 };
@@ -144,15 +145,21 @@ export const PLAN_USAGE_DEFAULTS = {
 export const PLAN_USAGE_ENV_VARS = {
   PLAN_USAGE_DATA_PATH: 'PLAN_USAGE_DATA_PATH',
   ADJUSTMENT_HISTORY_PATH: 'ADJUSTMENT_HISTORY_PATH',
+  USAGE_API_CACHE_PATH: 'USAGE_API_CACHE_PATH',
 } as const;
 
 /**
  * Loads plan usage configuration from environment variables.
  * Falls back to defaults for missing values.
  */
-export function loadPlanUsageConfig(): { planUsageDataPath: string; adjustmentHistoryPath: string } {
+export function loadPlanUsageConfig(): {
+  planUsageDataPath: string;
+  adjustmentHistoryPath: string;
+  usageApiCachePath: string;
+} {
   return {
     planUsageDataPath: process.env[PLAN_USAGE_ENV_VARS.PLAN_USAGE_DATA_PATH] ?? PLAN_USAGE_DEFAULTS.planUsageDataPath,
     adjustmentHistoryPath: process.env[PLAN_USAGE_ENV_VARS.ADJUSTMENT_HISTORY_PATH] ?? PLAN_USAGE_DEFAULTS.adjustmentHistoryPath,
+    usageApiCachePath: process.env[PLAN_USAGE_ENV_VARS.USAGE_API_CACHE_PATH] ?? PLAN_USAGE_DEFAULTS.usageApiCachePath,
   };
 }
