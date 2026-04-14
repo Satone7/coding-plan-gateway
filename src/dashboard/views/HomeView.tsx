@@ -17,8 +17,20 @@ interface HomeViewProps {
 export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHeaders, columns }: HomeViewProps) {
   const { theme } = useTheme();
 
-  // Take top 3 plans and top 3 models by requests
-  const topPlans = Object.entries(state.planUsages)
+  // Get all plan names from providerUsage and localQuota (all configured plans)
+  const allPlanNames = new Set([
+    ...Object.keys(state.providerUsage),
+    ...Object.keys(state.localQuota),
+  ]);
+
+  // Build plan usages for all plans, merging with actual usage data
+  const allPlansWithUsage = Array.from(allPlanNames).map(name => {
+    const usage = state.planUsages[name] || { requests: 0, tokens: 0, rpm: 0 };
+    return [name, usage] as [string, typeof usage];
+  });
+
+  // Sort by requests (most usage first), show top 3
+  const topPlans = allPlansWithUsage
     .sort((a, b) => b[1].requests - a[1].requests)
     .slice(0, 3);
 
@@ -118,10 +130,10 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
         <Divider width={columns} title="📈 USAGE BY PLAN" color={theme.brand} />
         {topPlans.length > 0 ? (
           (() => {
-            // Calculate dynamic column widths based on max values
-            const maxReqStr = Math.max(...Object.values(state.planUsages).map(u => formatCompactNumber(u.requests).length));
+            // Calculate dynamic column widths based on all plans (including those with 0 usage)
+            const maxReqStr = Math.max(1, ...allPlansWithUsage.map(([, u]) => formatCompactNumber(u.requests).length));
             const reqWidth = maxReqStr + 4; // " req" suffix
-            const maxTokStr = Math.max(...Object.values(state.planUsages).map(u => formatCompactNumber(u.tokens).length));
+            const maxTokStr = Math.max(1, ...allPlansWithUsage.map(([, u]) => formatCompactNumber(u.tokens).length));
             const tokWidth = maxTokStr + 4; // " tok" suffix
             const rpmWidth = 6; // "xx RPM" max
 
