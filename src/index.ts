@@ -20,6 +20,7 @@ import { createPlanRepository } from './services/plan-repository';
 import { createProviderRegistry } from './services/provider-registry';
 import { ZhipuUsageAdapter } from './services/usage-adapters/zhipu-adapter';
 import { CachedUsageAdapter } from './services/usage-adapters/cached-adapter';
+import { createUsageApiCacheStore } from './services/usage-api-cache-store';
 import { loadAuthConfig } from './config/auth-config';
 import { decryptApiKey, isApiKeyEncrypted } from './config/encryption';
 import { loadPlanUsageConfig } from './config/defaults';
@@ -72,6 +73,12 @@ async function main(): Promise<void> {
     });
     await planUsageTracker.initialize();
     planUsageTracker.startPeriodicSync();
+
+    // Create and initialize usage API cache store for gateway/CLI data sharing
+    const usageApiCacheStore = createUsageApiCacheStore({
+      cachePath: planUsageConfig.usageApiCachePath,
+    });
+    await usageApiCacheStore.initialize();
 
     // Connect plan usage tracker to quota manager
     quotaManager.setPlanUsageTracker(planUsageTracker);
@@ -147,12 +154,43 @@ async function main(): Promise<void> {
               })),
               lastUpdated: new Date().toISOString(),
             });
+
+            // Update cache store for CLI access
+            const planId = typeof plan.id === 'number' ? plan.id : undefined;
+            if (planId !== undefined) {
+              usageApiCacheStore.updateEntry(planId, {
+                planId,
+                planName: plan.name,
+                provider: plan.provider!,
+                percentage: result.percentage,
+                windows: (result.windows ?? []).map((w) => ({
+                  type: w.type,
+                  percentage: w.percentage,
+                  windowLabel: w.windowLabel,
+                  nextResetTime: w.nextResetTime,
+                })),
+                lastUpdated: new Date().toISOString(),
+                expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // 5 min TTL
+              });
+            }
           } catch (err) {
             logger.debug('Failed to fetch usage-API data for dashboard', {
               planName: plan.name,
               error: (err as Error).message,
             });
           }
+        }
+
+        // Persist cache after processing all usage API plans
+        if (usageApiPlans.length > 0) {
+          // Clear orphan entries (plans that no longer exist)
+          const validPlanIds = config.plans
+            .filter((p) => typeof p.id === 'number')
+            .map((p) => p.id as number);
+          usageApiCacheStore.clearOrphanEntries(validPlanIds);
+
+          // Persist to file
+          await usageApiCacheStore.persist();
         }
 
         // Refresh local quota for non-usage-API plans
@@ -200,6 +238,12 @@ async function main(): Promise<void> {
     app.addHook('onClose', async () => {
       logger.info('Shutting down plan usage tracker...');
       await planUsageTracker.shutdown();
+    });
+
+    // Add shutdown hook for usage API cache store
+    app.addHook('onClose', async () => {
+      logger.info('Shutting down usage API cache store...');
+      await usageApiCacheStore.persist();
     });
 
     // Add shutdown hook for IPC server

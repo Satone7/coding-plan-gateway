@@ -101,6 +101,19 @@ export interface PlanUsageSummaryDisplay {
   percentage: number;
   quotaPeriod: QuotaPeriod | 'daily' | 'monthly' | 'total';
   resetAt: Date | null;
+  /** True if this plan's provider has a usage API */
+  isUsageApi?: boolean;
+  /** Cached percentage from usage API (0-100) */
+  usageApiPercentage?: number;
+  /** Quota windows from usage API */
+  usageApiWindows?: Array<{
+    type: string;
+    percentage: number;
+    windowLabel: string;
+    nextResetTime?: number;
+  }>;
+  /** Whether cached data is stale (past TTL) */
+  isCacheStale?: boolean;
 }
 
 /**

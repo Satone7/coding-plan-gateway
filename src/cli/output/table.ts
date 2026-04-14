@@ -430,22 +430,38 @@ Examples:
 
     const lines: string[] = ['', 'Plans with Usage Summary:', ''];
 
-    const header = '  Name                 Limit        Used     Remaining  %     Period    Reset';
-    const separator = '  -------------------- ---------- -------- ---------- ----- --------- -------------------';
+    const header = '  ID  Name                 Limit            Used     Remaining  %     Period    Reset';
+    const separator = '  --- -------------------- ---------------- -------- ---------- ----- --------- -------------------';
 
     lines.push(header);
     lines.push(separator);
 
     for (const plan of plans) {
+      const id = String(plan.planId).padStart(3);
       const name = truncate(plan.planName, 20).padEnd(20);
-      const limit = plan.limit.toLocaleString().padStart(10);
-      const used = plan.used.toLocaleString().padStart(8);
-      const remaining = plan.remaining.toLocaleString().padStart(10);
-      const percentage = plan.percentage.toString().padStart(3);
-      const period = formatQuotaPeriod(plan.quotaPeriod).padEnd(9);
-      const reset = plan.resetAt ? formatDateTime(plan.resetAt) : 'N/A';
 
-      lines.push(`  ${name} ${limit} ${used} ${remaining} ${percentage}%  ${period} ${reset}`);
+      if (plan.isUsageApi) {
+        // Usage API-managed plan - show API-specific display
+        const limit = 'API-managed'.padEnd(16);
+        const used = 'N/A'.padStart(8);
+        const remaining = 'N/A'.padStart(10);
+        const percentage = (plan.usageApiPercentage ?? 0).toString().padStart(3);
+        const periodLabel = plan.isCacheStale ? 'API (stale)' : 'API';
+        const period = periodLabel.padEnd(9);
+        const reset = plan.resetAt ? formatDateTime(plan.resetAt) : 'N/A';
+
+        lines.push(`  ${id}  ${name} ${limit} ${used} ${remaining} ${percentage}%  ${period} ${reset}`);
+      } else {
+        // Regular quota-managed plan
+        const limit = plan.limit.toLocaleString().padStart(16);
+        const used = plan.used.toLocaleString().padStart(8);
+        const remaining = plan.remaining.toLocaleString().padStart(10);
+        const percentage = plan.percentage.toString().padStart(3);
+        const period = formatQuotaPeriod(plan.quotaPeriod).padEnd(9);
+        const reset = plan.resetAt ? formatDateTime(plan.resetAt) : 'N/A';
+
+        lines.push(`  ${id}  ${name} ${limit} ${used} ${remaining} ${percentage}%  ${period} ${reset}`);
+      }
     }
 
     lines.push(separator);

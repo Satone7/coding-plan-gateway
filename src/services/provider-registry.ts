@@ -84,6 +84,19 @@ export class ProviderRegistry {
     return this.adapters.has(id);
   }
 
+  /**
+   * Check if a provider's preset indicates usage API support.
+   * This is useful for CLI context where adapters aren't registered.
+   * Returns true if the preset declares hasUsageApi, regardless of adapter registration.
+   *
+   * @param id - The provider ID
+   * @returns true if preset has usage API flag
+   */
+  presetHasUsageApi(id: string): boolean {
+    const provider = this.providers.get(id);
+    return provider?.hasUsageApi ?? false;
+  }
+
   getUsageAdapter(id: string): UsageAdapter | null {
     return this.adapters.get(id) ?? null;
   }
