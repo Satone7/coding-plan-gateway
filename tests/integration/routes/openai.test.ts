@@ -276,6 +276,114 @@ describe('OpenAI Routes', () => {
       // Will fail because there's no real upstream
       expect([502, 500]).toContain(response.statusCode);
     });
+
+    it('should accept tool role messages', async () => {
+      await repository.save(
+        createMockPlanInput({
+          models: ['test-model'],
+        })
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        payload: {
+          model: 'test-model',
+          messages: [
+            { role: 'user', content: 'What is the weather?' },
+            { role: 'assistant', content: null, tool_calls: [{
+              id: 'call_123',
+              type: 'function',
+              function: { name: 'get_weather', arguments: '{"location":"Beijing"}' },
+            }] },
+            { role: 'tool', tool_call_id: 'call_123', content: 'Beijing: 25°C, sunny' },
+          ],
+        },
+      });
+
+      // Will fail because there's no real upstream, but validation should pass
+      expect([502, 500]).toContain(response.statusCode);
+    });
+
+    it('should accept assistant message with null content', async () => {
+      await repository.save(
+        createMockPlanInput({
+          models: ['test-model'],
+        })
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        payload: {
+          model: 'test-model',
+          messages: [
+            { role: 'user', content: 'Hello' },
+            { role: 'assistant', content: null },
+          ],
+        },
+      });
+
+      // Will fail because there's no real upstream, but validation should pass
+      expect([502, 500]).toContain(response.statusCode);
+    });
+
+    it('should accept tools configuration', async () => {
+      await repository.save(
+        createMockPlanInput({
+          models: ['test-model'],
+        })
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        payload: {
+          model: 'test-model',
+          messages: [{ role: 'user', content: 'What is the weather?' }],
+          tools: [{
+            type: 'function',
+            function: {
+              name: 'get_weather',
+              description: 'Get current weather',
+              parameters: {
+                type: 'object',
+                properties: {
+                  location: { type: 'string' },
+                },
+              },
+            },
+          }],
+          tool_choice: 'auto',
+        },
+      });
+
+      // Will fail because there's no real upstream, but validation should pass
+      expect([502, 500]).toContain(response.statusCode);
+    });
+
+    it('should accept function role messages (deprecated but supported)', async () => {
+      await repository.save(
+        createMockPlanInput({
+          models: ['test-model'],
+        })
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/chat/completions',
+        payload: {
+          model: 'test-model',
+          messages: [
+            { role: 'user', content: 'What is the weather?' },
+            { role: 'function', name: 'get_weather', content: '25°C, sunny' },
+          ],
+        },
+      });
+
+      // Will fail because there's no real upstream, but validation should pass
+      expect([502, 500]).toContain(response.statusCode);
+    });
   });
 
   describe('Error handling', () => {

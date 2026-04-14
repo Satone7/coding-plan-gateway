@@ -27,17 +27,35 @@ import type { CodingPlan } from '@/types';
 import { TokenCounter } from '@/utils/token-counter';
 
 /**
+ * Tool call schema for assistant messages.
+ */
+const toolCallSchema = z.object({
+  id: z.string(),
+  type: z.literal('function'),
+  function: z.object({
+    name: z.string(),
+    arguments: z.string(),
+  }),
+});
+
+/**
  * OpenAI chat completion request schema.
  * Uses passthrough to preserve unknown fields for transparent proxy behavior.
  * This allows custom parameters (e.g., logprobs, top_logprobs) to pass through
  * to upstream providers without being stripped by Zod validation.
+ *
+ * Supports full OpenAI message format including:
+ * - tool role for function calling responses
+ * - tool_calls for assistant messages with function calls
+ * - content can be null when tool_calls are present
  */
 const chatCompletionSchema = z.object({
   model: z.string().min(1),
   messages: z.array(z.object({
-    role: z.enum(['system', 'user', 'assistant']),
+    role: z.enum(['system', 'user', 'assistant', 'tool', 'function']),
     content: z.union([
       z.string(),
+      z.null(),  // Allow null for assistant messages with tool_calls
       z.array(z.discriminatedUnion('type', [
         z.object({
           type: z.literal('text'),
@@ -51,9 +69,11 @@ const chatCompletionSchema = z.object({
           }).optional(),
         }),
       ]))
-    ]),
+    ]).optional(),  // Content is optional when tool_calls present
     name: z.string().optional(),
-  })).min(1),
+    tool_call_id: z.string().optional(),  // Required for tool role
+    tool_calls: z.array(toolCallSchema).optional(),  // For assistant messages
+  }).passthrough()).min(1),  // Allow additional fields per message
   stream: z.boolean().optional().default(false),
   max_tokens: z.number().int().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
@@ -62,6 +82,23 @@ const chatCompletionSchema = z.object({
   presence_penalty: z.number().min(-2).max(2).optional(),
   frequency_penalty: z.number().min(-2).max(2).optional(),
   user: z.string().optional(),
+  // Tool/function calling configuration
+  tools: z.array(z.object({
+    type: z.literal('function'),
+    function: z.object({
+      name: z.string(),
+      description: z.string().optional(),
+      parameters: z.record(z.unknown()).optional(),
+    }).passthrough(),
+  }).passthrough()).optional(),
+  tool_choice: z.union([
+    z.literal('none'),
+    z.literal('auto'),
+    z.literal('required'),
+    z.object({ type: z.literal('function'), function: z.object({ name: z.string() }) }),
+  ]).optional(),
+  // Parallel tool calls (OpenAI feature)
+  parallel_tool_calls: z.boolean().optional(),
 }).passthrough();
 
 type ValidatedChatCompletion = z.infer<typeof chatCompletionSchema>;

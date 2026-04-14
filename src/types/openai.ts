@@ -4,9 +4,28 @@
  */
 
 /**
- * OpenAI message role types
+ * OpenAI message role types.
+ * Includes 'tool' for function calling responses.
+ * 'function' is deprecated but still supported for backward compatibility.
  */
-export type OpenAIMessageRole = 'system' | 'user' | 'assistant';
+export type OpenAIMessageRole = 'system' | 'user' | 'assistant' | 'tool' | 'function';
+
+/**
+ * OpenAI tool call object (in assistant messages).
+ */
+export interface ToolCall {
+  /** Tool call ID */
+  id: string;
+  /** Tool type (currently only 'function') */
+  type: 'function';
+  /** Function details */
+  function: {
+    /** Function name */
+    name: string;
+    /** Function arguments as JSON string */
+    arguments: string;
+  };
+}
 
 /**
  * OpenAI multimodal content block
@@ -17,11 +36,19 @@ export type MultimodalContentBlock =
 
 /**
  * OpenAI chat message structure.
+ * Supports tool calling with tool role and tool_calls array.
  */
 export interface ChatMessage {
+  /** Message role */
   role: OpenAIMessageRole;
-  content: string | MultimodalContentBlock[];
+  /** Message content (can be null/undefined for assistant messages with tool_calls) */
+  content?: string | MultimodalContentBlock[] | null;
+  /** Optional name for user/assistant/function messages */
   name?: string;
+  /** Tool call ID (required for tool role messages) */
+  tool_call_id?: string;
+  /** Tool calls (optional, for assistant messages) */
+  tool_calls?: ToolCall[];
 }
 
 /**
@@ -99,7 +126,7 @@ export interface ChatCompletionChoice {
   message: ChatMessage;
 
   /** Reason for completion */
-  finish_reason: 'stop' | 'length' | 'content_filter' | null;
+  finish_reason: 'stop' | 'length' | 'content_filter' | 'tool_calls' | null;
 }
 
 /**
@@ -123,6 +150,26 @@ export interface ChatCompletionChunk {
 }
 
 /**
+ * OpenAI streaming chunk delta (supports tool_calls streaming).
+ */
+export interface ChatCompletionChunkDelta {
+  /** Role (only in first chunk) */
+  role?: OpenAIMessageRole;
+  /** Content delta */
+  content?: string;
+  /** Tool calls delta (for streaming function calls) */
+  tool_calls?: Array<{
+    index: number;
+    id?: string;
+    type?: 'function';
+    function?: {
+      name?: string;
+      arguments?: string;
+    };
+  }>;
+}
+
+/**
  * OpenAI streaming chunk choice.
  */
 export interface ChatCompletionChunkChoice {
@@ -130,13 +177,10 @@ export interface ChatCompletionChunkChoice {
   index: number;
 
   /** Delta content */
-  delta: {
-    role?: OpenAIMessageRole;
-    content?: string;
-  };
+  delta: ChatCompletionChunkDelta;
 
   /** Reason for completion */
-  finish_reason: 'stop' | 'length' | 'content_filter' | null;
+  finish_reason: 'stop' | 'length' | 'content_filter' | 'tool_calls' | null;
 }
 
 /**
