@@ -29,6 +29,7 @@ export interface MetricsSnapshot {
   apiKeyUsages: Record<string, { requests: number; tokens: number }>;
   providerUsage: Record<string, ProviderUsageSnapshot>;
   localQuota: Record<string, LocalQuotaSnapshot>;
+  planProviders: Record<string, string>; // planName -> providerId
   recentErrors: Array<{
     timestamp: string;
     level: string;
@@ -58,6 +59,7 @@ export class DashboardMetrics {
   private apiKeyUsages: Record<string, { requests: number; tokens: number }> = {};
   private providerUsage: Record<string, ProviderUsageSnapshot> = {};
   private localQuota: Record<string, LocalQuotaSnapshot> = {};
+  private planProviders: Record<string, string> = {}; // planName -> providerId
   private recentErrors: MetricsSnapshot['recentErrors'] = [];
   private pendingRequests: Record<string, PendingRequest> = {};
 
@@ -137,22 +139,31 @@ export class DashboardMetrics {
       apiKeyUsages: { ...this.apiKeyUsages },
       providerUsage: { ...this.providerUsage },
       localQuota: { ...this.localQuota },
+      planProviders: { ...this.planProviders },
       recentErrors: [...this.recentErrors],
     };
   }
 
   setProviderUsage(
     planName: string,
-    data: ProviderUsageSnapshot
+    data: ProviderUsageSnapshot,
+    providerId?: string
   ): void {
     this.providerUsage[planName] = data;
+    if (providerId) {
+      this.planProviders[planName] = providerId;
+    }
   }
 
   setLocalQuota(
     planName: string,
-    data: LocalQuotaSnapshot
+    data: LocalQuotaSnapshot,
+    providerId?: string
   ): void {
     this.localQuota[planName] = data;
+    if (providerId) {
+      this.planProviders[planName] = providerId;
+    }
   }
 }
 

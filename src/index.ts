@@ -146,7 +146,7 @@ async function main(): Promise<void> {
                 nextResetTime: w.nextResetTime,
               })),
               lastUpdated: new Date().toISOString(),
-            });
+            }, plan.provider);
           } catch (err) {
             logger.debug('Failed to fetch usage-API data for dashboard', {
               planName: plan.name,
@@ -169,7 +169,7 @@ async function main(): Promise<void> {
             resetAt: quotaState.resetAt?.toISOString() ?? null,
             limit: quotaState.limit,
             used: quotaState.used,
-          });
+          }, plan.provider);
         }
       };
 

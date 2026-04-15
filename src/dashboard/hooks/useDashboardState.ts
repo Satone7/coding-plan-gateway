@@ -87,6 +87,7 @@ export interface DashboardState {
   apiKeyUsages: Record<string, DimensionUsage>;
   providerUsage: Record<string, ProviderUsageData>;
   localQuota: Record<string, LocalQuotaData>;
+  planProviders: Record<string, string>; // planName -> providerId
   recentLogs: LogEntry[];
   recentErrors: LogEntry[];
 }
@@ -221,6 +222,7 @@ export function useDashboardState(): DashboardState {
     apiKeyUsages: {},
     providerUsage: {},
     localQuota: {},
+    planProviders: {},
     recentLogs: [],
     recentErrors: [],
   });
@@ -318,6 +320,7 @@ export function useDashboardState(): DashboardState {
                 apiKeyUsages: { ...prev.apiKeyUsages, ...parsed.data.apiKeyUsages },
                 providerUsage: { ...parsed.data.providerUsage },
                 localQuota: { ...parsed.data.localQuota },
+                planProviders: { ...parsed.data.planProviders },
                 recentErrors: parsed.data.recentErrors.slice(0, 5),
               }));
             } else {
