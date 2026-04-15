@@ -29,10 +29,9 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
     return [name, usage] as [string, typeof usage];
   });
 
-  // Sort by requests (most usage first), show top 3
+  // Sort by requests (most usage first)
   const topPlans = allPlansWithUsage
-    .sort((a, b) => b[1].requests - a[1].requests)
-    .slice(0, 3);
+    .sort((a, b) => b[1].requests - a[1].requests);
 
   const topModels = Object.entries(state.modelUsages)
     .sort((a, b) => b[1].requests - a[1].requests)
