@@ -4,6 +4,23 @@
  */
 
 /**
+ * Provider category for classification.
+ * Includes all categories from cc-switch.
+ */
+export type ProviderCategory =
+  | 'official'
+  | 'cn_official'
+  | 'aggregator'
+  | 'third_party'
+  | 'cloud_provider'
+  | 'custom';
+
+/**
+ * API format for provider requests.
+ */
+export type ApiFormat = 'anthropic' | 'openai_chat' | 'openai_responses';
+
+/**
  * A provider preset with default configuration values.
  * Referenced by plans via the `provider` field.
  */
@@ -20,8 +37,8 @@ export interface ProviderPreset {
   defaultModelAliases?: Record<string, string>;
   /** Whether this provider exposes a usage query API */
   hasUsageApi: boolean;
-  /** Provider category (from cc-switch): cn_official | aggregator | third_party | cloud_provider */
-  category?: string;
-  /** API format: 'anthropic' (default) | 'openai_chat' | 'openai_responses' */
-  apiFormat?: string;
+  /** Provider category for classification */
+  category?: ProviderCategory;
+  /** API format override (e.g., 'openai_chat' for providers using OpenAI format) */
+  apiFormat?: ApiFormat;
 }

@@ -323,6 +323,13 @@ export function useDashboardState(): DashboardState {
                 planProviders: { ...parsed.data.planProviders },
                 recentErrors: parsed.data.recentErrors.slice(0, 5),
               }));
+            } else if (parsed.type === 'quota-update') {
+              setState(prev => ({
+                ...prev,
+                providerUsage: { ...parsed.providerUsage },
+                localQuota: { ...parsed.localQuota },
+                planProviders: { ...parsed.planProviders },
+              }));
             } else {
               processLogEntry(parsed as LogEntry, setState);
             }
