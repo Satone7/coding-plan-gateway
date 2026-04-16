@@ -10,10 +10,12 @@ COPY tsconfig.json ./
 # Install dependencies
 RUN npm ci
 
-# Copy source code
+# Copy source code and vendor submodule
 COPY src/ ./src/
+COPY vendor/ ./vendor/
+COPY scripts/ ./scripts/
 
-# Build TypeScript
+# Build TypeScript (includes generate step)
 RUN npm run build
 
 # Production stage

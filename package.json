@@ -8,7 +8,8 @@
     "cpg": "./bin/cpg"
   },
   "scripts": {
-    "build": "tsc && tsc-alias && npm run build:dashboard",
+    "generate": "ts-node scripts/parse-ccswitch-presets.ts",
+    "build": "npm run generate && tsc && tsc-alias && npm run build:dashboard",
     "build:dashboard": "esbuild src/dashboard/index.tsx --bundle --platform=node --format=esm --outfile=dist/dashboard.mjs --external:react --external:ink --external:bcrypt --external:proper-lockfile",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",

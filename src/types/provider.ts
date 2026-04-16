@@ -20,4 +20,8 @@ export interface ProviderPreset {
   defaultModelAliases?: Record<string, string>;
   /** Whether this provider exposes a usage query API */
   hasUsageApi: boolean;
+  /** Provider category (from cc-switch): cn_official | aggregator | third_party | cloud_provider */
+  category?: string;
+  /** API format: 'anthropic' (default) | 'openai_chat' | 'openai_responses' */
+  apiFormat?: string;
 }

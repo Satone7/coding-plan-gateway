@@ -5,6 +5,9 @@ node_modules/
 dist/
 build/
 
+# Auto-generated provider presets (from vendor/cc-switch)
+src/config/generated-providers.ts
+
 # Environment files
 .env
 .env.*
