@@ -171,6 +171,14 @@ async function main(): Promise<void> {
             used: quotaState.used,
           }, plan.provider);
         }
+
+        // Broadcast quota update to Dashboard clients
+        ipcServer.broadcast({
+          type: 'quota-update',
+          providerUsage: dashboardMetrics.getSnapshot().providerUsage,
+          localQuota: dashboardMetrics.getSnapshot().localQuota,
+          planProviders: dashboardMetrics.getSnapshot().planProviders,
+        });
       };
 
       // Fetch immediately, then every 60s
