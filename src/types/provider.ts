@@ -4,6 +4,11 @@
  */
 
 /**
+ * Provider category for classification.
+ */
+export type ProviderCategory = 'aggregator' | 'cn_official' | 'third_party';
+
+/**
  * A provider preset with default configuration values.
  * Referenced by plans via the `provider` field.
  */
@@ -20,4 +25,8 @@ export interface ProviderPreset {
   defaultModelAliases?: Record<string, string>;
   /** Whether this provider exposes a usage query API */
   hasUsageApi: boolean;
+  /** Provider category for classification */
+  category?: ProviderCategory;
+  /** API format override (e.g., 'openai_chat' for providers using OpenAI format) */
+  apiFormat?: 'anthropic' | 'openai_chat';
 }
