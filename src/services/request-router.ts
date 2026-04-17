@@ -196,6 +196,21 @@ export class RequestRouter {
     const usageResetTimes = dashboardMetrics.getUsageResetTimes(planIdMap);
     const usagePercentages = dashboardMetrics.getUsagePercentages(planIdMap);
 
+    // Debug: log Usage API data availability
+    if (usageResetTimes.size > 0 || usagePercentages.size > 0) {
+      logger.debug('Usage API data available for plan selection', {
+        requestId,
+        resetTimes: Array.from(usageResetTimes.entries()).map(([id, time]) => ({
+          planId: id,
+          resetTime: new Date(time).toISOString(),
+          hoursRemaining: Math.round((time - Date.now()) / (1000 * 60 * 60)),
+        })),
+        percentages: Array.from(usagePercentages.entries()),
+      });
+    } else {
+      logger.debug('No Usage API data available for plan selection', { requestId });
+    }
+
     const context: SelectionContext = {
       model: searchModel,
       plans: plansWithQuota,

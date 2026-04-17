@@ -520,7 +520,7 @@ function calculatePlanScore(
   if (!expiresAt && usageResetTimes) {
     const resetTimestamp = usageResetTimes.get(plan.id);
     if (resetTimestamp) {
-      expiresAt = new Date(resetTimestamp * 1000); // Unix timestamp (seconds) to Date
+      expiresAt = new Date(resetTimestamp); // Already in milliseconds (from Zhipu API)
       expirationSource = 'usage-api';
     }
   }

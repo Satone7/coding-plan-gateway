@@ -202,10 +202,10 @@ describe('PlanSelector', () => {
         expiresAt: undefined,
       }));
 
-      // Create usageResetTimes with a reset time 12 hours from now
+      // Create usageResetTimes with a reset time 12 hours from now (milliseconds)
       // Using Usage API scoring: 12 hours = score 70 (12-24 hours range)
       const now = Date.now();
-      const resetIn12Hours = Math.floor(now / 1000) + 12 * 3600; // Unix timestamp in seconds
+      const resetIn12Hours = now + 12 * 3600 * 1000; // Milliseconds (as Zhipu API returns)
       const usageResetTimes = new Map<number, number>();
       usageResetTimes.set(1, resetIn12Hours); // Plan 1 expires in 12 hours
 
@@ -238,7 +238,7 @@ describe('PlanSelector', () => {
 
       // Plan 2 expires in 4 hours (should get score 90 with Usage API scoring)
       const now = Date.now();
-      const resetIn4Hours = Math.floor(now / 1000) + 4 * 3600;
+      const resetIn4Hours = now + 4 * 3600 * 1000; // Milliseconds
       const usageResetTimes = new Map<number, number>();
       usageResetTimes.set(2, resetIn4Hours);
 
@@ -316,7 +316,7 @@ describe('PlanSelector', () => {
 
       // Create usageResetTimes and usagePercentages simulating Zhipu Usage API
       const now = Date.now();
-      const resetIn24Hours = Math.floor(now / 1000) + 24 * 3600;
+      const resetIn24Hours = now + 24 * 3600 * 1000; // Milliseconds (as Zhipu API returns)
 
       const usageResetTimes = new Map<number, number>();
       usageResetTimes.set(1, resetIn24Hours); // Plan 1 expires in 1 day

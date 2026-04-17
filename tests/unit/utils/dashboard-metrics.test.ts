@@ -21,7 +21,7 @@ describe('DashboardMetrics', () => {
       const metrics = new DashboardMetrics();
       const snapshot: ProviderUsageSnapshot = {
         windows: [
-          { type: '5h', percentage: 50, windowLabel: '5h', nextResetTime: Date.now() / 1000 + 3600 },
+          { type: '5h', percentage: 50, windowLabel: '5h', nextResetTime: Date.now() + 3600 * 1000 },
         ],
         lastUpdated: new Date().toISOString(),
       };
@@ -36,12 +36,12 @@ describe('DashboardMetrics', () => {
 
     it('should return earliest reset time across all windows', () => {
       const metrics = new DashboardMetrics();
-      const now = Math.floor(Date.now() / 1000);
+      const now = Date.now();
       const snapshot: ProviderUsageSnapshot = {
         windows: [
-          { type: 'weekly', percentage: 50, windowLabel: 'weekly', nextResetTime: now + 86400 }, // 1 day
-          { type: '5h', percentage: 30, windowLabel: '5h', nextResetTime: now + 3600 }, // 1 hour (earlier)
-          { type: 'monthly', percentage: 80, windowLabel: 'monthly', nextResetTime: now + 2592000 }, // 30 days
+          { type: 'weekly', percentage: 50, windowLabel: 'weekly', nextResetTime: now + 86400 * 1000 }, // 1 day in ms
+          { type: '5h', percentage: 30, windowLabel: '5h', nextResetTime: now + 3600 * 1000 }, // 1 hour (earlier)
+          { type: 'monthly', percentage: 80, windowLabel: 'monthly', nextResetTime: now + 2592000 * 1000 }, // 30 days
         ],
         lastUpdated: new Date().toISOString(),
       };
@@ -52,16 +52,16 @@ describe('DashboardMetrics', () => {
 
       const result = metrics.getUsageResetTimes(planIdMap);
       expect(result.size).toBe(1);
-      expect(result.get(4)).toBe(now + 3600); // Should return earliest (5h window)
+      expect(result.get(4)).toBe(now + 3600 * 1000); // Should return earliest (5h window)
     });
 
     it('should skip windows without nextResetTime', () => {
       const metrics = new DashboardMetrics();
-      const now = Math.floor(Date.now() / 1000);
+      const now = Date.now();
       const snapshot: ProviderUsageSnapshot = {
         windows: [
           { type: 'total', percentage: 50, windowLabel: 'total' }, // No nextResetTime
-          { type: '5h', percentage: 30, windowLabel: '5h', nextResetTime: now + 3600 },
+          { type: '5h', percentage: 30, windowLabel: '5h', nextResetTime: now + 3600 * 1000 },
         ],
         lastUpdated: new Date().toISOString(),
       };
@@ -72,20 +72,20 @@ describe('DashboardMetrics', () => {
 
       const result = metrics.getUsageResetTimes(planIdMap);
       expect(result.size).toBe(1);
-      expect(result.get(1)).toBe(now + 3600);
+      expect(result.get(1)).toBe(now + 3600 * 1000);
     });
 
     it('should handle multiple plans with different reset times', () => {
       const metrics = new DashboardMetrics();
-      const now = Math.floor(Date.now() / 1000);
+      const now = Date.now();
 
       metrics.setProviderUsage('Plan1', {
-        windows: [{ type: '5h', percentage: 50, windowLabel: '5h', nextResetTime: now + 3600 }],
+        windows: [{ type: '5h', percentage: 50, windowLabel: '5h', nextResetTime: now + 3600 * 1000 }],
         lastUpdated: new Date().toISOString(),
       });
 
       metrics.setProviderUsage('Plan2', {
-        windows: [{ type: 'weekly', percentage: 30, windowLabel: 'weekly', nextResetTime: now + 86400 }],
+        windows: [{ type: 'weekly', percentage: 30, windowLabel: 'weekly', nextResetTime: now + 86400 * 1000 }],
         lastUpdated: new Date().toISOString(),
       });
 
@@ -95,8 +95,8 @@ describe('DashboardMetrics', () => {
 
       const result = metrics.getUsageResetTimes(planIdMap);
       expect(result.size).toBe(2);
-      expect(result.get(1)).toBe(now + 3600);
-      expect(result.get(2)).toBe(now + 86400);
+      expect(result.get(1)).toBe(now + 3600 * 1000);
+      expect(result.get(2)).toBe(now + 86400 * 1000);
     });
   });
 
