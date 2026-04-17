@@ -192,6 +192,160 @@ describe('PlanSelector', () => {
       expect(result).toBeDefined();
       expect([1, 2, 3]).toContain(result?.id);
     });
+
+    it('should use usageResetTimes for expiration score when plan has no expiresOn', () => {
+      const activePlans = mockPlans.filter((p) => p.status === 'active');
+      // Remove any existing expiration config from plans
+      const plansNoExpiration = activePlans.map((p) => ({
+        ...p,
+        expiresOn: undefined,
+        expiresAt: undefined,
+      }));
+
+      // Create usageResetTimes with a reset time 12 hours from now
+      // Using Usage API scoring: 12 hours = score 70 (12-24 hours range)
+      const now = Date.now();
+      const resetIn12Hours = Math.floor(now / 1000) + 12 * 3600; // Unix timestamp in seconds
+      const usageResetTimes = new Map<number, number>();
+      usageResetTimes.set(1, resetIn12Hours); // Plan 1 expires in 12 hours
+
+      const context = {
+        model: 'kimi-k2',
+        plans: plansNoExpiration,
+        quotaStates: mockQuotaStates,
+        config: { strategy: 'quota-priority', factorWeights: { expiration: 0.4, rpm: 0.4, quota: 0.2 } },
+        usageResetTimes,
+      };
+
+      const result = planSelector.selectBestPlan(context);
+      // Plan 1 should have higher expiration score (70 vs 10) due to usageResetTimes
+      // Usage API scoring: 12 hours → score 70
+      // Plan 1: 70*0.4 + 100*0.4 + 55*0.2 = 28 + 40 + 11 = 79
+      // Other plans (no reset): 10*0.4 + 100*0.4 + quota_score*0.2 = much lower
+      expect(result?.id).toBe(1);
+    });
+
+    it('should use Usage API scoring (aggressive weekly) for usageResetTimes', () => {
+      const activePlans = mockPlans.filter((p) => p.status === 'active');
+      const plansNoExpiration = activePlans.map((p) => ({
+        ...p,
+        expiresOn: undefined,
+        expiresAt: undefined,
+      }));
+
+      // Test that Usage API scoring uses aggressive weekly-based thresholds
+      // < 3 hours → 100, 3-6 hours → 90, 6-12 hours → 80, 12-24 hours → 70, etc.
+
+      // Plan 2 expires in 4 hours (should get score 90 with Usage API scoring)
+      const now = Date.now();
+      const resetIn4Hours = Math.floor(now / 1000) + 4 * 3600;
+      const usageResetTimes = new Map<number, number>();
+      usageResetTimes.set(2, resetIn4Hours);
+
+      const context = {
+        model: 'claude-sonnet-4-6',
+        plans: plansNoExpiration,
+        quotaStates: mockQuotaStates,
+        config: { strategy: 'quota-priority', factorWeights: { expiration: 0.4, rpm: 0.4, quota: 0.2 } },
+        usageResetTimes,
+      };
+
+      const result = planSelector.selectBestPlan(context);
+      // Plan 2 with Usage API expiration (4 hours → score 90)
+      // Plan 2: 90*0.4 + 100*0.4 + 60*0.2 = 36 + 40 + 12 = 88
+      expect(result?.id).toBe(2);
+    });
+
+    it('should fallback to quotaState.resetAt when no usageResetTimes and no plan expiration', () => {
+      const activePlans = mockPlans.filter((p) => p.status === 'active');
+      const plansNoExpiration = activePlans.map((p) => ({
+        ...p,
+        expiresOn: undefined,
+        expiresAt: undefined,
+      }));
+
+      // Create quotaStates with resetAt 6 hours from now
+      // Standard scoring (not Usage API): 6 hours → score 90 (1-24 hours range)
+      const resetIn6Hours = new Date(Date.now() + 6 * 3600 * 1000);
+      const quotaStatesWithReset = new Map<number, QuotaState>();
+      quotaStatesWithReset.set(1, {
+        planId: 1,
+        used: 0,
+        limit: 100,
+        period: { type: '5h', windowHours: 5, sliding: true },
+        lastUpdated: new Date(),
+        resetAt: resetIn6Hours,
+      });
+      quotaStatesWithReset.set(2, {
+        planId: 2,
+        used: 0,
+        limit: 100,
+        period: { type: 'total' },
+        lastUpdated: new Date(),
+        resetAt: null,
+      });
+      quotaStatesWithReset.set(3, {
+        planId: 3,
+        used: 0,
+        limit: 100,
+        period: { type: 'total' },
+        lastUpdated: new Date(),
+        resetAt: null,
+      });
+
+      const context = {
+        model: 'kimi-k2',
+        plans: plansNoExpiration,
+        quotaStates: quotaStatesWithReset,
+        config: { strategy: 'quota-priority', factorWeights: { expiration: 0.4, rpm: 0.4, quota: 0.2 } },
+        // No usageResetTimes provided
+      };
+
+      const result = planSelector.selectBestPlan(context);
+      // Plan 1 should have higher expiration score (90) due to quotaState.resetAt
+      expect(result?.id).toBe(1);
+    });
+
+    it('should use usagePercentages for quota score for Usage API plans', () => {
+      const activePlans = mockPlans.filter((p) => p.status === 'active');
+      const plansNoExpiration = activePlans.map((p) => ({
+        ...p,
+        expiresOn: undefined,
+        expiresAt: undefined,
+      }));
+
+      // Create usageResetTimes and usagePercentages simulating Zhipu Usage API
+      const now = Date.now();
+      const resetIn24Hours = Math.floor(now / 1000) + 24 * 3600;
+
+      const usageResetTimes = new Map<number, number>();
+      usageResetTimes.set(1, resetIn24Hours); // Plan 1 expires in 1 day
+
+      // Plan 1 has 10% used → quota score = 90
+      // Plan 2 has 56% used → quota score = 44
+      const usagePercentages = new Map<number, number>();
+      usagePercentages.set(1, 10); // 10% used
+      usagePercentages.set(2, 56); // 56% used
+
+      const context = {
+        model: 'claude-sonnet-4-6', // Supported by plan 2
+        plans: plansNoExpiration,
+        quotaStates: mockQuotaStates,
+        config: { strategy: 'quota-priority', factorWeights: { expiration: 0.4, rpm: 0.4, quota: 0.2 } },
+        usageResetTimes,
+        usagePercentages,
+      };
+
+      const result = planSelector.selectBestPlan(context);
+      // Plan 1 (expires in 1 day, quota 90% remaining):
+      //   expiration: 60 (1-2 days), quota: 90 (100 - 10)
+      //   total = 60*0.4 + 100*0.4 + 90*0.2 = 24 + 40 + 18 = 82
+      // Plan 2 (no usageResetTimes so standard expiration 10, quota 44% remaining):
+      //   expiration: 10, quota: 44 (100 - 56)
+      //   total = 10*0.4 + 100*0.4 + 44*0.2 = 4 + 40 + 8.8 = 52.8
+      // Plan 1 wins due to higher quota score and usage-api expiration scoring
+      expect(result?.id).toBe(1);
+    });
   });
 
   describe('sortByRemainingQuota', () => {

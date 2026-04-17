@@ -165,6 +165,57 @@ export class DashboardMetrics {
       this.planProviders[planName] = providerId;
     }
   }
+
+  /**
+   * Get Usage API reset times for all plans.
+   * Finds the earliest reset time across all windows for each plan.
+   * @param planIdMap - Map of planName to planId for lookup
+   * @returns Map of planId to nextResetTime (Unix timestamp in seconds)
+   */
+  getUsageResetTimes(planIdMap: Map<string, number>): Map<number, number> {
+    const result = new Map<number, number>();
+    for (const [planName, data] of Object.entries(this.providerUsage)) {
+      const planId = planIdMap.get(planName);
+      if (!planId) continue;
+
+      // Find the earliest reset time across all windows
+      const earliestReset = data.windows
+        .filter(w => w.nextResetTime !== undefined)
+        .reduce((min, w) => {
+          const time = w.nextResetTime!;
+          return min === null || time < min ? time : min;
+        }, null as number | null);
+
+      if (earliestReset !== null) {
+        result.set(planId, earliestReset);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Get Usage API quota percentages for all plans.
+   * Finds the highest percentage across all windows for each plan.
+   * Higher percentage = more consumed quota.
+   * @param planIdMap - Map of planName to planId for lookup
+   * @returns Map of planId to highest percentage (0-100)
+   */
+  getUsagePercentages(planIdMap: Map<string, number>): Map<number, number> {
+    const result = new Map<number, number>();
+    for (const [planName, data] of Object.entries(this.providerUsage)) {
+      const planId = planIdMap.get(planName);
+      if (!planId) continue;
+
+      // Find the highest percentage across all windows
+      // Higher percentage = more consumed, lower quota score
+      const maxPercentage = data.windows.length > 0
+        ? Math.max(...data.windows.map(w => w.percentage))
+        : 0;
+
+      result.set(planId, maxPercentage);
+    }
+    return result;
+  }
 }
 
 export const dashboardMetrics = new DashboardMetrics();

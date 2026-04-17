@@ -16,6 +16,7 @@ import type { LoadBalanceConfig } from '@/types/load-balancing';
 import { DEFAULT_LOAD_BALANCE_CONFIG } from '@/types/load-balancing';
 import { createGatewayError } from '@/types';
 import { logger } from '@/utils/logger';
+import { dashboardMetrics } from '@/utils/dashboard-metrics';
 
 /**
  * Result of a routing decision.
@@ -184,6 +185,17 @@ export class RequestRouter {
 
     // Select the best plan based on load balancing strategy
     const quotaStates = this.quotaManager?.getAllQuotaStates() ?? new Map<number, QuotaState>();
+
+    // Build plan name to ID map for Usage API data lookup
+    const planIdMap = new Map<string, number>();
+    for (const plan of allPlans) {
+      planIdMap.set(plan.name, plan.id);
+    }
+
+    // Get Usage API reset times and percentages from DashboardMetrics
+    const usageResetTimes = dashboardMetrics.getUsageResetTimes(planIdMap);
+    const usagePercentages = dashboardMetrics.getUsagePercentages(planIdMap);
+
     const context: SelectionContext = {
       model: searchModel,
       plans: plansWithQuota,
@@ -191,6 +203,8 @@ export class RequestRouter {
       rpmTracker: this.rpmTracker,
       config: this.loadBalanceConfig,
       requestId,
+      usageResetTimes,
+      usagePercentages,
     };
     const selectedPlan = this.planSelector.selectBestPlan(context);
 

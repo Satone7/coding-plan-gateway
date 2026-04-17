@@ -11,6 +11,7 @@ import { DEFAULT_LOAD_BALANCE_CONFIG, DEFAULT_FACTOR_WEIGHTS } from '@/types/loa
 import {
   calculateEffectiveExpiration,
   calculateExpirationScore,
+  calculateUsageApiExpirationScore,
   calculateRpmScore,
   calculateQuotaScore,
 } from '@/utils/expiration';
@@ -41,6 +42,10 @@ export interface SelectionContext {
   config: LoadBalanceConfig;
   /** Request ID for tracing */
   requestId?: string;
+  /** Usage API reset times (planId -> Unix timestamp in seconds) */
+  usageResetTimes?: Map<number, number>;
+  /** Usage API quota percentages (planId -> highest percentage 0-100) */
+  usagePercentages?: Map<number, number>;
 }
 
 /**
@@ -321,11 +326,11 @@ function getStrategy(strategy: string): StrategyFunction {
  * Selects the plan with the highest combined score.
  */
 function quotaPriorityStrategy(context: SelectionContext): CodingPlan | undefined {
-  const { plans, quotaStates, rpmTracker, config } = context;
+  const { plans, quotaStates, rpmTracker, config, usageResetTimes, usagePercentages } = context;
   const weights = config.factorWeights ?? DEFAULT_FACTOR_WEIGHTS;
 
   // Calculate scores for all plans
-  const scores = plans.map((plan) => calculatePlanScore(plan, quotaStates, rpmTracker, weights));
+  const scores = plans.map((plan) => calculatePlanScore(plan, quotaStates, rpmTracker, weights, usageResetTimes, usagePercentages));
 
   // Log score details for all candidate plans
   for (const score of scores) {
@@ -498,11 +503,42 @@ function calculatePlanScore(
   plan: CodingPlan,
   quotaStates: Map<number, QuotaState>,
   rpmTracker?: RpmTrackerInterface,
-  weights: FactorWeights = DEFAULT_FACTOR_WEIGHTS
+  weights: FactorWeights = DEFAULT_FACTOR_WEIGHTS,
+  usageResetTimes?: Map<number, number>,
+  usagePercentages?: Map<number, number>
 ): PlanScore {
-  // Calculate expiration score
-  const expiresAt = calculateEffectiveExpiration(plan);
-  const expirationScore = calculateExpirationScore(expiresAt);
+  // Calculate expiration score with fallback to Usage API reset time
+  let expiresAt = calculateEffectiveExpiration(plan);
+  let expirationSource: 'config' | 'usage-api' | 'quota-state' | 'none' = 'none';
+
+  // Source: plan config (expiresOn/expiresAt)
+  if (expiresAt) {
+    expirationSource = 'config';
+  }
+
+  // Fallback 1: Usage API reset time (for plans without explicit expiration config)
+  if (!expiresAt && usageResetTimes) {
+    const resetTimestamp = usageResetTimes.get(plan.id);
+    if (resetTimestamp) {
+      expiresAt = new Date(resetTimestamp * 1000); // Unix timestamp (seconds) to Date
+      expirationSource = 'usage-api';
+    }
+  }
+
+  // Fallback 2: QuotaState resetAt (for local quota plans)
+  if (!expiresAt) {
+    const quotaState = quotaStates.get(plan.id);
+    if (quotaState?.resetAt) {
+      expiresAt = quotaState.resetAt;
+      expirationSource = 'quota-state';
+    }
+  }
+
+  // Use different scoring based on expiration source
+  // Usage API providers (like Zhipu) use aggressive weekly-based scoring
+  const expirationScore = expirationSource === 'usage-api'
+    ? calculateUsageApiExpirationScore(expiresAt)
+    : calculateExpirationScore(expiresAt);
 
   // Calculate RPM score
   let rpmScore = 100; // Default to highest if no tracker
@@ -514,10 +550,18 @@ function calculatePlanScore(
   }
 
   // Calculate quota score
-  const quotaState = quotaStates.get(plan.id);
-  const quotaScore = quotaState
-    ? calculateQuotaScore(quotaState.used, quotaState.limit)
-    : calculateQuotaScore(0, plan.quota.limit);
+  // For Usage API providers, use percentage data (remaining = 100 - used_percentage)
+  let quotaScore: number;
+  if (expirationSource === 'usage-api' && usagePercentages) {
+    const usedPercentage = usagePercentages.get(plan.id) ?? 0;
+    quotaScore = Math.round(100 - usedPercentage); // Remaining percentage
+  } else {
+    // Standard quota calculation from local state or plan config
+    const quotaState = quotaStates.get(plan.id);
+    quotaScore = quotaState
+      ? calculateQuotaScore(quotaState.used, quotaState.limit)
+      : calculateQuotaScore(0, plan.quota.limit);
+  }
 
   // Calculate weighted total
   const totalScore =

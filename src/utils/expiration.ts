@@ -149,6 +149,77 @@ export function calculateExpirationScore(expiresAt: Date | null): number {
 }
 
 /**
+ * Calculate expiration score for Usage API providers (e.g., Zhipu).
+ * Uses aggressive weekly-based scoring to prioritize plans near quota reset.
+ *
+ * Score table (weekly quota focus):
+ * - Expired: 0
+ * - < 3 hours: 100 (highest priority)
+ * - 3-6 hours: 90
+ * - 6-12 hours: 80
+ * - 12-24 hours: 70
+ * - 1-2 days: 60
+ * - 2-3 days: 50
+ * - 3-4 days: 40
+ * - 4-5 days: 30
+ * - 5-6 days: 20
+ * - > 6 days: 10 (lowest priority)
+ *
+ * This scoring is designed for providers like Zhipu that have:
+ * - Short-window quotas (e.g., 5h) that rarely deplete
+ * - Weekly quotas that are the real constraint
+ * - Only percentage data (no exact quota counts)
+ *
+ * @param expiresAt - The expiration date, or null if no expiration
+ * @returns Score from 0-100
+ */
+export function calculateUsageApiExpirationScore(expiresAt: Date | null): number {
+  if (!expiresAt) {
+    return 10; // No expiration = lowest priority
+  }
+
+  const now = Date.now();
+  const expirationTime = expiresAt.getTime();
+
+  // Already expired
+  if (expirationTime <= now) {
+    return 0;
+  }
+
+  const hoursRemaining = (expirationTime - now) / (1000 * 60 * 60);
+
+  if (hoursRemaining < 3) {
+    return 100; // < 3 hours - highest priority
+  }
+  if (hoursRemaining < 6) {
+    return 90; // 3-6 hours
+  }
+  if (hoursRemaining < 12) {
+    return 80; // 6-12 hours
+  }
+  if (hoursRemaining < 24) {
+    return 70; // 12-24 hours
+  }
+  if (hoursRemaining < 48) { // 2 days
+    return 60;
+  }
+  if (hoursRemaining < 72) { // 3 days
+    return 50;
+  }
+  if (hoursRemaining < 96) { // 4 days
+    return 40;
+  }
+  if (hoursRemaining < 120) { // 5 days
+    return 30;
+  }
+  if (hoursRemaining < 144) { // 6 days
+    return 20;
+  }
+
+  return 10; // > 6 days - lowest priority
+}
+
+/**
  * Calculate RPM score (inverse: lower RPM = higher score).
  * Uses a simple linear scale based on observed max RPM.
  *
