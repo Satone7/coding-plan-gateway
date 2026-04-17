@@ -34,14 +34,14 @@ describe('DashboardMetrics', () => {
       expect(result.size).toBe(0);
     });
 
-    it('should return earliest reset time across all windows', () => {
+    it('should return latest reset time across all windows (longest cycle)', () => {
       const metrics = new DashboardMetrics();
       const now = Date.now();
       const snapshot: ProviderUsageSnapshot = {
         windows: [
-          { type: 'weekly', percentage: 50, windowLabel: 'weekly', nextResetTime: now + 86400 * 1000 }, // 1 day in ms
+          { type: 'weekly', percentage: 50, windowLabel: 'weekly', nextResetTime: now + 86400 * 1000 }, // 1 day
           { type: '5h', percentage: 30, windowLabel: '5h', nextResetTime: now + 3600 * 1000 }, // 1 hour (earlier)
-          { type: 'monthly', percentage: 80, windowLabel: 'monthly', nextResetTime: now + 2592000 * 1000 }, // 30 days
+          { type: 'monthly', percentage: 80, windowLabel: 'monthly', nextResetTime: now + 2592000 * 1000 }, // 30 days (latest)
         ],
         lastUpdated: new Date().toISOString(),
       };
@@ -52,7 +52,8 @@ describe('DashboardMetrics', () => {
 
       const result = metrics.getUsageResetTimes(planIdMap);
       expect(result.size).toBe(1);
-      expect(result.get(4)).toBe(now + 3600 * 1000); // Should return earliest (5h window)
+      // Should return latest (monthly window) as it represents the real quota cycle boundary
+      expect(result.get(4)).toBe(now + 2592000 * 1000);
     });
 
     it('should skip windows without nextResetTime', () => {

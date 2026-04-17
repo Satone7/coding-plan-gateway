@@ -168,9 +168,12 @@ export class DashboardMetrics {
 
   /**
    * Get Usage API reset times for all plans.
-   * Finds the earliest reset time across all windows for each plan.
+   * Finds the latest (farthest) reset time across all windows for each plan.
+   * Uses the farthest window because short-term windows (e.g., 5h sliding) roll over
+   * frequently and don't represent a real "expiration" constraint. The longest window
+   * (e.g., weekly) reflects the actual quota cycle boundary.
    * @param planIdMap - Map of planName to planId for lookup
-   * @returns Map of planId to nextResetTime (Unix timestamp in seconds)
+   * @returns Map of planId to nextResetTime (Unix timestamp in milliseconds)
    */
   getUsageResetTimes(planIdMap: Map<string, number>): Map<number, number> {
     const result = new Map<number, number>();
@@ -178,16 +181,16 @@ export class DashboardMetrics {
       const planId = planIdMap.get(planName);
       if (!planId) continue;
 
-      // Find the earliest reset time across all windows
-      const earliestReset = data.windows
+      // Find the latest reset time across all windows (longest quota cycle)
+      const latestReset = data.windows
         .filter(w => w.nextResetTime !== undefined)
-        .reduce((min, w) => {
+        .reduce((max, w) => {
           const time = w.nextResetTime!;
-          return min === null || time < min ? time : min;
+          return max === null || time > max ? time : max;
         }, null as number | null);
 
-      if (earliestReset !== null) {
-        result.set(planId, earliestReset);
+      if (latestReset !== null) {
+        result.set(planId, latestReset);
       }
     }
     return result;
