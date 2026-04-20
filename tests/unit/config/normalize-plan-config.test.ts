@@ -128,7 +128,9 @@ describe('normalizePlanConfig', () => {
       expect(result.quota.limit).toBe(Number.MAX_SAFE_INTEGER);
       expect(result.quota.period.type).toBe('total');
       expect(result.baseUrl).toBe('https://open.bigmodel.cn/api/anthropic');
-      expect(result.models).toEqual(['glm-5.1', 'glm-5-turbo']);
+      expect(result.models).toContain('glm-5');
+      expect(result.models).toContain('glm-5.1');
+      expect(result.models).toContain('glm-5-turbo');
     });
 
     it('applies preset modelAliases when not explicitly set', () => {
@@ -139,7 +141,8 @@ describe('normalizePlanConfig', () => {
       };
 
       const result = normalizePlanConfig(plan);
-      expect(result.modelAliases).toEqual({ 'glm-5': 'glm-5-turbo' });
+      // cc-switch presets don't define defaultModelAliases
+      expect(result.modelAliases).toBeUndefined();
     });
 
     it('does not override explicit fields with preset values', () => {

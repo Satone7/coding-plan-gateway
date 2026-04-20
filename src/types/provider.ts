@@ -5,8 +5,20 @@
 
 /**
  * Provider category for classification.
+ * Includes all categories from cc-switch.
  */
-export type ProviderCategory = 'aggregator' | 'cn_official' | 'third_party';
+export type ProviderCategory =
+  | 'official'
+  | 'cn_official'
+  | 'aggregator'
+  | 'third_party'
+  | 'cloud_provider'
+  | 'custom';
+
+/**
+ * API format for provider requests.
+ */
+export type ApiFormat = 'anthropic' | 'openai_chat' | 'openai_responses';
 
 /**
  * A provider preset with default configuration values.
@@ -28,5 +40,5 @@ export interface ProviderPreset {
   /** Provider category for classification */
   category?: ProviderCategory;
   /** API format override (e.g., 'openai_chat' for providers using OpenAI format) */
-  apiFormat?: 'anthropic' | 'openai_chat';
+  apiFormat?: ApiFormat;
 }

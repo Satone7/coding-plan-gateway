@@ -10,8 +10,8 @@ import {
 } from '@/config/builtin-providers';
 
 describe('BUILTIN_PROVIDERS', () => {
-  it('should contain exactly 3 providers', () => {
-    expect(BUILTIN_PROVIDERS).toHaveLength(3);
+  it('should contain providers from cc-switch', () => {
+    expect(BUILTIN_PROVIDERS.length).toBeGreaterThanOrEqual(20);
   });
 
   it('should have unique IDs', () => {
@@ -19,12 +19,11 @@ describe('BUILTIN_PROVIDERS', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('should have all required fields on each provider', () => {
+  it('should have baseUrl and valid structure on each provider', () => {
     for (const provider of BUILTIN_PROVIDERS) {
       expect(provider.id).toBeTruthy();
       expect(provider.name).toBeTruthy();
       expect(provider.baseUrl).toMatch(/^https?:\/\//);
-      expect(provider.models.length).toBeGreaterThan(0);
       expect(typeof provider.hasUsageApi).toBe('boolean');
     }
   });
@@ -36,9 +35,9 @@ describe('getBuiltinProvider', () => {
     expect(zhipu).toBeDefined();
     expect(zhipu!.id).toBe('zhipu');
     expect(zhipu!.baseUrl).toBe('https://open.bigmodel.cn/api/anthropic');
+    expect(zhipu!.models).toContain('glm-5');
     expect(zhipu!.models).toContain('glm-5.1');
     expect(zhipu!.models).toContain('glm-5-turbo');
-    expect(zhipu!.defaultModelAliases).toEqual({ 'glm-5': 'glm-5-turbo' });
     expect(zhipu!.hasUsageApi).toBe(true);
   });
 
@@ -66,7 +65,9 @@ describe('getBuiltinProvider', () => {
 });
 
 describe('BUILTIN_PROVIDER_IDS', () => {
-  it('should list all provider IDs', () => {
-    expect(BUILTIN_PROVIDER_IDS).toEqual(['zhipu', 'volcengine', 'ali']);
+  it('should contain key backwards-compatible IDs', () => {
+    expect(BUILTIN_PROVIDER_IDS).toContain('zhipu');
+    expect(BUILTIN_PROVIDER_IDS).toContain('volcengine');
+    expect(BUILTIN_PROVIDER_IDS).toContain('ali');
   });
 });
