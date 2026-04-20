@@ -28,8 +28,18 @@ import {
   AnthropicCountTokensRequest,
   AnthropicCountTokensResponse,
 } from '@/types/anthropic';
+import type { ChatCompletionResponse } from '@/types/openai';
 import type { CodingPlan } from '@/types';
 import { TokenCounter } from '@/utils/token-counter';
+import {
+  convertAnthropicToOpenAIRequest,
+  convertOpenAIToAnthropicResponse,
+} from '@/utils/format-converter';
+
+/** Check if a plan's upstream expects OpenAI format (requires cross-format conversion). */
+function needsOpenAIUpstream(plan: CodingPlan): boolean {
+  return plan.apiFormat === 'openai_chat';
+}
 
 /**
  * Schema for system prompt content blocks.
@@ -220,12 +230,25 @@ async function attemptFailover(
 
   startStage(request, 'upstreamRequest');
   try {
-    const response = await services.proxy.forwardAnthropicRequest(body, {
-      baseUrl: plan.baseUrl,
-      apiKey,
-      timeout: plan.timeout,
-      requestId,
-    });
+    let response: { durationMs: number; statusCode: number; data: unknown };
+    if (needsOpenAIUpstream(plan)) {
+      const openaiBody = convertAnthropicToOpenAIRequest(body);
+      const upstreamResponse = await services.proxy.forwardOpenAIRequest(openaiBody, {
+        baseUrl: plan.baseUrl,
+        apiKey,
+        timeout: plan.timeout,
+        requestId,
+      });
+      const anthropicResponse = convertOpenAIToAnthropicResponse(upstreamResponse.data as ChatCompletionResponse);
+      response = { durationMs: upstreamResponse.durationMs, statusCode: upstreamResponse.statusCode, data: anthropicResponse };
+    } else {
+      response = await services.proxy.forwardAnthropicRequest(body, {
+        baseUrl: plan.baseUrl,
+        apiKey,
+        timeout: plan.timeout,
+        requestId,
+      });
+    }
     endStage(request, 'upstreamRequest');
     services.router.markPlanSuccess(plan.id);
     logger.info('Failover successful', { requestId, failoverPlanId: plan.id, durationMs: response.durationMs });
@@ -321,36 +344,65 @@ export function createAnthropicHandlers(
       if (body.stream) {
         startStage(request, 'upstreamRequest');
         try {
-          await proxy.forwardAnthropicStream(
-            body,
-            { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
-            (_chunk, done) => {
-              if (done) {
+          if (needsOpenAIUpstream(plan)) {
+            // Cross-format: client sends Anthropic, upstream expects OpenAI
+            await proxy.forwardAnthropicStreamAsOpenAI(
+              body,
+              { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
+              reply,
+              (tokenUsage, accumulatedText) => {
                 endStage(request, 'upstreamRequest');
                 router.markPlanSuccess(plan.id);
-                logger.debug('Stream completed', { requestId });
-              }
-            },
-            reply,
-            (tokenUsage, accumulatedText) => {
-              const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
-                tokenUsage,
-                body,
-                'anthropic',
-                accumulatedText,
-                requestId
-              );
+                const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
+                  tokenUsage,
+                  body,
+                  'openai',
+                  accumulatedText,
+                  requestId
+                );
 
-              attachProviderMetrics(request, {
-                planId: plan.id,
-                planName: plan.name,
-                model,
-                durationMs: Date.now() - (request.startTime || Date.now()),
-                statusCode: 200,
-                tokenUsage: finalTokenUsage,
-              });
-            }
-          );
+                attachProviderMetrics(request, {
+                  planId: plan.id,
+                  planName: plan.name,
+                  model,
+                  durationMs: Date.now() - (request.startTime || Date.now()),
+                  statusCode: 200,
+                  tokenUsage: finalTokenUsage,
+                });
+              }
+            );
+          } else {
+            await proxy.forwardAnthropicStream(
+              body,
+              { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
+              (_chunk, done) => {
+                if (done) {
+                  endStage(request, 'upstreamRequest');
+                  router.markPlanSuccess(plan.id);
+                  logger.debug('Stream completed', { requestId });
+                }
+              },
+              reply,
+              (tokenUsage, accumulatedText) => {
+                const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
+                  tokenUsage,
+                  body,
+                  'anthropic',
+                  accumulatedText,
+                  requestId
+                );
+
+                attachProviderMetrics(request, {
+                  planId: plan.id,
+                  planName: plan.name,
+                  model,
+                  durationMs: Date.now() - (request.startTime || Date.now()),
+                  statusCode: 200,
+                  tokenUsage: finalTokenUsage,
+                });
+              }
+            );
+          }
         } catch (streamError) {
           endStage(request, 'upstreamRequest');
           router.markPlanFailed(plan.id);
@@ -370,13 +422,30 @@ export function createAnthropicHandlers(
       // Non-streaming request with failover
       startStage(request, 'upstreamRequest');
       try {
-        const response = await proxy.forwardAnthropicRequest(body, {
-          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
-        });
-        endStage(request, 'upstreamRequest');
-        router.markPlanSuccess(plan.id);
-        recordMetrics(request, plan, model, response);
-        return response.data as AnthropicMessageResponse;
+        let anthropicResponse: AnthropicMessageResponse;
+        if (needsOpenAIUpstream(plan)) {
+          const openaiBody = convertAnthropicToOpenAIRequest(body);
+          const upstreamResponse = await proxy.forwardOpenAIRequest(openaiBody, {
+            baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+          });
+          anthropicResponse = convertOpenAIToAnthropicResponse(upstreamResponse.data as ChatCompletionResponse);
+          endStage(request, 'upstreamRequest');
+          router.markPlanSuccess(plan.id);
+          recordMetrics(request, plan, model, {
+            data: anthropicResponse,
+            durationMs: upstreamResponse.durationMs,
+            statusCode: upstreamResponse.statusCode,
+          });
+        } else {
+          const response = await proxy.forwardAnthropicRequest(body, {
+            baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+          });
+          endStage(request, 'upstreamRequest');
+          router.markPlanSuccess(plan.id);
+          recordMetrics(request, plan, model, response);
+          anthropicResponse = response.data as AnthropicMessageResponse;
+        }
+        return anthropicResponse;
       } catch (error) {
         endStage(request, 'upstreamRequest');
         logger.warn('Primary plan request failed', {

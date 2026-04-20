@@ -473,6 +473,7 @@ export class FilePlanRepository implements IPlanRepository {
       enable: config.enable ?? true,
       modelAliases: config.modelAliases,
       provider: config.provider,
+      apiFormat: config.apiFormat,
       createdAt: now,
       updatedAt: now,
     };

@@ -186,6 +186,8 @@ export function normalizePlanConfig(plan: PlanConfig): NormalizedPlanConfig {
         baseUrl: normalized.baseUrl ?? preset.baseUrl,
         models: normalized.models ?? [...preset.models],
         modelAliases: normalized.modelAliases ?? preset.defaultModelAliases,
+        // Propagate apiFormat from preset (default to 'anthropic' if not specified)
+        apiFormat: normalized.apiFormat ?? preset.apiFormat ?? 'anthropic',
       };
     }
   }

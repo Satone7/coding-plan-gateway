@@ -146,6 +146,9 @@ export interface CodingPlan {
   /** Provider preset ID. When set, baseUrl/models/quota use preset defaults if not specified. */
   provider?: string;
 
+  /** Upstream API format. Determines which forwarding method and URL path to use. */
+  apiFormat?: 'anthropic' | 'openai_chat';
+
   /** Creation timestamp */
   createdAt: Date;
 
