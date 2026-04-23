@@ -112,6 +112,7 @@ export const planConfigSchema = z.object({
   name: z.string().min(1).max(100),
   provider: z.string().min(1).optional(),
   baseUrl: z.string().url().optional(),
+  openaiBaseUrl: z.string().url().optional(),
   apiKey: z.string().min(1),
   models: z.array(z.string().min(1)).min(1).optional(),
   quota: quotaConfigSchema.optional(),
@@ -152,6 +153,7 @@ export const planConfigSchema = z.object({
 const providerOverrideSchema = z.object({
   name: z.string().min(1).optional(),
   baseUrl: z.string().url().optional(),
+  openaiBaseUrl: z.string().url().optional(),
   models: z.array(z.string().min(1)).min(1).optional(),
   defaultModelAliases: modelAliasesSchema.optional(),
   hasUsageApi: z.boolean().optional(),

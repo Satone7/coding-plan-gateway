@@ -31,9 +31,20 @@ import {
   convertAnthropicToOpenAIResponse,
 } from '@/utils/format-converter';
 
-/** Check if a plan's upstream expects Anthropic format (requires cross-format conversion). */
+/** Check if a plan's upstream expects Anthropic format (requires cross-format conversion).
+ * Default to 'anthropic' if apiFormat is not specified. */
 function needsAnthropicUpstream(plan: CodingPlan): boolean {
-  return plan.apiFormat === 'anthropic';
+  return plan.apiFormat !== 'openai_chat';
+}
+
+/** Get the appropriate base URL for forwarding based on upstream format.
+ * For Anthropic format (default), returns baseUrl.
+ * For OpenAI format, returns openaiBaseUrl if available, undefined otherwise. */
+function getUpstreamBaseUrl(plan: CodingPlan, useAnthropicUpstream: boolean): string | undefined {
+  if (useAnthropicUpstream) {
+    return plan.baseUrl;
+  }
+  return plan.openaiBaseUrl;
 }
 
 /**
@@ -239,13 +250,25 @@ async function attemptFailover(
     body.model = canonicalName;
   }
 
+  // Check if upstream URL is available
+  const useAnthropicUpstream = needsAnthropicUpstream(plan);
+  const upstreamUrl = getUpstreamBaseUrl(plan, useAnthropicUpstream);
+  if (!upstreamUrl) {
+    logger.warn('Failover plan lacks OpenAI base_url', {
+      requestId,
+      failoverPlanId: plan.id,
+      planName: plan.name,
+    });
+    return null;
+  }
+
   startStage(request, 'upstreamRequest');
   try {
     let response: { durationMs: number; statusCode: number; data: unknown };
-    if (needsAnthropicUpstream(plan)) {
+    if (useAnthropicUpstream) {
       const anthropicBody = convertOpenAIToAnthropicRequest(body);
       const upstreamResponse = await services.proxy.forwardAnthropicRequest(anthropicBody, {
-        baseUrl: plan.baseUrl,
+        baseUrl: upstreamUrl,
         apiKey,
         timeout: plan.timeout,
         requestId,
@@ -254,7 +277,7 @@ async function attemptFailover(
       response = { durationMs: upstreamResponse.durationMs, statusCode: upstreamResponse.statusCode, data: openaiResponse };
     } else {
       response = await services.proxy.forwardOpenAIRequest(body, {
-        baseUrl: plan.baseUrl,
+        baseUrl: upstreamUrl,
         apiKey,
         timeout: plan.timeout,
         requestId,
@@ -312,6 +335,17 @@ export function createOpenAIHandlers(
 
       const plan = routingResult.selectedPlan;
 
+      // Check if upstream URL is available for the requested format
+      const useAnthropicUpstream = needsAnthropicUpstream(plan);
+      const upstreamUrl = getUpstreamBaseUrl(plan, useAnthropicUpstream);
+      if (!upstreamUrl) {
+        throw createGatewayError(
+          'SERVICE_UNAVAILABLE',
+          `Plan '${plan.name}' does not support OpenAI-format requests. Provider lacks OpenAI base_url.`,
+          { planId: plan.id, planName: plan.name, provider: plan.provider }
+        );
+      }
+
       // Consume quota after selecting the plan
       startStage(request, 'quotaCheck');
       if (quotaManager) {
@@ -354,11 +388,11 @@ export function createOpenAIHandlers(
       if (body.stream) {
         startStage(request, 'upstreamRequest');
         try {
-          if (needsAnthropicUpstream(plan)) {
+          if (useAnthropicUpstream) {
             // Cross-format: client sends OpenAI, upstream expects Anthropic
             await proxy.forwardOpenAIStreamAsAnthropic(
               body,
-              { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
+              { baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId },
               reply,
               (tokenUsage, accumulatedText) => {
                 endStage(request, 'upstreamRequest');
@@ -384,7 +418,7 @@ export function createOpenAIHandlers(
           } else {
             await proxy.forwardOpenAIStream(
               body,
-              { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
+              { baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId },
               (_chunk, done) => {
                 if (done) {
                   endStage(request, 'upstreamRequest');
@@ -433,10 +467,10 @@ export function createOpenAIHandlers(
       startStage(request, 'upstreamRequest');
       try {
         let openaiResponse: ChatCompletionResponse;
-        if (needsAnthropicUpstream(plan)) {
+        if (useAnthropicUpstream) {
           const anthropicBody = convertOpenAIToAnthropicRequest(body);
           const upstreamResponse = await proxy.forwardAnthropicRequest(anthropicBody, {
-            baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+            baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId,
           });
           openaiResponse = convertAnthropicToOpenAIResponse(upstreamResponse.data as AnthropicMessageResponse);
           endStage(request, 'upstreamRequest');
@@ -448,7 +482,7 @@ export function createOpenAIHandlers(
           });
         } else {
           const response = await proxy.forwardOpenAIRequest(body, {
-            baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+            baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId,
           });
           endStage(request, 'upstreamRequest');
           router.markPlanSuccess(plan.id);

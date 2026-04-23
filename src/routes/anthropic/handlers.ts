@@ -36,9 +36,20 @@ import {
   convertOpenAIToAnthropicResponse,
 } from '@/utils/format-converter';
 
-/** Check if a plan's upstream expects OpenAI format (requires cross-format conversion). */
+/** Check if a plan's upstream expects OpenAI format (requires cross-format conversion).
+ * Default to 'anthropic' if apiFormat is not specified. */
 function needsOpenAIUpstream(plan: CodingPlan): boolean {
   return plan.apiFormat === 'openai_chat';
+}
+
+/** Get the appropriate base URL for forwarding based on upstream format.
+ * For Anthropic format (default), returns baseUrl (always available).
+ * For OpenAI format, returns openaiBaseUrl if available, undefined otherwise. */
+function getUpstreamBaseUrl(plan: CodingPlan, useOpenAIUpstream: boolean): string | undefined {
+  if (useOpenAIUpstream) {
+    return plan.openaiBaseUrl;
+  }
+  return plan.baseUrl;
 }
 
 /**
@@ -228,13 +239,25 @@ async function attemptFailover(
     body.model = canonicalName;
   }
 
+  // Check if upstream URL is available
+  const useOpenAIUpstream = needsOpenAIUpstream(plan);
+  const upstreamUrl = getUpstreamBaseUrl(plan, useOpenAIUpstream);
+  if (!upstreamUrl) {
+    logger.warn('Failover plan lacks OpenAI base_url', {
+      requestId,
+      failoverPlanId: plan.id,
+      planName: plan.name,
+    });
+    return null;
+  }
+
   startStage(request, 'upstreamRequest');
   try {
     let response: { durationMs: number; statusCode: number; data: unknown };
-    if (needsOpenAIUpstream(plan)) {
+    if (useOpenAIUpstream) {
       const openaiBody = convertAnthropicToOpenAIRequest(body);
       const upstreamResponse = await services.proxy.forwardOpenAIRequest(openaiBody, {
-        baseUrl: plan.baseUrl,
+        baseUrl: upstreamUrl,
         apiKey,
         timeout: plan.timeout,
         requestId,
@@ -243,7 +266,7 @@ async function attemptFailover(
       response = { durationMs: upstreamResponse.durationMs, statusCode: upstreamResponse.statusCode, data: anthropicResponse };
     } else {
       response = await services.proxy.forwardAnthropicRequest(body, {
-        baseUrl: plan.baseUrl,
+        baseUrl: upstreamUrl,
         apiKey,
         timeout: plan.timeout,
         requestId,
@@ -302,6 +325,17 @@ export function createAnthropicHandlers(
 
       const plan = routingResult.selectedPlan;
 
+      // Check if upstream URL is available for the requested format
+      const useOpenAIUpstream = needsOpenAIUpstream(plan);
+      const upstreamUrl = getUpstreamBaseUrl(plan, useOpenAIUpstream);
+      if (!upstreamUrl) {
+        throw createGatewayError(
+          'SERVICE_UNAVAILABLE',
+          `Plan '${plan.name}' does not support OpenAI-format requests for upstream. Provider lacks OpenAI base_url.`,
+          { planId: plan.id, planName: plan.name, provider: plan.provider }
+        );
+      }
+
       // Consume quota after selecting the plan
       startStage(request, 'quotaCheck');
       if (quotaManager) {
@@ -344,11 +378,11 @@ export function createAnthropicHandlers(
       if (body.stream) {
         startStage(request, 'upstreamRequest');
         try {
-          if (needsOpenAIUpstream(plan)) {
+          if (useOpenAIUpstream) {
             // Cross-format: client sends Anthropic, upstream expects OpenAI
             await proxy.forwardAnthropicStreamAsOpenAI(
               body,
-              { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
+              { baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId },
               reply,
               (tokenUsage, accumulatedText) => {
                 endStage(request, 'upstreamRequest');
@@ -374,7 +408,7 @@ export function createAnthropicHandlers(
           } else {
             await proxy.forwardAnthropicStream(
               body,
-              { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
+              { baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId },
               (_chunk, done) => {
                 if (done) {
                   endStage(request, 'upstreamRequest');
@@ -423,10 +457,10 @@ export function createAnthropicHandlers(
       startStage(request, 'upstreamRequest');
       try {
         let anthropicResponse: AnthropicMessageResponse;
-        if (needsOpenAIUpstream(plan)) {
+        if (useOpenAIUpstream) {
           const openaiBody = convertAnthropicToOpenAIRequest(body);
           const upstreamResponse = await proxy.forwardOpenAIRequest(openaiBody, {
-            baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+            baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId,
           });
           anthropicResponse = convertOpenAIToAnthropicResponse(upstreamResponse.data as ChatCompletionResponse);
           endStage(request, 'upstreamRequest');
@@ -438,7 +472,7 @@ export function createAnthropicHandlers(
           });
         } else {
           const response = await proxy.forwardAnthropicRequest(body, {
-            baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+            baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId,
           });
           endStage(request, 'upstreamRequest');
           router.markPlanSuccess(plan.id);
@@ -504,8 +538,18 @@ export function createAnthropicHandlers(
 
       const plan = routingResult.selectedPlan;
 
+      // Check if upstream URL is available (count_tokens always uses Anthropic format)
+      const upstreamUrl = getUpstreamBaseUrl(plan, false);
+      if (!upstreamUrl) {
+        throw createGatewayError(
+          'SERVICE_UNAVAILABLE',
+          `Plan '${plan.name}' does not have a valid base_url.`,
+          { planId: plan.id, planName: plan.name }
+        );
+      }
+
       // Note: We don't consume quota for count_tokens as it's generally free/cheap and doesn't generate tokens
-      
+
       const apiKey = await fetchApiKey(repository, plan.id, request);
 
       logger.debug('Selected plan for count tokens request', {
@@ -519,7 +563,7 @@ export function createAnthropicHandlers(
       startStage(request, 'upstreamRequest');
       try {
         const response = await proxy.forwardAnthropicCountTokensRequest(body, {
-          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+          baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId,
         });
         endStage(request, 'upstreamRequest');
         // Do not mark circuit breaker success/failure for count_tokens to avoid skewing stats
@@ -567,6 +611,17 @@ export function createAnthropicHandlers(
             continue;
           }
 
+          // Check if upstream URL is available for alt plan
+          const altUpstreamUrl = getUpstreamBaseUrl(altPlan, false);
+          if (!altUpstreamUrl) {
+            logger.warn('Failover plan lacks base_url for count tokens', {
+              requestId,
+              failoverPlanId: altPlan.id,
+              planName: altPlan.name,
+            });
+            continue;
+          }
+
           if (routingResult.canonicalName) {
             body.model = routingResult.canonicalName;
           }
@@ -574,7 +629,7 @@ export function createAnthropicHandlers(
           startStage(request, 'upstreamRequest');
           try {
             const result = await proxy.forwardAnthropicCountTokensRequest(body, {
-              baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId
+              baseUrl: altUpstreamUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId
             });
             endStage(request, 'upstreamRequest');
             

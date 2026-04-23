@@ -17,8 +17,10 @@ export interface ProviderPreset {
   id: string;
   /** Human-readable display name */
   name: string;
-  /** Default API base URL for this provider */
+  /** Default API base URL for this provider (Anthropic format) */
   baseUrl: string;
+  /** OpenAI-format base URL for this provider. If set, enables OpenAI-format request forwarding. */
+  openaiBaseUrl?: string;
   /** Default model list available from this provider */
   models: string[];
   /** Default model aliases for this provider (alias -> canonical) */

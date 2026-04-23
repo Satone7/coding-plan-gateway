@@ -146,6 +146,10 @@ export interface CodingPlan {
   /** Provider preset ID. When set, baseUrl/models/quota use preset defaults if not specified. */
   provider?: string;
 
+  /** OpenAI-format base URL for this plan. Used when forwarding OpenAI-format requests.
+   * If not set, OpenAI-format requests will be rejected with SERVICE_UNAVAILABLE error. */
+  openaiBaseUrl?: string;
+
   /** Upstream API format. Determines which forwarding method and URL path to use. */
   apiFormat?: 'anthropic' | 'openai_chat';
 
