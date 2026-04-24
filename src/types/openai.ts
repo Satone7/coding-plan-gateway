@@ -223,6 +223,21 @@ export interface Model {
 
   /** Owner */
   owned_by: string;
+
+  /** Context window size in tokens (optional, gateway extension) */
+  context_window?: number;
+
+  /** Maximum output tokens (optional, gateway extension) */
+  max_output_tokens?: number;
+
+  /** Supports vision/multimodal (optional, gateway extension) */
+  supports_vision?: boolean;
+
+  /** Supports function calling/tools (optional, gateway extension) */
+  supports_tools?: boolean;
+
+  /** Provider source (optional, gateway extension) */
+  provider?: string;
 }
 
 /**

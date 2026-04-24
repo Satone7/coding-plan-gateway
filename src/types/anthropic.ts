@@ -25,7 +25,39 @@ export interface AnthropicImageBlock {
   };
 }
 
-export type AnthropicContentBlock = AnthropicTextBlock | AnthropicImageBlock;
+/**
+ * Anthropic tool_use content block (in assistant messages).
+ * Represents a tool/function call made by the assistant.
+ */
+export interface AnthropicToolUseBlock {
+  type: 'tool_use';
+  /** Unique identifier for this tool call */
+  id: string;
+  /** Name of the tool being called */
+  name: string;
+  /** Tool input parameters as a JSON object */
+  input: Record<string, unknown>;
+}
+
+/**
+ * Anthropic tool_result content block (in user messages).
+ * Represents the result of a tool call to be passed back to the assistant.
+ */
+export interface AnthropicToolResultBlock {
+  type: 'tool_result';
+  /** ID of the tool_use block this result corresponds to */
+  tool_use_id: string;
+  /** Tool result content (string or structured content) */
+  content: string | Record<string, unknown> | unknown;
+  /** Whether the tool call resulted in an error */
+  is_error?: boolean;
+}
+
+export type AnthropicContentBlock =
+  | AnthropicTextBlock
+  | AnthropicImageBlock
+  | AnthropicToolUseBlock
+  | AnthropicToolResultBlock;
 
 /**
  * Anthropic system prompt text block.
@@ -152,13 +184,13 @@ export interface AnthropicMessageResponse {
   role: 'assistant';
 
   /** Generated content blocks */
-  content: AnthropicTextBlock[];
+  content: AnthropicContentBlock[];
 
   /** Model used */
   model: string;
 
   /** Stop reason */
-  stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | null;
+  stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use' | null;
 
   /** Stop sequence that matched (if any) */
   stop_sequence: string | null;
@@ -201,7 +233,7 @@ export interface AnthropicMessageStart {
 export interface AnthropicContentBlockStart {
   type: 'content_block_start';
   index: number;
-  content_block: AnthropicTextBlock;
+  content_block: AnthropicTextBlock | AnthropicToolUseBlock;
 }
 
 /**
@@ -213,6 +245,18 @@ export interface AnthropicContentBlockDelta {
   delta: {
     type: 'text_delta';
     text: string;
+  };
+}
+
+/**
+ * Anthropic streaming input_json_delta event (for tool_use arguments).
+ */
+export interface AnthropicInputJsonDelta {
+  type: 'content_block_delta';
+  index: number;
+  delta: {
+    type: 'input_json_delta';
+    partial_json: string;
   };
 }
 
@@ -230,7 +274,7 @@ export interface AnthropicContentBlockStop {
 export interface AnthropicMessageDelta {
   type: 'message_delta';
   delta: {
-    stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence';
+    stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use';
     stop_sequence: string | null;
   };
   usage: {
@@ -252,6 +296,7 @@ export type AnthropicStreamEvent =
   | AnthropicMessageStart
   | AnthropicContentBlockStart
   | AnthropicContentBlockDelta
+  | AnthropicInputJsonDelta
   | AnthropicContentBlockStop
   | AnthropicMessageDelta
   | AnthropicMessageStop;

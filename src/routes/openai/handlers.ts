@@ -22,30 +22,10 @@ import {
   startStage,
   endStage,
 } from '@/middleware/request-timer';
-import type { ChatCompletionRequest, ChatCompletionResponse, ModelsResponse } from '@/types/openai';
-import type { AnthropicMessageRequest, AnthropicMessageResponse } from '@/types/anthropic';
+import type { ChatCompletionRequest, ChatCompletionResponse, ModelsResponse, Model } from '@/types/openai';
 import type { CodingPlan } from '@/types';
 import { TokenCounter } from '@/utils/token-counter';
-import {
-  convertOpenAIToAnthropicRequest,
-  convertAnthropicToOpenAIResponse,
-} from '@/utils/format-converter';
-
-/** Check if a plan's upstream expects Anthropic format (requires cross-format conversion).
- * Default to 'anthropic' if apiFormat is not specified. */
-function needsAnthropicUpstream(plan: CodingPlan): boolean {
-  return plan.apiFormat !== 'openai_chat';
-}
-
-/** Get the appropriate base URL for forwarding based on upstream format.
- * For Anthropic format (default), returns baseUrl.
- * For OpenAI format, returns openaiBaseUrl if available, undefined otherwise. */
-function getUpstreamBaseUrl(plan: CodingPlan, useAnthropicUpstream: boolean): string | undefined {
-  if (useAnthropicUpstream) {
-    return plan.baseUrl;
-  }
-  return plan.openaiBaseUrl;
-}
+import { findModelInfo } from '@/config/model-info';
 
 /**
  * Tool call schema for assistant messages.
@@ -133,6 +113,10 @@ interface OpenAIHandlers {
     reply: FastifyReply
   ) => Promise<ChatCompletionResponse | void>;
   listModels: (request: FastifyRequest, reply: FastifyReply) => Promise<ModelsResponse>;
+  getModel: (
+    request: FastifyRequest<{ Params: { model: string } }>,
+    reply: FastifyReply
+  ) => Promise<Model>;
   getRouter: () => RequestRouter;
 }
 
@@ -240,6 +224,16 @@ async function attemptFailover(
   request: FastifyRequest<{ Body: ChatCompletionRequest }>,
   canonicalName?: string
 ): Promise<{ durationMs: number; statusCode: number; data: unknown } | null> {
+  // Check if plan has OpenAI base URL
+  if (!plan.openaiBaseUrl) {
+    logger.warn('Failover plan lacks OpenAI base_url', {
+      requestId,
+      failoverPlanId: plan.id,
+      planName: plan.name,
+    });
+    return null;
+  }
+
   const apiKey = await fetchApiKey(services.repository, plan.id, request);
   if (!apiKey) {
     return null;
@@ -250,39 +244,14 @@ async function attemptFailover(
     body.model = canonicalName;
   }
 
-  // Check if upstream URL is available
-  const useAnthropicUpstream = needsAnthropicUpstream(plan);
-  const upstreamUrl = getUpstreamBaseUrl(plan, useAnthropicUpstream);
-  if (!upstreamUrl) {
-    logger.warn('Failover plan lacks OpenAI base_url', {
-      requestId,
-      failoverPlanId: plan.id,
-      planName: plan.name,
-    });
-    return null;
-  }
-
   startStage(request, 'upstreamRequest');
   try {
-    let response: { durationMs: number; statusCode: number; data: unknown };
-    if (useAnthropicUpstream) {
-      const anthropicBody = convertOpenAIToAnthropicRequest(body);
-      const upstreamResponse = await services.proxy.forwardAnthropicRequest(anthropicBody, {
-        baseUrl: upstreamUrl,
-        apiKey,
-        timeout: plan.timeout,
-        requestId,
-      });
-      const openaiResponse = convertAnthropicToOpenAIResponse(upstreamResponse.data as AnthropicMessageResponse);
-      response = { durationMs: upstreamResponse.durationMs, statusCode: upstreamResponse.statusCode, data: openaiResponse };
-    } else {
-      response = await services.proxy.forwardOpenAIRequest(body, {
-        baseUrl: upstreamUrl,
-        apiKey,
-        timeout: plan.timeout,
-        requestId,
-      });
-    }
+    const response = await services.proxy.forwardOpenAIRequest(body, {
+      baseUrl: plan.openaiBaseUrl,
+      apiKey,
+      timeout: plan.timeout,
+      requestId,
+    });
     endStage(request, 'upstreamRequest');
     services.router.markPlanSuccess(plan.id);
     logger.info('Failover successful', { requestId, failoverPlanId: plan.id, durationMs: response.durationMs });
@@ -326,25 +295,15 @@ export function createOpenAIHandlers(
         requestId, model, stream: body.stream, messageCount: body.messages.length,
       });
 
+      // Route to plan with OpenAI support (must have openaiBaseUrl)
       startStage(request, 'routing');
-      const routingResult = await router.route(model, requestId);
+      const routingResult = await router.routeForOpenAI(model, requestId);
       endStage(request, 'routing');
       if (!routingResult.selectedPlan) {
-        throw createGatewayError('MODEL_NOT_FOUND', `No coding plan supports model '${model}'`, { model, requestId });
+        throw createGatewayError('MODEL_NOT_FOUND', `No coding plan with OpenAI-format support for model '${model}'`, { model, requestId });
       }
 
       const plan = routingResult.selectedPlan;
-
-      // Check if upstream URL is available for the requested format
-      const useAnthropicUpstream = needsAnthropicUpstream(plan);
-      const upstreamUrl = getUpstreamBaseUrl(plan, useAnthropicUpstream);
-      if (!upstreamUrl) {
-        throw createGatewayError(
-          'SERVICE_UNAVAILABLE',
-          `Plan '${plan.name}' does not support OpenAI-format requests. Provider lacks OpenAI base_url.`,
-          { planId: plan.id, planName: plan.name, provider: plan.provider }
-        );
-      }
 
       // Consume quota after selecting the plan
       startStage(request, 'quotaCheck');
@@ -384,69 +343,40 @@ export function createOpenAIHandlers(
         statusCode: 0,
       });
 
-      // Handle streaming
+      // Handle streaming - forward OpenAI request to OpenAI endpoint directly
       if (body.stream) {
         startStage(request, 'upstreamRequest');
         try {
-          if (useAnthropicUpstream) {
-            // Cross-format: client sends OpenAI, upstream expects Anthropic
-            await proxy.forwardOpenAIStreamAsAnthropic(
-              body,
-              { baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId },
-              reply,
-              (tokenUsage, accumulatedText) => {
+          await proxy.forwardOpenAIStream(
+            body,
+            { baseUrl: plan.openaiBaseUrl!, apiKey, timeout: plan.timeout, requestId },
+            (_chunk, done) => {
+              if (done) {
                 endStage(request, 'upstreamRequest');
                 router.markPlanSuccess(plan.id);
-                const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
-                  tokenUsage,
-                  body,
-                  'anthropic',
-                  accumulatedText,
-                  requestId
-                );
-
-                attachProviderMetrics(request, {
-                  planId: plan.id,
-                  planName: plan.name,
-                  model,
-                  durationMs: Date.now() - (request.startTime || Date.now()),
-                  statusCode: 200,
-                  tokenUsage: finalTokenUsage,
-                });
+                logger.debug('Stream completed', { requestId });
               }
-            );
-          } else {
-            await proxy.forwardOpenAIStream(
-              body,
-              { baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId },
-              (_chunk, done) => {
-                if (done) {
-                  endStage(request, 'upstreamRequest');
-                  router.markPlanSuccess(plan.id);
-                  logger.debug('Stream completed', { requestId });
-                }
-              },
-              reply,
-              (tokenUsage, accumulatedText) => {
-                const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
-                  tokenUsage,
-                  body,
-                  'openai',
-                  accumulatedText,
-                  requestId
-                );
+            },
+            reply,
+            (tokenUsage, accumulatedText) => {
+              const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
+                tokenUsage,
+                body,
+                'openai',
+                accumulatedText,
+                requestId
+              );
 
-                attachProviderMetrics(request, {
-                  planId: plan.id,
-                  planName: plan.name,
-                  model,
-                  durationMs: Date.now() - (request.startTime || Date.now()),
-                  statusCode: 200,
-                  tokenUsage: finalTokenUsage,
-                });
-              }
-            );
-          }
+              attachProviderMetrics(request, {
+                planId: plan.id,
+                planName: plan.name,
+                model,
+                durationMs: Date.now() - (request.startTime || Date.now()),
+                statusCode: 200,
+                tokenUsage: finalTokenUsage,
+              });
+            }
+          );
         } catch (streamError) {
           endStage(request, 'upstreamRequest');
           router.markPlanFailed(plan.id);
@@ -466,30 +396,13 @@ export function createOpenAIHandlers(
       // Non-streaming request with failover
       startStage(request, 'upstreamRequest');
       try {
-        let openaiResponse: ChatCompletionResponse;
-        if (useAnthropicUpstream) {
-          const anthropicBody = convertOpenAIToAnthropicRequest(body);
-          const upstreamResponse = await proxy.forwardAnthropicRequest(anthropicBody, {
-            baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId,
-          });
-          openaiResponse = convertAnthropicToOpenAIResponse(upstreamResponse.data as AnthropicMessageResponse);
-          endStage(request, 'upstreamRequest');
-          router.markPlanSuccess(plan.id);
-          recordMetrics(request, plan, model, {
-            data: openaiResponse,
-            durationMs: upstreamResponse.durationMs,
-            statusCode: upstreamResponse.statusCode,
-          });
-        } else {
-          const response = await proxy.forwardOpenAIRequest(body, {
-            baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId,
-          });
-          endStage(request, 'upstreamRequest');
-          router.markPlanSuccess(plan.id);
-          recordMetrics(request, plan, model, response);
-          openaiResponse = response.data as ChatCompletionResponse;
-        }
-        return openaiResponse;
+        const response = await proxy.forwardOpenAIRequest(body, {
+          baseUrl: plan.openaiBaseUrl!, apiKey, timeout: plan.timeout, requestId,
+        });
+        endStage(request, 'upstreamRequest');
+        router.markPlanSuccess(plan.id);
+        recordMetrics(request, plan, model, response);
+        return response.data as ChatCompletionResponse;
       } catch (error) {
         endStage(request, 'upstreamRequest');
         router.markPlanFailed(plan.id);
@@ -537,12 +450,20 @@ export function createOpenAIHandlers(
         }
       }
 
-      const models = Array.from(modelSet).map((id) => ({
-        id,
-        object: 'model' as const,
-        created: Math.floor(Date.now() / 1000),
-        owned_by: 'coding-plan-gateway',
-      }));
+      const models: Model[] = Array.from(modelSet).map((id) => {
+        const modelInfo = findModelInfo(id);
+        return {
+          id,
+          object: 'model' as const,
+          created: Math.floor(Date.now() / 1000),
+          owned_by: 'coding-plan-gateway',
+          context_window: modelInfo?.info.contextWindow,
+          max_output_tokens: modelInfo?.info.maxOutputTokens,
+          supports_vision: modelInfo?.info.supportsVision,
+          supports_tools: modelInfo?.info.supportsTools,
+          provider: modelInfo?.provider,
+        };
+      });
 
       logger.info('List models request', {
         requestId: request.id,
@@ -551,6 +472,55 @@ export function createOpenAIHandlers(
       });
 
       return { object: 'list', data: models };
+    },
+
+    async getModel(
+      request: FastifyRequest<{ Params: { model: string } }>,
+      reply: FastifyReply
+    ): Promise<Model> {
+      const modelId = request.params.model;
+      const plans = await repository.findActive();
+
+      // Check if model is available in any plan
+      let found = false;
+      let provider: string | undefined;
+      for (const plan of plans) {
+        if (plan.models.some((m) => m.toLowerCase() === modelId.toLowerCase())) {
+          found = true;
+          provider = plan.provider;
+          break;
+        }
+        if (plan.modelAliases?.[modelId]) {
+          found = true;
+          provider = plan.provider;
+          break;
+        }
+      }
+
+      if (!found) {
+        throw createGatewayError('MODEL_NOT_FOUND', `Model '${modelId}' not found`, { model: modelId });
+      }
+
+      const modelInfo = findModelInfo(modelId);
+      const model: Model = {
+        id: modelId,
+        object: 'model' as const,
+        created: Math.floor(Date.now() / 1000),
+        owned_by: 'coding-plan-gateway',
+        context_window: modelInfo?.info.contextWindow,
+        max_output_tokens: modelInfo?.info.maxOutputTokens,
+        supports_vision: modelInfo?.info.supportsVision,
+        supports_tools: modelInfo?.info.supportsTools,
+        provider: modelInfo?.provider ?? provider,
+      };
+
+      logger.info('Get model request', {
+        requestId: request.id,
+        model: modelId,
+        contextWindow: model.context_window,
+      });
+
+      return model;
     },
 
     getRouter(): RequestRouter {

@@ -12,6 +12,7 @@ import type {
   ChatCompletionResponse,
   ChatCompletionChunk,
   ChatCompletionChunkChoice,
+  ChatMessage,
 } from '@/types/openai';
 import type {
   AnthropicMessageRequest,
@@ -19,6 +20,7 @@ import type {
   AnthropicUsage,
   AnthropicContentBlock,
   AnthropicSystemBlock,
+  AnthropicToolUseBlock,
 } from '@/types/anthropic';
 
 /**
@@ -179,18 +181,20 @@ export function convertAnthropicToOpenAIRequest(req: AnthropicMessageRequest): C
 /**
  * Map Anthropic stop_reason to OpenAI finish_reason.
  */
-function mapStopReason(reason: string | null): 'stop' | 'length' | null {
+function mapStopReason(reason: string | null): 'stop' | 'length' | 'tool_calls' | null {
   if (reason === 'end_turn' || reason === 'stop_sequence') return 'stop';
   if (reason === 'max_tokens') return 'length';
+  if (reason === 'tool_use') return 'tool_calls';
   return null;
 }
 
 /**
  * Map OpenAI finish_reason to Anthropic stop_reason.
  */
-function mapFinishReason(reason: string | null): 'end_turn' | 'max_tokens' | null {
+function mapFinishReason(reason: string | null): 'end_turn' | 'max_tokens' | 'tool_use' | null {
   if (reason === 'stop') return 'end_turn';
   if (reason === 'length') return 'max_tokens';
+  if (reason === 'tool_calls') return 'tool_use';
   return null;
 }
 
@@ -198,10 +202,36 @@ function mapFinishReason(reason: string | null): 'end_turn' | 'max_tokens' | nul
  * Convert an Anthropic message response to an OpenAI chat completion response.
  */
 export function convertAnthropicToOpenAIResponse(resp: AnthropicMessageResponse): ChatCompletionResponse {
-  const content = resp.content
+  // Separate text and tool_use content
+  const textContent = resp.content
     .filter((b) => b.type === 'text')
     .map((b) => b.text)
     .join('');
+
+  // Extract tool_calls from tool_use blocks
+  const toolCalls = resp.content
+    .filter((b) => b.type === 'tool_use')
+    .map((b) => {
+      const block = b as AnthropicToolUseBlock;
+      return {
+        id: block.id,
+        type: 'function' as const,
+        function: {
+          name: block.name,
+          arguments: JSON.stringify(block.input),
+        },
+      };
+    });
+
+  // Build message with optional tool_calls
+  const message: ChatMessage = {
+    role: 'assistant',
+    content: textContent || null,
+  };
+
+  if (toolCalls.length > 0) {
+    message.tool_calls = toolCalls;
+  }
 
   return {
     id: resp.id,
@@ -210,10 +240,7 @@ export function convertAnthropicToOpenAIResponse(resp: AnthropicMessageResponse)
     model: resp.model,
     choices: [{
       index: 0,
-      message: {
-        role: 'assistant',
-        content,
-      },
+      message,
       finish_reason: mapStopReason(resp.stop_reason),
     }],
     usage: {
@@ -229,15 +256,40 @@ export function convertAnthropicToOpenAIResponse(resp: AnthropicMessageResponse)
  */
 export function convertOpenAIToAnthropicResponse(resp: ChatCompletionResponse): AnthropicMessageResponse {
   const choice = resp.choices[0];
-  const content = typeof choice?.message?.content === 'string'
-    ? choice.message.content
-    : '';
+  const message = choice?.message;
+
+  // Build content blocks array
+  const content: AnthropicContentBlock[] = [];
+
+  // Add text block if content exists
+  if (typeof message?.content === 'string' && message.content) {
+    content.push({ type: 'text', text: message.content });
+  }
+
+  // Convert tool_calls to tool_use blocks
+  if (message?.tool_calls && message.tool_calls.length > 0) {
+    for (const tc of message.tool_calls) {
+      let input: Record<string, unknown> = {};
+      try {
+        input = JSON.parse(tc.function.arguments);
+      } catch {
+        // If parsing fails, store raw string as object
+        input = { raw: tc.function.arguments };
+      }
+      content.push({
+        type: 'tool_use',
+        id: tc.id,
+        name: tc.function.name,
+        input,
+      } as AnthropicToolUseBlock);
+    }
+  }
 
   return {
     id: resp.id,
     type: 'message',
     role: 'assistant',
-    content: [{ type: 'text', text: content }],
+    content,
     model: resp.model,
     stop_reason: mapFinishReason(choice?.finish_reason ?? null),
     stop_sequence: null,
@@ -270,6 +322,8 @@ export class AnthropicStreamToOpenAIConverter {
   private inputTokens = 0;
   private outputTokens = 0;
   private sentRole = false;
+  private toolBlockStates: Map<number, { id: string; name: string }> = new Map();
+  private toolCallIndex = 0;
 
   /** Called with serialized OpenAI SSE chunk lines (with trailing newlines) */
   onChunk: ((data: string) => void) | null = null;
@@ -283,8 +337,10 @@ export class AnthropicStreamToOpenAIConverter {
   feedLine(line: string): void {
     const trimmed = line.trim();
 
-    if (trimmed.startsWith('data: ')) {
-      const jsonStr = trimmed.slice(6);
+    // Handle both "data: {...}" (with space) and "data:{...}" (without space)
+    if (trimmed.startsWith('data:') && trimmed.length > 5) {
+      // Strip "data:" or "data: " prefix
+      const jsonStr = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed.slice(5);
       if (!jsonStr) return;
       try {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -339,9 +395,43 @@ export class AnthropicStreamToOpenAIConverter {
         break;
       }
 
+      case 'content_block_start': {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        const contentBlock = data.content_block as { type?: string; id?: string; name?: string } | undefined;
+        if (contentBlock?.type === 'tool_use' && contentBlock.id && contentBlock.name) {
+          const index = data.index as number;
+          this.toolBlockStates.set(index, {
+            id: contentBlock.id,
+            name: contentBlock.name,
+          });
+          this.emit({
+            id: this.msgId,
+            object: 'chat.completion.chunk',
+            created: this.created,
+            model: this.model,
+            choices: [{
+              index: 0,
+              delta: {
+                tool_calls: [{
+                  index: this.toolCallIndex,
+                  id: contentBlock.id,
+                  type: 'function',
+                  function: { name: contentBlock.name },
+                }],
+              },
+              finish_reason: null,
+            }],
+          });
+          this.toolCallIndex++;
+        }
+        break;
+      }
+
       case 'content_block_delta': {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        const delta = data.delta as { type: string; text?: string } | undefined;
+        const index = data.index as number;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        const delta = data.delta as { type: string; text?: string; partial_json?: string } | undefined;
         if (delta?.type === 'text_delta' && delta.text) {
           this.emit({
             id: this.msgId,
@@ -351,6 +441,23 @@ export class AnthropicStreamToOpenAIConverter {
             choices: [{
               index: 0,
               delta: { content: delta.text },
+              finish_reason: null,
+            }],
+          });
+        } else if (delta?.type === 'input_json_delta' && delta.partial_json) {
+          this.emit({
+            id: this.msgId,
+            object: 'chat.completion.chunk',
+            created: this.created,
+            model: this.model,
+            choices: [{
+              index: 0,
+              delta: {
+                tool_calls: [{
+                  index: index,
+                  function: { arguments: delta.partial_json },
+                }],
+              },
               finish_reason: null,
             }],
           });
@@ -399,15 +506,27 @@ export class OpenAIStreamToAnthropicConverter {
   private outputTokens = 0;
   private sentStart = false;
   private sentContentBlockStart = false;
+  private currentNonToolBlockType: 'text' | null = null;
+  private currentNonToolBlockIndex: number | null = null;
+  private toolBlockStates: Map<number, {
+    anthropicIndex: number;
+    id: string;
+    name: string;
+    started: boolean;
+    pendingArgs: string;
+  }> = new Map();
+  private nextContentBlockIndex = 0;
 
   onChunk: ((data: string) => void) | null = null;
   onUsage: ((usage: { inputTokens: number; outputTokens: number }) => void) | null = null;
 
   feedLine(line: string): void {
     const trimmed = line.trim();
-    if (!trimmed.startsWith('data: ')) return;
+    // Handle both "data: {...}" (with space) and "data:{...}" (without space)
+    if (!trimmed.startsWith('data:')) return;
 
-    const jsonStr = trimmed.slice(6).trim();
+    // Strip "data:" or "data: " prefix
+    const jsonStr = (trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed.slice(5)).trim();
     if (!jsonStr || jsonStr === '[DONE]') {
       if (jsonStr === '[DONE]' && this.sentStart) {
         // Emit message_stop
@@ -431,6 +550,10 @@ export class OpenAIStreamToAnthropicConverter {
   }
 
   private handleChunk(chunk: ChatCompletionChunk): void {
+    const choice: ChatCompletionChunkChoice | undefined = chunk.choices?.[0];
+    if (!choice) return;
+
+    // Initialize message_start on first chunk
     if (!this.sentStart) {
       this.sentStart = true;
       this.model = chunk.model;
@@ -448,26 +571,117 @@ export class OpenAIStreamToAnthropicConverter {
             usage: { input_tokens: 0, output_tokens: 0 },
           },
         })}\n\n`);
-
-        this.onChunk(`event: content_block_start\ndata: ${JSON.stringify({
-          type: 'content_block_start',
-          index: 0,
-          content_block: { type: 'text', text: '' },
-        })}\n\n`);
-
-        this.sentContentBlockStart = true;
       }
     }
 
-    const choice: ChatCompletionChunkChoice | undefined = chunk.choices?.[0];
-    if (!choice) return;
+    // Handle tool_calls delta
+    if (choice.delta?.tool_calls && choice.delta.tool_calls.length > 0) {
+      // Close any open non-tool content block first
+      if (this.currentNonToolBlockType === 'text' && this.currentNonToolBlockIndex !== null && this.onChunk) {
+        this.onChunk(`event: content_block_stop\ndata: ${JSON.stringify({
+          type: 'content_block_stop',
+          index: this.currentNonToolBlockIndex,
+        })}\n\n`);
+        this.currentNonToolBlockType = null;
+        this.currentNonToolBlockIndex = null;
+      }
 
-    // Emit content delta
+      for (const tc of choice.delta.tool_calls) {
+        const openaiIndex = tc.index;
+
+        // Get or create tool block state
+        let state = this.toolBlockStates.get(openaiIndex);
+        if (!state) {
+          state = {
+            anthropicIndex: this.nextContentBlockIndex,
+            id: '',
+            name: '',
+            started: false,
+            pendingArgs: '',
+          };
+          this.toolBlockStates.set(openaiIndex, state);
+          this.nextContentBlockIndex++;
+        }
+
+        // Update id and name if provided
+        if (tc.id) state.id = tc.id;
+        if (tc.function?.name) state.name = tc.function.name;
+
+        // Handle arguments delta
+        const argsDelta = tc.function?.arguments;
+        if (argsDelta) {
+          if (!state.started) {
+            // Accumulate until we have id and name
+            state.pendingArgs += argsDelta;
+          } else {
+            // Stream arguments directly
+            if (this.onChunk) {
+              this.onChunk(`event: content_block_delta\ndata: ${JSON.stringify({
+                type: 'content_block_delta',
+                index: state.anthropicIndex,
+                delta: {
+                  type: 'input_json_delta',
+                  partial_json: argsDelta,
+                },
+              })}\n\n`);
+            }
+          }
+        }
+
+        // Start content block when we have id and name
+        if (!state.started && state.id && state.name) {
+          state.started = true;
+          if (this.onChunk) {
+            this.onChunk(`event: content_block_start\ndata: ${JSON.stringify({
+              type: 'content_block_start',
+              index: state.anthropicIndex,
+              content_block: {
+                type: 'tool_use',
+                id: state.id,
+                name: state.name,
+              },
+            })}\n\n`);
+          }
+
+          // Emit any pending args
+          if (state.pendingArgs) {
+            if (this.onChunk) {
+              this.onChunk(`event: content_block_delta\ndata: ${JSON.stringify({
+                type: 'content_block_delta',
+                index: state.anthropicIndex,
+                delta: {
+                  type: 'input_json_delta',
+                  partial_json: state.pendingArgs,
+                },
+              })}\n\n`);
+            }
+            state.pendingArgs = '';
+          }
+        }
+      }
+    }
+
+    // Handle text content delta
     if (choice.delta?.content) {
+      // Start text content block if needed
+      if (this.currentNonToolBlockType === null) {
+        this.currentNonToolBlockType = 'text';
+        this.currentNonToolBlockIndex = this.nextContentBlockIndex;
+        this.nextContentBlockIndex++;
+        if (this.onChunk) {
+          this.onChunk(`event: content_block_start\ndata: ${JSON.stringify({
+            type: 'content_block_start',
+            index: this.currentNonToolBlockIndex,
+            content_block: { type: 'text', text: '' },
+          })}\n\n`);
+        }
+      }
+
+      // Emit text delta
       if (this.onChunk) {
         this.onChunk(`event: content_block_delta\ndata: ${JSON.stringify({
           type: 'content_block_delta',
-          index: 0,
+          index: this.currentNonToolBlockIndex,
           delta: { type: 'text_delta', text: choice.delta.content },
         })}\n\n`);
       }
@@ -477,12 +691,24 @@ export class OpenAIStreamToAnthropicConverter {
 
     // Emit finish
     if (choice.finish_reason) {
-      if (this.sentContentBlockStart && this.onChunk) {
+      // Close any open non-tool content block
+      if (this.currentNonToolBlockType === 'text' && this.currentNonToolBlockIndex !== null && this.onChunk) {
         this.onChunk(`event: content_block_stop\ndata: ${JSON.stringify({
           type: 'content_block_stop',
-          index: 0,
+          index: this.currentNonToolBlockIndex,
         })}\n\n`);
-        this.sentContentBlockStart = false;
+        this.currentNonToolBlockType = null;
+        this.currentNonToolBlockIndex = null;
+      }
+
+      // Close all tool blocks
+      for (const [, state] of this.toolBlockStates) {
+        if (state.started && this.onChunk) {
+          this.onChunk(`event: content_block_stop\ndata: ${JSON.stringify({
+            type: 'content_block_stop',
+            index: state.anthropicIndex,
+          })}\n\n`);
+        }
       }
 
       if (this.onChunk) {

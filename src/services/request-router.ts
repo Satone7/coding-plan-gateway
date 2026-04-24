@@ -85,6 +85,22 @@ export class RequestRouter {
   }
 
   /**
+   * Filter plans to only those with OpenAI-format support.
+   * Plans must have openaiBaseUrl to handle OpenAI-format requests.
+   */
+  private filterByOpenAISupport(plans: CodingPlan[]): CodingPlan[] {
+    return plans.filter((plan) => {
+      // Plan explicitly configured for OpenAI format
+      if (plan.apiFormat === 'openai_chat') {
+        return !!plan.openaiBaseUrl;
+      }
+      // Legacy plans: use openaiBaseUrl if available, otherwise they support Anthropic only
+      // For OpenAI routes, we require openaiBaseUrl
+      return !!plan.openaiBaseUrl;
+    });
+  }
+
+  /**
    * Filter plans to only those with closed circuits.
    */
   private filterByCircuit(plans: CodingPlan[]): CodingPlan[] {
@@ -158,6 +174,21 @@ export class RequestRouter {
    * Route a request to the best available plan.
    */
   async route(model: string, incomingRequestId?: string): Promise<RoutingResult> {
+    return this.routeWithFilter(model, false, incomingRequestId);
+  }
+
+  /**
+   * Route an OpenAI-format request to a plan with OpenAI support.
+   * Only considers plans that have openaiBaseUrl configured.
+   */
+  async routeForOpenAI(model: string, incomingRequestId?: string): Promise<RoutingResult> {
+    return this.routeWithFilter(model, true, incomingRequestId);
+  }
+
+  /**
+   * Route a request with optional OpenAI-format filtering.
+   */
+  private async routeWithFilter(model: string, requireOpenAISupport: boolean, incomingRequestId?: string): Promise<RoutingResult> {
     const requestId = incomingRequestId ?? randomUUID();
     const searchModel = model;
 
@@ -169,8 +200,24 @@ export class RequestRouter {
       return this.handleNoActivePlans(searchModel, requestId, allPlans.length);
     }
 
+    // Filter by OpenAI support if required
+    let candidatePlans = requireOpenAISupport
+      ? this.filterByOpenAISupport(activePlans)
+      : activePlans;
+
+    if (candidatePlans.length === 0) {
+      logger.warn('No plans with OpenAI support for model', {
+        requestId,
+        model,
+        totalPlans: allPlans.length,
+        activePlans: activePlans.length,
+        requireOpenAISupport,
+      });
+      return emptyResult(requestId, searchModel);
+    }
+
     // Filter out plans with open circuits
-    const availablePlans = this.filterByCircuit(activePlans);
+    const availablePlans = this.filterByCircuit(candidatePlans);
 
     if (availablePlans.length === 0) {
       return this.handleAllCircuitsOpen(searchModel, requestId, activePlans.length);

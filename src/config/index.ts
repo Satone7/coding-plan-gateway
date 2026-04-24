@@ -516,3 +516,5 @@ export function createEmptyConfig(): NormalizedConfig {
  */
 export { configSchema, planConfigSchema } from './schema';
 export type { Config, PlanConfig } from './schema';
+export { MODEL_INFO, MODEL_NAME_ALIASES, getModelInfo, findModelInfo } from './model-info';
+export type { ModelInfo } from './model-info';

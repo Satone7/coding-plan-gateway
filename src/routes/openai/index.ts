@@ -47,6 +47,9 @@ export async function registerOpenAIRoutes(
       // GET /v1/models - List available models
       fastify.get('/models', handlers.listModels);
 
+      // GET /v1/models/:model - Get specific model info
+      fastify.get('/models/:model', handlers.getModel);
+
       done();
     },
     { prefix }
