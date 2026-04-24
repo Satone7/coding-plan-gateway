@@ -188,6 +188,23 @@ export const MODEL_INFO: Record<string, Record<string, ModelInfo>> = {
       supportsStreaming: true,
     },
   },
+
+  deepseek: {
+    'deepseek-v4-flash': {
+      contextWindow: 1000000,
+      maxOutputTokens: 384000,
+      notes: 'Fast inference model, 1M context',
+      supportsTools: true,
+      supportsStreaming: true,
+    },
+    'deepseek-v4-pro': {
+      contextWindow: 1000000,
+      maxOutputTokens: 384000,
+      notes: 'Flagship model, 1M context',
+      supportsTools: true,
+      supportsStreaming: true,
+    },
+  },
 };
 
 /**

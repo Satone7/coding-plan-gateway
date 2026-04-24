@@ -35,6 +35,14 @@ export const BUILTIN_PROVIDERS: readonly ProviderPreset[] = [
     models: ['qwen3.6-plus', 'qwen3.5-plus', 'glm-5', 'glm-4.7', 'kimi-k2.5', 'MiniMax-M2.5'],
     hasUsageApi: false,
   },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/anthropic',
+    openaiBaseUrl: 'https://api.deepseek.com',
+    models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+    hasUsageApi: false,
+  },
 ];
 
 /**
