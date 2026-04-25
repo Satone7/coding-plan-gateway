@@ -38,7 +38,7 @@ RUN npm ci --only=production && npm cache clean --force
 RUN mkdir -p /app/config /app/data && \
     touch /app/config.yaml && \
     chmod 644 /app/config.yaml && \
-    chown -R gateway:nodejs /app/config /app/data /app/config.yaml
+    chown -R gateway:nodejs /app /app/config /app/data /app/config.yaml
 
 # Copy CLI executable
 COPY --chown=gateway:nodejs bin/cpg ./bin/cpg
