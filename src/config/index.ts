@@ -12,7 +12,7 @@ import { configSchema, planConfigSchema, type PlanConfig, type Config } from './
 import { encryptApiKey } from './encryption';
 import { DEFAULT_REQUEST_TIMEOUT_SEC, CONFIG_VERSION, LATEST_CONFIG_VERSION } from './defaults';
 import { getBuiltinProvider, getBuiltinProviderByBaseUrl } from './builtin-providers';
-import { migrateConfigFile } from './migrations';
+import { migrateConfigFile, migrateConfigContent } from './migrations';
 import { logger } from '@/utils/logger';
 
 /**
@@ -368,19 +368,27 @@ export async function loadConfig(
   const content = await readFile(absolutePath, 'utf-8');
 
   // Run config migration if needed (before parsing)
-  const migrationResult = await migrateConfigFile(absolutePath);
+  let finalContent = content;
+  let migrationResult = await migrateConfigFile(absolutePath);
   if (migrationResult.migrated) {
     logger.info('Configuration file was migrated', {
       fromVersion: migrationResult.fromVersion,
       toVersion: migrationResult.toVersion,
       backupPath: migrationResult.backupPath,
     });
-  }
 
-  // Re-read content after migration (file may have been updated)
-  const finalContent = migrationResult.migrated
-    ? await readFile(absolutePath, 'utf-8')
-    : content;
+    // Re-read content after migration (file may have been updated on disk)
+    try {
+      finalContent = await readFile(absolutePath, 'utf-8');
+    } catch {
+      // File may be read-only (Docker bind mount) — apply migration in memory
+      const inMemory = migrateConfigContent(content, absolutePath);
+      if (inMemory) {
+        finalContent = inMemory.content;
+        migrationResult = inMemory.result;
+      }
+    }
+  }
 
   // Compute hash from post-migration content to ensure consistency
   const md5Hash = createHash('md5').update(finalContent).digest('hex');

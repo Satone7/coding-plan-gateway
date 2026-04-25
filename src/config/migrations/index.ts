@@ -5,7 +5,7 @@ import { logger } from '@/utils/logger';
 import { detectConfigVersion } from './detect-version';
 import { runMigrations, needsMigration } from './registry';
 import { backupConfigFile } from './backup';
-import type { MigrationResult } from './types';
+import type { MigrationResult, ConfigMigration } from './types';
 
 function parseConfigFile(content: string, filePath: string): Record<string, unknown> {
   const ext = extname(filePath).toLowerCase();
@@ -87,3 +87,30 @@ export async function migrateConfigFile(configPath: string): Promise<MigrationRe
 }
 
 export type { ConfigMigration, MigrationResult } from './types';
+
+/**
+ * Run migrations on raw config content and return the migrated YAML string.
+ * Used when the config file is read-only and we need the migrated content in memory.
+ */
+export function migrateConfigContent(rawContent: string, filePath: string): { content: string; result: MigrationResult } | null {
+  const rawConfig = parseConfigFile(rawContent, filePath);
+  const fromVersion = detectConfigVersion(rawConfig);
+
+  if (!needsMigration(fromVersion)) {
+    return null;
+  }
+
+  const migratedConfig = runMigrations(rawConfig, fromVersion);
+  const migratedContent = serializeConfig(migratedConfig, filePath);
+  const toVersion = detectConfigVersion(migratedConfig);
+
+  return {
+    content: migratedContent,
+    result: {
+      migrated: true,
+      fromVersion,
+      toVersion,
+      backupPath: null,
+    },
+  };
+}
