@@ -1,9 +1,11 @@
 import type { ConfigMigration } from './types';
 import { LATEST_CONFIG_VERSION } from '../defaults';
 import { v0ToV1Migration } from './v0-to-v1';
+import { v1ToV2Migration } from './v1-to-v2';
 
 const migrations: ConfigMigration[] = [
   v0ToV1Migration,
+  v1ToV2Migration,
 ];
 
 export function runMigrations(

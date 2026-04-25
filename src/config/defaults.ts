@@ -91,7 +91,7 @@ export const API_VERSION = '1.0.0';
  * Latest supported configuration format version.
  * Increment this when the config schema changes.
  */
-export const LATEST_CONFIG_VERSION = 1;
+export const LATEST_CONFIG_VERSION = 2;
 
 /**
  * @deprecated Use LATEST_CONFIG_VERSION instead. Kept for backward compat.

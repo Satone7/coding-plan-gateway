@@ -89,15 +89,15 @@ export class RequestRouter {
    * Plans must have openaiBaseUrl to handle OpenAI-format requests.
    */
   private filterByOpenAISupport(plans: CodingPlan[]): CodingPlan[] {
-    return plans.filter((plan) => {
-      // Plan explicitly configured for OpenAI format
-      if (plan.apiFormat === 'openai_chat') {
-        return !!plan.openaiBaseUrl;
-      }
-      // Legacy plans: use openaiBaseUrl if available, otherwise they support Anthropic only
-      // For OpenAI routes, we require openaiBaseUrl
-      return !!plan.openaiBaseUrl;
-    });
+    return plans.filter((plan) => !!plan.openaiBaseUrl);
+  }
+
+  /**
+   * Filter plans to only those with Anthropic-format support.
+   * Plans must have baseUrl to handle Anthropic-format requests.
+   */
+  private filterByAnthropicSupport(plans: CodingPlan[]): CodingPlan[] {
+    return plans.filter((plan) => !!plan.baseUrl);
   }
 
   /**
@@ -171,10 +171,11 @@ export class RequestRouter {
   }
 
   /**
-   * Route a request to the best available plan.
+   * Route an Anthropic-format request to a plan with Anthropic support.
+   * Only considers plans that have baseUrl configured.
    */
   async route(model: string, incomingRequestId?: string): Promise<RoutingResult> {
-    return this.routeWithFilter(model, false, incomingRequestId);
+    return this.routeWithFilter(model, 'anthropic', incomingRequestId);
   }
 
   /**
@@ -182,13 +183,13 @@ export class RequestRouter {
    * Only considers plans that have openaiBaseUrl configured.
    */
   async routeForOpenAI(model: string, incomingRequestId?: string): Promise<RoutingResult> {
-    return this.routeWithFilter(model, true, incomingRequestId);
+    return this.routeWithFilter(model, 'openai', incomingRequestId);
   }
 
   /**
-   * Route a request with optional OpenAI-format filtering.
+   * Route a request with format-based filtering.
    */
-  private async routeWithFilter(model: string, requireOpenAISupport: boolean, incomingRequestId?: string): Promise<RoutingResult> {
+  private async routeWithFilter(model: string, format: 'anthropic' | 'openai', incomingRequestId?: string): Promise<RoutingResult> {
     const requestId = incomingRequestId ?? randomUUID();
     const searchModel = model;
 
@@ -200,18 +201,18 @@ export class RequestRouter {
       return this.handleNoActivePlans(searchModel, requestId, allPlans.length);
     }
 
-    // Filter by OpenAI support if required
-    let candidatePlans = requireOpenAISupport
+    // Filter by API format support
+    let candidatePlans = format === 'openai'
       ? this.filterByOpenAISupport(activePlans)
-      : activePlans;
+      : this.filterByAnthropicSupport(activePlans);
 
     if (candidatePlans.length === 0) {
-      logger.warn('No plans with OpenAI support for model', {
+      logger.warn('No plans with API format support for model', {
         requestId,
         model,
         totalPlans: allPlans.length,
         activePlans: activePlans.length,
-        requireOpenAISupport,
+        format,
       });
       return emptyResult(requestId, searchModel);
     }

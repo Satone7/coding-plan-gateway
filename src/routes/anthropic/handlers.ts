@@ -28,29 +28,8 @@ import {
   AnthropicCountTokensRequest,
   AnthropicCountTokensResponse,
 } from '@/types/anthropic';
-import type { ChatCompletionResponse } from '@/types/openai';
 import type { CodingPlan } from '@/types';
 import { TokenCounter } from '@/utils/token-counter';
-import {
-  convertAnthropicToOpenAIRequest,
-  convertOpenAIToAnthropicResponse,
-} from '@/utils/format-converter';
-
-/** Check if a plan's upstream expects OpenAI format (requires cross-format conversion).
- * Default to 'anthropic' if apiFormat is not specified. */
-function needsOpenAIUpstream(plan: CodingPlan): boolean {
-  return plan.apiFormat === 'openai_chat';
-}
-
-/** Get the appropriate base URL for forwarding based on upstream format.
- * For Anthropic format (default), returns baseUrl (always available).
- * For OpenAI format, returns openaiBaseUrl if available, undefined otherwise. */
-function getUpstreamBaseUrl(plan: CodingPlan, useOpenAIUpstream: boolean): string | undefined {
-  if (useOpenAIUpstream) {
-    return plan.openaiBaseUrl;
-  }
-  return plan.baseUrl;
-}
 
 /**
  * Schema for system prompt content blocks.
@@ -240,10 +219,8 @@ async function attemptFailover(
   }
 
   // Check if upstream URL is available
-  const useOpenAIUpstream = needsOpenAIUpstream(plan);
-  const upstreamUrl = getUpstreamBaseUrl(plan, useOpenAIUpstream);
-  if (!upstreamUrl) {
-    logger.warn('Failover plan lacks OpenAI base_url', {
+  if (!plan.baseUrl) {
+    logger.warn('Failover plan lacks Anthropic base_url', {
       requestId,
       failoverPlanId: plan.id,
       planName: plan.name,
@@ -253,25 +230,12 @@ async function attemptFailover(
 
   startStage(request, 'upstreamRequest');
   try {
-    let response: { durationMs: number; statusCode: number; data: unknown };
-    if (useOpenAIUpstream) {
-      const openaiBody = convertAnthropicToOpenAIRequest(body);
-      const upstreamResponse = await services.proxy.forwardOpenAIRequest(openaiBody, {
-        baseUrl: upstreamUrl,
-        apiKey,
-        timeout: plan.timeout,
-        requestId,
-      });
-      const anthropicResponse = convertOpenAIToAnthropicResponse(upstreamResponse.data as ChatCompletionResponse);
-      response = { durationMs: upstreamResponse.durationMs, statusCode: upstreamResponse.statusCode, data: anthropicResponse };
-    } else {
-      response = await services.proxy.forwardAnthropicRequest(body, {
-        baseUrl: upstreamUrl,
-        apiKey,
-        timeout: plan.timeout,
-        requestId,
-      });
-    }
+    const response = await services.proxy.forwardAnthropicRequest(body, {
+      baseUrl: plan.baseUrl,
+      apiKey,
+      timeout: plan.timeout,
+      requestId,
+    });
     endStage(request, 'upstreamRequest');
     services.router.markPlanSuccess(plan.id);
     logger.info('Failover successful', { requestId, failoverPlanId: plan.id, durationMs: response.durationMs });
@@ -325,13 +289,11 @@ export function createAnthropicHandlers(
 
       const plan = routingResult.selectedPlan;
 
-      // Check if upstream URL is available for the requested format
-      const useOpenAIUpstream = needsOpenAIUpstream(plan);
-      const upstreamUrl = getUpstreamBaseUrl(plan, useOpenAIUpstream);
-      if (!upstreamUrl) {
+      // Check if upstream URL is available for Anthropic-format requests
+      if (!plan.baseUrl) {
         throw createGatewayError(
           'SERVICE_UNAVAILABLE',
-          `Plan '${plan.name}' does not support OpenAI-format requests for upstream. Provider lacks OpenAI base_url.`,
+          `Plan '${plan.name}' does not have a valid base_url for Anthropic-format requests.`,
           { planId: plan.id, planName: plan.name, provider: plan.provider }
         );
       }
@@ -378,65 +340,36 @@ export function createAnthropicHandlers(
       if (body.stream) {
         startStage(request, 'upstreamRequest');
         try {
-          if (useOpenAIUpstream) {
-            // Cross-format: client sends Anthropic, upstream expects OpenAI
-            await proxy.forwardAnthropicStreamAsOpenAI(
-              body,
-              { baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId },
-              reply,
-              (tokenUsage, accumulatedText) => {
+          await proxy.forwardAnthropicStream(
+            body,
+            { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
+            (_chunk, done) => {
+              if (done) {
                 endStage(request, 'upstreamRequest');
                 router.markPlanSuccess(plan.id);
-                const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
-                  tokenUsage,
-                  body,
-                  'openai',
-                  accumulatedText,
-                  requestId
-                );
-
-                attachProviderMetrics(request, {
-                  planId: plan.id,
-                  planName: plan.name,
-                  model,
-                  durationMs: Date.now() - (request.startTime || Date.now()),
-                  statusCode: 200,
-                  tokenUsage: finalTokenUsage,
-                });
+                logger.debug('Stream completed', { requestId });
               }
-            );
-          } else {
-            await proxy.forwardAnthropicStream(
-              body,
-              { baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId },
-              (_chunk, done) => {
-                if (done) {
-                  endStage(request, 'upstreamRequest');
-                  router.markPlanSuccess(plan.id);
-                  logger.debug('Stream completed', { requestId });
-                }
-              },
-              reply,
-              (tokenUsage, accumulatedText) => {
-                const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
-                  tokenUsage,
-                  body,
-                  'anthropic',
-                  accumulatedText,
-                  requestId
-                );
+            },
+            reply,
+            (tokenUsage, accumulatedText) => {
+              const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
+                tokenUsage,
+                body,
+                'anthropic',
+                accumulatedText,
+                requestId
+              );
 
-                attachProviderMetrics(request, {
-                  planId: plan.id,
-                  planName: plan.name,
-                  model,
-                  durationMs: Date.now() - (request.startTime || Date.now()),
-                  statusCode: 200,
-                  tokenUsage: finalTokenUsage,
-                });
-              }
-            );
-          }
+              attachProviderMetrics(request, {
+                planId: plan.id,
+                planName: plan.name,
+                model,
+                durationMs: Date.now() - (request.startTime || Date.now()),
+                statusCode: 200,
+                tokenUsage: finalTokenUsage,
+              });
+            }
+          );
         } catch (streamError) {
           endStage(request, 'upstreamRequest');
           router.markPlanFailed(plan.id);
@@ -456,30 +389,13 @@ export function createAnthropicHandlers(
       // Non-streaming request with failover
       startStage(request, 'upstreamRequest');
       try {
-        let anthropicResponse: AnthropicMessageResponse;
-        if (useOpenAIUpstream) {
-          const openaiBody = convertAnthropicToOpenAIRequest(body);
-          const upstreamResponse = await proxy.forwardOpenAIRequest(openaiBody, {
-            baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId,
-          });
-          anthropicResponse = convertOpenAIToAnthropicResponse(upstreamResponse.data as ChatCompletionResponse);
-          endStage(request, 'upstreamRequest');
-          router.markPlanSuccess(plan.id);
-          recordMetrics(request, plan, model, {
-            data: anthropicResponse,
-            durationMs: upstreamResponse.durationMs,
-            statusCode: upstreamResponse.statusCode,
-          });
-        } else {
-          const response = await proxy.forwardAnthropicRequest(body, {
-            baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId,
-          });
-          endStage(request, 'upstreamRequest');
-          router.markPlanSuccess(plan.id);
-          recordMetrics(request, plan, model, response);
-          anthropicResponse = response.data as AnthropicMessageResponse;
-        }
-        return anthropicResponse;
+        const response = await proxy.forwardAnthropicRequest(body, {
+          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+        });
+        endStage(request, 'upstreamRequest');
+        router.markPlanSuccess(plan.id);
+        recordMetrics(request, plan, model, response);
+        return response.data as AnthropicMessageResponse;
       } catch (error) {
         endStage(request, 'upstreamRequest');
         logger.warn('Primary plan request failed', {
@@ -538,9 +454,8 @@ export function createAnthropicHandlers(
 
       const plan = routingResult.selectedPlan;
 
-      // Check if upstream URL is available (count_tokens always uses Anthropic format)
-      const upstreamUrl = getUpstreamBaseUrl(plan, false);
-      if (!upstreamUrl) {
+      // Check if upstream URL is available
+      if (!plan.baseUrl) {
         throw createGatewayError(
           'SERVICE_UNAVAILABLE',
           `Plan '${plan.name}' does not have a valid base_url.`,
@@ -563,7 +478,7 @@ export function createAnthropicHandlers(
       startStage(request, 'upstreamRequest');
       try {
         const response = await proxy.forwardAnthropicCountTokensRequest(body, {
-          baseUrl: upstreamUrl, apiKey, timeout: plan.timeout, requestId,
+          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
         });
         endStage(request, 'upstreamRequest');
         // Do not mark circuit breaker success/failure for count_tokens to avoid skewing stats
@@ -612,8 +527,7 @@ export function createAnthropicHandlers(
           }
 
           // Check if upstream URL is available for alt plan
-          const altUpstreamUrl = getUpstreamBaseUrl(altPlan, false);
-          if (!altUpstreamUrl) {
+          if (!altPlan.baseUrl) {
             logger.warn('Failover plan lacks base_url for count tokens', {
               requestId,
               failoverPlanId: altPlan.id,
@@ -629,7 +543,7 @@ export function createAnthropicHandlers(
           startStage(request, 'upstreamRequest');
           try {
             const result = await proxy.forwardAnthropicCountTokensRequest(body, {
-              baseUrl: altUpstreamUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId
+              baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId
             });
             endStage(request, 'upstreamRequest');
             

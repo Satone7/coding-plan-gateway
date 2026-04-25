@@ -53,7 +53,7 @@ describe('Config migration end-to-end', () => {
     // Verify result
     expect(result.migrated).toBe(true);
     expect(result.fromVersion).toBe(0);
-    expect(result.toVersion).toBe(1);
+    expect(result.toVersion).toBe(2);
     expect(result.backupPath).not.toBeNull();
 
     // Verify backup exists with original content
@@ -64,7 +64,7 @@ describe('Config migration end-to-end', () => {
     const migratedContent = await readFile(configPath, 'utf-8');
     const migrated = parseYaml(migratedContent) as any;
 
-    expect(migrated.version).toBe(1);
+    expect(migrated.version).toBe(2);
     expect(migrated.plans).toHaveLength(2);
 
     // Plan 1: UUID→int, daily→5h
@@ -100,7 +100,7 @@ describe('Config migration end-to-end', () => {
     // Second migration — should be no-op
     const result2 = await migrateConfigFile(configPath);
     expect(result2.migrated).toBe(false);
-    expect(result2.fromVersion).toBe(1);
+    expect(result2.fromVersion).toBe(2);
     expect(result2.backupPath).toBeNull();
   });
 

@@ -177,7 +177,7 @@ describe('loadConfig autoUpgrade', () => {
     const configPath = join(tempDir, 'config.yaml');
 
     const yaml = [
-      'version: "1.0"',
+      'version: 2',
       'plans:',
       '  - id: 1',
       '    name: Zhipu',
@@ -214,7 +214,6 @@ describe('loadConfig autoUpgrade', () => {
     // modelAliases is kept (user configuration should persist)
     expect(updated).toContain('modelAliases:');
     expect(updated).toContain('version:');
-    expect(updated).not.toContain('"1.0"');
   });
 
   it('strips baseUrl/models for non-usage-API provider but keeps quota', async () => {
@@ -222,7 +221,7 @@ describe('loadConfig autoUpgrade', () => {
     const configPath = join(tempDir, 'config.yaml');
 
     const yaml = [
-      'version: 1',
+      'version: 2',
       'plans:',
       '  - id: 1',
       '    name: Ark',
@@ -251,7 +250,7 @@ describe('loadConfig autoUpgrade', () => {
     const configPath = join(tempDir, 'config.yaml');
 
     const yaml = [
-      'version: 1',
+      'version: 2',
       'plans:',
       '  - id: 1',
       '    name: Custom Zhipu',
@@ -281,7 +280,7 @@ describe('loadConfig autoUpgrade', () => {
     const configPath = join(tempDir, 'config.yaml');
 
     const yaml = [
-      'version: 1',
+      'version: 2',
       'plans:',
       '  - id: 1',
       '    name: Custom',
@@ -307,7 +306,7 @@ describe('loadConfig autoUpgrade', () => {
     const configPath = join(tempDir, 'config.yaml');
 
     const yaml = [
-      'version: 1',
+      'version: 2',
       'plans:',
       '  - id: 1',
       '    name: Zhipu',

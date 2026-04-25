@@ -72,7 +72,7 @@ describe('migrateConfigFile', () => {
     expect(plans[0].quota.period.type).toBe('5h');
   });
 
-  it('should migrate "1.0" string version config (treated as v1 = latest)', async () => {
+  it('should migrate "1.0" string version config (treated as v1, needs v2 migration)', async () => {
     const configPath = join(tempDir, 'config.yaml');
     const oldConfig = {
       version: '1.0',
@@ -81,7 +81,9 @@ describe('migrateConfigFile', () => {
     await writeFile(configPath, stringifyYaml(oldConfig));
 
     const result = await migrateConfigFile(configPath);
-    expect(result.migrated).toBe(false);
+    expect(result.migrated).toBe(true);
+    expect(result.fromVersion).toBe(1);
+    expect(result.toVersion).toBe(2);
   });
 
   it('should throw for config version newer than supported', async () => {

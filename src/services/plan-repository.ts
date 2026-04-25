@@ -164,6 +164,7 @@ export class FilePlanRepository implements IPlanRepository {
       id,
       name: input.name,
       baseUrl: input.baseUrl,
+      openaiBaseUrl: input.openaiBaseUrl,
       apiKeyEncrypted,
       models: input.models,
       quota: input.quota,
@@ -474,7 +475,6 @@ export class FilePlanRepository implements IPlanRepository {
       enable: config.enable ?? true,
       modelAliases: config.modelAliases,
       provider: config.provider,
-      apiFormat: config.apiFormat,
       createdAt: now,
       updatedAt: now,
     };
@@ -516,7 +516,6 @@ export class FilePlanRepository implements IPlanRepository {
       enable: plan.enable ?? true,
       modelAliases: plan.modelAliases,
       provider: plan.provider,
-      apiFormat: plan.apiFormat,
     };
   }
 

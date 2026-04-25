@@ -29,6 +29,4 @@ export interface ProviderPreset {
   hasUsageApi: boolean;
   /** Provider category for classification */
   category?: ProviderCategory;
-  /** API format override (e.g., 'openai_chat' for providers using OpenAI format) */
-  apiFormat?: 'anthropic' | 'openai_chat';
 }

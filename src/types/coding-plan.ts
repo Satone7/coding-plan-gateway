@@ -150,9 +150,6 @@ export interface CodingPlan {
    * If not set, OpenAI-format requests will be rejected with SERVICE_UNAVAILABLE error. */
   openaiBaseUrl?: string;
 
-  /** Upstream API format. Determines which forwarding method and URL path to use. */
-  apiFormat?: 'anthropic' | 'openai_chat';
-
   /** Creation timestamp */
   createdAt: Date;
 
@@ -176,6 +173,7 @@ export interface CreateCodingPlanInput {
   enable?: boolean;
   modelAliases?: Record<string, string>;
   provider?: string;
+  openaiBaseUrl?: string;
 }
 
 /**
@@ -195,4 +193,5 @@ export interface UpdateCodingPlanInput {
   enable?: boolean;
   modelAliases?: Record<string, string>;
   provider?: string;
+  openaiBaseUrl?: string;
 }

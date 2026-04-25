@@ -10,8 +10,8 @@ import {
 } from '@/config/builtin-providers';
 
 describe('BUILTIN_PROVIDERS', () => {
-  it('should contain exactly 3 providers', () => {
-    expect(BUILTIN_PROVIDERS).toHaveLength(3);
+  it('should contain exactly 4 providers', () => {
+    expect(BUILTIN_PROVIDERS).toHaveLength(4);
   });
 
   it('should have unique IDs', () => {
@@ -67,6 +67,6 @@ describe('getBuiltinProvider', () => {
 
 describe('BUILTIN_PROVIDER_IDS', () => {
   it('should list all provider IDs', () => {
-    expect(BUILTIN_PROVIDER_IDS).toEqual(['zhipu', 'volcengine', 'ali']);
+    expect(BUILTIN_PROVIDER_IDS).toEqual(['zhipu', 'volcengine', 'ali', 'deepseek']);
   });
 });

@@ -123,7 +123,6 @@ export const planConfigSchema = z.object({
   weight: z.number().int().min(1).max(100).optional(),
   enable: z.boolean().optional().default(true),
   modelAliases: modelAliasesSchema.optional(),
-  apiFormat: z.enum(['anthropic', 'openai_chat']).optional(),
 }).refine(
   (plan) => {
     if (!plan.provider) {

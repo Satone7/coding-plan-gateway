@@ -139,6 +139,7 @@ export function createMockPlanInput(overrides: Partial<CreateCodingPlanInput & {
   return {
     name: 'New Test Plan',
     baseUrl: 'https://api.newplan.com/v1',
+    openaiBaseUrl: 'https://api.newplan.com/openai/v1',
     apiKey: 'sk-test-api-key-12345',
     models: ['new-model-1', 'new-model-2'],
     quota: { limit: 500, period: { type: 'monthly' } },
