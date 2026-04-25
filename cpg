@@ -4,7 +4,9 @@
 #   ./cpg dashboard   Launch the TUI dashboard inside the container
 #   ./cpg logs        Tail service logs (docker compose logs -f)
 #   ./cpg update      Pull latest code, rebuild & restart with auto-rollback
+#   ./cpg ps          Show container status
 #   ./cpg help        Show this help message
+#   ./cpg <cmd>       Pass command to container's cpg (e.g. onboard, config)
 
 set -euo pipefail
 
@@ -20,6 +22,10 @@ CONFIG_BACKUP_SUFFIX=".pre-update.bak"
 
 compose() {
   docker compose -f "$COMPOSE_FILE" "$@"
+}
+
+exec_in_container() {
+  docker compose -f "$COMPOSE_FILE" exec -it gateway cpg "$@"
 }
 
 # Read PORT from .env or default to 8080
@@ -220,21 +226,37 @@ case "${1:-help}" in
     update_gateway
     ;;
 
+  ps)
+    shift || true
+    compose ps "$@"
+    ;;
+
   help|--help|-h)
     echo "Usage: ./cpg <command>"
     echo ""
-    echo "Commands:"
-    echo "  dashboard   Launch the TUI dashboard inside the container"
+    echo "Host commands (docker compose):"
     echo "  logs        Tail gateway service logs (docker compose logs -f)"
     echo "  update      Pull latest code, rebuild & restart with auto-rollback"
+    echo "  ps          Show container status"
     echo "  help        Show this help message"
     echo ""
-    echo "Any other arguments are passed to docker compose."
-    echo "Example: ./cpg ps"
+    echo "Container commands (passed to gateway cpg):"
+    echo "  dashboard   Launch the TUI dashboard inside the container"
+    echo "  onboard     Onboard a new coding plan subscription"
+    echo "  config      Manage gateway configuration"
+    echo "  status      Show gateway status"
+    echo "  ...         Any other cpg command"
+    echo ""
+    echo "Example: ./cpg onboard"
     ;;
 
   *)
-    # Pass through to docker compose for commands like up, down, ps, restart, etc.
-    compose "$@"
+    # Pass through to container's cpg command
+    if ! compose ps --status running -q 2>/dev/null | grep -q .; then
+      echo "Error: Gateway service is not running. Start it first with:"
+      echo "  docker compose -f $COMPOSE_FILE up -d"
+      exit 1
+    fi
+    exec_in_container "$@"
     ;;
 esac
