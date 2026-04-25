@@ -3,6 +3,7 @@
 # Usage:
 #   ./cpg dashboard   Launch the TUI dashboard inside the container
 #   ./cpg logs        Tail service logs (docker compose logs -f)
+#   ./cpg update      Pull latest code, rebuild & restart with auto-rollback
 #   ./cpg help        Show this help message
 
 set -euo pipefail
@@ -11,8 +12,192 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yaml"
 CONTAINER_NAME="coding-plan-gateway"
 
+# Update constants
+HEALTH_TIMEOUT=90
+HEALTH_INTERVAL=3
+ROLLBACK_TIMEOUT=30
+CONFIG_BACKUP_SUFFIX=".pre-update.bak"
+
 compose() {
   docker compose -f "$COMPOSE_FILE" "$@"
+}
+
+# Read PORT from .env or default to 8080
+read_port() {
+  local port=8080
+  if [[ -f "$SCRIPT_DIR/.env" ]]; then
+    local p
+    p=$(grep -E '^PORT=' "$SCRIPT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2)
+    [[ -n "$p" ]] && port="$p"
+  fi
+  echo "$port"
+}
+
+# Poll health endpoint until it responds or timeout
+# Usage: wait_for_health <timeout_seconds> <description>
+wait_for_health() {
+  local timeout=$1
+  local desc=$2
+  local port
+  port=$(read_port)
+  local elapsed=0
+
+  while (( elapsed < timeout )); do
+    if curl -sf "http://localhost:${port}/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$HEALTH_INTERVAL"
+    (( elapsed += HEALTH_INTERVAL )) || true
+  done
+  return 1
+}
+
+update_gateway() {
+  local port
+  port=$(read_port)
+  local image_name="coding-plan-gateway"
+
+  echo "=== CPG Update ==="
+  echo ""
+
+  # --- Pre-flight checks ---
+  if ! git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Error: not a git repository. Cannot update." >&2
+    exit 1
+  fi
+
+  if ! git -C "$SCRIPT_DIR" diff --quiet 2>/dev/null || \
+     ! git -C "$SCRIPT_DIR" diff --cached --quiet 2>/dev/null; then
+    echo "Error: uncommitted changes detected. Commit or stash before updating." >&2
+    exit 1
+  fi
+
+  # --- Record current state ---
+  local old_head
+  old_head=$(git -C "$SCRIPT_DIR" rev-parse --short HEAD)
+  echo "[1/6] Current version: $old_head"
+
+  # --- Tag old image for fast rollback ---
+  local rollback_tag="rollback-${old_head}"
+  if docker image inspect "${image_name}:latest" >/dev/null 2>&1; then
+    docker image tag "${image_name}:latest" "${image_name}:${rollback_tag}" 2>/dev/null || true
+    echo "[2/6] Old image tagged as ${rollback_tag}"
+  else
+    echo "[2/6] Warning: no existing image found, skip tagging"
+  fi
+
+  # --- Backup config.yaml ---
+  local config_path="$SCRIPT_DIR/config.yaml"
+  local config_backup="${config_path}${CONFIG_BACKUP_SUFFIX}"
+  if [[ -f "$config_path" ]]; then
+    cp "$config_path" "$config_backup"
+    echo "[3/6] Config backed up to config.yaml${CONFIG_BACKUP_SUFFIX}"
+  else
+    echo "[3/6] Warning: config.yaml not found, skipping backup"
+    config_backup=""
+  fi
+
+  # --- Pull latest ---
+  echo "[4/6] Pulling latest code..."
+  local new_head=""
+  if ! git -C "$SCRIPT_DIR" pull --no-ff origin master 2>&1; then
+    echo "" >&2
+    echo "Error: git pull failed (possible merge conflict)." >&2
+    git -C "$SCRIPT_DIR" merge --abort 2>/dev/null || true
+    # Restore config backup
+    [[ -n "$config_backup" && -f "$config_backup" ]] && cp "$config_backup" "$config_path"
+    exit 1
+  fi
+  new_head=$(git -C "$SCRIPT_DIR" rev-parse --short HEAD)
+  echo "      Updated to: $new_head"
+
+  # --- Build ---
+  echo "[5/6] Building new image..."
+  if ! compose build gateway 2>&1; then
+    echo "" >&2
+    echo "Error: build failed." >&2
+    # Rollback
+    rollback "$old_head" "$rollback_tag" "$config_backup" "$config_path" "build failed"
+    exit 1
+  fi
+
+  # --- Start ---
+  echo "[6/6] Starting gateway..."
+  compose up -d gateway 2>&1 || true
+
+  # --- Health check ---
+  echo ""
+  echo "Waiting for gateway to become healthy (timeout: ${HEALTH_TIMEOUT}s)..."
+  if wait_for_health "$HEALTH_TIMEOUT" "new version"; then
+    echo ""
+    echo "=== Update successful: ${old_head} -> ${new_head} ==="
+    # Clean up
+    docker image rmi "${image_name}:${rollback_tag}" 2>/dev/null || true
+    [[ -n "$config_backup" && -f "$config_backup" ]] && rm -f "$config_backup"
+    exit 0
+  fi
+
+  # --- Rollback ---
+  echo "" >&2
+  echo "Error: gateway failed health check within ${HEALTH_TIMEOUT}s." >&2
+  rollback "$old_head" "$rollback_tag" "$config_backup" "$config_path" "health check failed"
+  exit 1
+}
+
+rollback() {
+  local old_head=$1
+  local rollback_tag=$2
+  local config_backup=$3
+  local config_path=$4
+  local reason=$5
+  local image_name="coding-plan-gateway"
+
+  echo ""
+  echo "=== Rolling back (reason: ${reason}) ==="
+
+  # Dump logs before stopping
+  local log_file
+  log_file="$SCRIPT_DIR/update-failure-logs-$(date +%Y%m%d-%H%M%S).txt"
+  compose logs --no-color gateway > "$log_file" 2>&1 || true
+  echo "Failure logs dumped to: $(basename "$log_file")"
+
+  # Stop container
+  compose down gateway 2>&1 || true
+
+  # Restore config
+  if [[ -n "$config_backup" && -f "$config_backup" ]]; then
+    cp "$config_backup" "$config_path"
+    echo "Config restored from backup."
+  fi
+
+  # Revert code
+  git -C "$SCRIPT_DIR" reset --hard "$old_head" 2>&1 || true
+  echo "Code reverted to: $old_head"
+
+  # Restore old image
+  if docker image inspect "${image_name}:${rollback_tag}" >/dev/null 2>&1; then
+    docker image tag "${image_name}:${rollback_tag}" "${image_name}:latest" 2>/dev/null || true
+    echo "Image reverted to: ${rollback_tag}"
+  else
+    echo "Warning: rollback image tag not found, rebuilding..."
+    compose build gateway 2>&1 || true
+  fi
+
+  # Restart old version
+  compose up -d gateway 2>&1 || true
+
+  echo ""
+  echo "Waiting for rolled-back gateway (timeout: ${ROLLBACK_TIMEOUT}s)..."
+  if wait_for_health "$ROLLBACK_TIMEOUT" "rollback"; then
+    echo ""
+    echo "=== Rollback successful — running on previous version ($old_head) ==="
+  else
+    echo "" >&2
+    echo "Warning: rolled-back gateway also failed health check." >&2
+    echo "Check logs at: $log_file" >&2
+  fi
+
+  echo "Note: config backup kept at config.yaml${CONFIG_BACKUP_SUFFIX}"
 }
 
 case "${1:-help}" in
@@ -31,12 +216,17 @@ case "${1:-help}" in
     compose logs -f "$CONTAINER_NAME" "$@"
     ;;
 
+  update)
+    update_gateway
+    ;;
+
   help|--help|-h)
     echo "Usage: ./cpg <command>"
     echo ""
     echo "Commands:"
     echo "  dashboard   Launch the TUI dashboard inside the container"
     echo "  logs        Tail gateway service logs (docker compose logs -f)"
+    echo "  update      Pull latest code, rebuild & restart with auto-rollback"
     echo "  help        Show this help message"
     echo ""
     echo "Any other arguments are passed to docker compose."
