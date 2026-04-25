@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# cpg — Quick access to Coding Plan Gateway docker-compose services
+# Usage:
+#   ./cpg dashboard   Launch the TUI dashboard inside the container
+#   ./cpg logs        Tail service logs (docker compose logs -f)
+#   ./cpg help        Show this help message
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yaml"
+CONTAINER_NAME="coding-plan-gateway"
+
+compose() {
+  docker compose -f "$COMPOSE_FILE" "$@"
+}
+
+case "${1:-help}" in
+  dashboard)
+    # Run the TUI dashboard inside the running container
+    if ! compose ps --status running -q 2>/dev/null | grep -q .; then
+      echo "Error: Gateway service is not running. Start it first with:"
+      echo "  docker compose -f $COMPOSE_FILE up -d"
+      exit 1
+    fi
+    docker exec -it "$CONTAINER_NAME" node bin/cpg dashboard
+    ;;
+
+  logs)
+    shift || true
+    compose logs -f "$CONTAINER_NAME" "$@"
+    ;;
+
+  help|--help|-h)
+    echo "Usage: ./cpg <command>"
+    echo ""
+    echo "Commands:"
+    echo "  dashboard   Launch the TUI dashboard inside the container"
+    echo "  logs        Tail gateway service logs (docker compose logs -f)"
+    echo "  help        Show this help message"
+    echo ""
+    echo "Any other arguments are passed to docker compose."
+    echo "Example: ./cpg ps"
+    ;;
+
+  *)
+    # Pass through to docker compose for commands like up, down, ps, restart, etc.
+    compose "$@"
+    ;;
+esac
