@@ -40,7 +40,15 @@ export async function migrateConfigFile(configPath: string): Promise<MigrationRe
     };
   }
 
-  const backupPath = await backupConfigFile(absolutePath, fromVersion);
+  let backupPath: string | null = null;
+  try {
+    backupPath = await backupConfigFile(absolutePath, fromVersion);
+  } catch (backupError) {
+    logger.warn('Failed to create config backup, proceeding with migration', {
+      configPath: absolutePath,
+      error: backupError instanceof Error ? backupError.message : String(backupError),
+    });
+  }
 
   let migratedConfig: Record<string, unknown>;
   try {
@@ -54,7 +62,14 @@ export async function migrateConfigFile(configPath: string): Promise<MigrationRe
   }
 
   const migratedContent = serializeConfig(migratedConfig, absolutePath);
-  await writeFile(absolutePath, migratedContent, 'utf-8');
+  try {
+    await writeFile(absolutePath, migratedContent, 'utf-8');
+  } catch (writeError) {
+    logger.warn('Failed to persist migrated config to disk (in-memory migration applied)', {
+      configPath: absolutePath,
+      error: writeError instanceof Error ? writeError.message : String(writeError),
+    });
+  }
 
   const toVersion = detectConfigVersion(migratedConfig);
 
