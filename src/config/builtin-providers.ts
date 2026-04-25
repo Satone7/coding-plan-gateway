@@ -15,7 +15,7 @@ export const BUILTIN_PROVIDERS: readonly ProviderPreset[] = [
     name: 'Zhipu',
     baseUrl: 'https://open.bigmodel.cn/api/anthropic',
     openaiBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
-    models: ['glm-5.1', 'glm-5-turbo'],
+    models: ['glm-5.1', 'glm-5-turbo', 'glm-4.7'],
     defaultModelAliases: { 'glm-5': 'glm-5-turbo' },
     hasUsageApi: true,
   },
