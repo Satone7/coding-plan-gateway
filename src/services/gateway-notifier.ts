@@ -18,7 +18,7 @@ export interface GatewayNotifierConfig {
 /**
  * Types of data that can be reloaded.
  */
-export type ReloadType = 'api-keys' | 'usage' | 'all';
+export type ReloadType = 'api-keys' | 'usage' | 'config' | 'all';
 
 /**
  * Result of a quota sync operation.
@@ -194,6 +194,44 @@ export class GatewayNotifier {
    */
   async notifyAllChanged(): Promise<boolean> {
     return this.notifyReload('all');
+  }
+
+  /**
+   * Notify gateway that config has changed.
+   * Calls the admin reload endpoint which re-reads plans and reinitializes quota.
+   */
+  async notifyConfigChanged(): Promise<boolean> {
+    const url = `${this.gatewayUrl}/api/reload`;
+
+    try {
+      logger.debug('Notifying gateway to reload config', { url });
+
+      const response = await fetch(url, {
+        method: 'POST',
+        signal: AbortSignal.timeout(this.timeout),
+      });
+
+      if (!response.ok) {
+        logger.warn('Gateway config reload failed', {
+          status: response.status,
+          statusText: response.statusText,
+        });
+        return false;
+      }
+
+      const result = await response.json() as { success?: boolean };
+      logger.debug('Gateway config reload successful', { result });
+
+      return result.success === true;
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.warn('Failed to notify gateway config reload', {
+          error: error.message,
+          url,
+        });
+      }
+      return false;
+    }
   }
 
   /**

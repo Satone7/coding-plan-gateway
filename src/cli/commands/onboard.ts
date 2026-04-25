@@ -8,6 +8,7 @@ import { BUILTIN_PROVIDERS, getBuiltinProvider } from '@/config/builtin-provider
 import { DEFAULT_REQUEST_TIMEOUT_SEC, LATEST_CONFIG_VERSION } from '@/config/defaults';
 import type { CliContext } from '@/types/cli';
 import type { Config, PlanConfig } from '@/config/schema';
+import { createGatewayNotifier } from '@/services/gateway-notifier';
 
 /** Compare two string arrays ignoring element order. */
 function arraysEqualUnordered(a: string[], b: string[]): boolean {
@@ -142,6 +143,24 @@ export async function handleOnboardCommand(context: CliContext): Promise<void> {
           const cleanedConfig = cleanConfigForOnboard(config);
           await saveConfig(context.configPath, cleanedConfig, 'yaml');
           p.log.success(`Configuration saved to ${context.configPath}`);
+
+          // Notify running gateway to reload config
+          try {
+            const notifier = createGatewayNotifier({ gatewayUrl: context.gatewayUrl });
+            if (await notifier.isGatewayRunning()) {
+              const reloaded = await notifier.notifyConfigChanged();
+              if (reloaded) {
+                p.log.success('Gateway reloaded configuration successfully.');
+              } else {
+                p.log.warn('Gateway received reload request but reported failure.');
+              }
+            } else {
+              p.log.warn('Gateway is not running — restart it to apply the new configuration.');
+            }
+          } catch {
+            p.log.warn('Could not notify gateway — restart it to apply the new configuration.');
+          }
+
           exit = true;
         } catch (error) {
           p.log.error(`Validation failed. Please fix the configuration before saving:\n${error}`);

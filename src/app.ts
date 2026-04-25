@@ -83,7 +83,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   registerErrorHandler(app);
 
   // Register routes
-  await registerRoutes(app, options.quotaManager, options.planUsageTracker, options.providerRegistry);
+  const { repository } = await registerRoutes(app, options.quotaManager, options.planUsageTracker, options.providerRegistry);
 
   // Register internal API key routes if apiKeyManager is provided
   if (options.apiKeyManager) {
@@ -97,6 +97,8 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     await registerReloadRoutes(app, {
       apiKeyManager: options.apiKeyManager,
       usageTracker: options.usageTracker,
+      repository,
+      quotaManager: options.quotaManager,
       prefix: '/api/internal',
     });
   }

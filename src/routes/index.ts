@@ -8,7 +8,7 @@ import { logger } from '@/utils/logger';
 import { registerOpenAIRoutes } from './openai';
 import { registerAnthropicRoutes } from './anthropic';
 import { registerAdminRoutes } from './admin';
-import { createPlanRepository } from '@/services/plan-repository';
+import { createPlanRepository, type IPlanRepository } from '@/services/plan-repository';
 import { createPlanIdCounter } from '@/services/plan-id-counter';
 import { isMigrationNeeded, performMigration } from '@/migration/uuid-to-int';
 import type { QuotaManager } from '@/services/quota-manager';
@@ -24,13 +24,14 @@ import { loadConfig } from '@/config';
  * @param app - The Fastify instance
  * @param quotaManager - Optional quota manager instance (must be initialized by caller)
  * @param planUsageTracker - Optional plan usage tracker instance
+ * @returns Object containing the created repository
  */
 export async function registerRoutes(
   app: FastifyInstance,
   quotaManager?: QuotaManager,
   planUsageTracker?: PlanUsageTracker,
   providerRegistry?: ProviderRegistry
-): Promise<void> {
+): Promise<{ repository: IPlanRepository }> {
   logger.info('Registering routes...');
 
   // Create dependencies
@@ -135,4 +136,6 @@ export async function registerRoutes(
   });
 
   logger.info('All routes registered');
+
+  return { repository };
 }
