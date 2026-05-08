@@ -52,6 +52,10 @@ function cleanPlanForPersist(plan: NormalizedPlanConfig): PlanConfig {
     result.baseUrl = plan.baseUrl;
   }
 
+  if (plan.openaiBaseUrl && plan.openaiBaseUrl !== preset.openaiBaseUrl) {
+    result.openaiBaseUrl = plan.openaiBaseUrl;
+  }
+
   // Keep quota only if provider doesn't have usage API
   if (!preset.hasUsageApi && plan.quota) {
     result.quota = plan.quota;
@@ -308,9 +312,12 @@ async function promptPlanDetails(id: number, existing?: NormalizedPlanConfig): P
   // Only prompt for preset-duplicated fields when no preset selected
   if (!selectedPreset) {
     groupDef.baseUrl = () => p.text({
-      message: 'Base URL',
+      message: 'Anthropic Base URL (for /v1/messages)',
       initialValue: existing?.baseUrl || '',
-      validate: value => (!value || value.length === 0) ? 'Base URL is required' : undefined
+    });
+    groupDef.openaiBaseUrl = () => p.text({
+      message: 'OpenAI Base URL (for /v1/chat/completions)',
+      initialValue: existing?.openaiBaseUrl || '',
     });
     groupDef.models = () => p.text({
       message: 'Models (comma-separated)',
@@ -369,6 +376,11 @@ async function promptPlanDetails(id: number, existing?: NormalizedPlanConfig): P
 
   if (!group || Object.keys(group).length === 0) return null;
 
+  if (!selectedPreset && !(group.baseUrl as string)?.trim() && !(group.openaiBaseUrl as string)?.trim()) {
+    p.log.error('At least one of Anthropic Base URL or OpenAI Base URL is required.');
+    return null;
+  }
+
   const legacyPeriod = group.quotaPeriod as string;
   const plan: PlanConfig = {
     id,
@@ -381,7 +393,12 @@ async function promptPlanDetails(id: number, existing?: NormalizedPlanConfig): P
 
   // Only include preset-duplicated fields if they were prompted (no preset selected)
   if (!selectedPreset) {
-    plan.baseUrl = group.baseUrl as string;
+    if ((group.baseUrl as string)?.trim()) {
+      plan.baseUrl = (group.baseUrl as string).trim();
+    }
+    if ((group.openaiBaseUrl as string)?.trim()) {
+      plan.openaiBaseUrl = (group.openaiBaseUrl as string).trim();
+    }
     plan.models = (group.models as string).split(',').map(m => m.trim()).filter(Boolean);
     plan.modelAliases = parseModelAliases(group.modelAliases as string);
   }
