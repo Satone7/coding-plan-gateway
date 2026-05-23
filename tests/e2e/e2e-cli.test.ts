@@ -10,7 +10,7 @@
  * Run with: npm run test:e2e
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { execSync } from 'child_process';
 
 // Check if Docker is available
@@ -118,8 +118,25 @@ function extractLastJson(output: string): unknown {
   return JSON.parse(jsonLines);
 }
 
+let gatewayAuthKey: string | null = null;
+
+function createGatewayAuthKey(): string {
+  const result = execInGateway('cpg key create --name "E2E Gateway Auth" --json');
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || result.stdout || 'Failed to create gateway auth key');
+  }
+  const output = extractLastJson(result.stdout) as { key: { plaintextKey: string } };
+  return output.key.plaintextKey;
+}
+
 // Execute wget against the gateway
-function wgetGateway(path: string, method: string = 'GET', body?: string, headers?: Record<string, string>): {
+function wgetGateway(
+  path: string,
+  method: string = 'GET',
+  body?: string,
+  headers?: Record<string, string>,
+  includeDefaultAuth: boolean = true
+): {
   stdout: string;
   exitCode: number;
 } {
@@ -140,6 +157,10 @@ function wgetGateway(path: string, method: string = 'GET', body?: string, header
     for (const [key, value] of Object.entries(headers)) {
       args.push(`--header='${key}: ${value}'`);
     }
+  }
+
+  if (includeDefaultAuth && gatewayAuthKey && (!headers || headers.Authorization === undefined)) {
+    args.push(`--header='Authorization: Bearer ${gatewayAuthKey}'`);
   }
 
   args.push(`http://127.0.0.1:8080${path}`);
@@ -168,8 +189,11 @@ describe('E2E CLI Operations', () => {
 
     if (!gatewayRunning) {
       console.warn('Gateway container not running - skipping E2E CLI tests');
-      console.warn('Start the E2E environment with: docker-compose -f docker-compose.e2e.yml up -d');
+      console.warn('Start the E2E environment with: npm run e2e:start');
+      return;
     }
+
+    gatewayAuthKey = createGatewayAuthKey();
   }, 30000);
 
   describe('CLI Availability', () => {
@@ -270,7 +294,8 @@ describe('E2E CLI Operations', () => {
         '/api/internal/reload',
         'POST',
         '{"type":"api-keys"}',
-        { 'Content-Type': 'application/json' }
+        { 'Content-Type': 'application/json' },
+        false
       );
 
       expect(result.exitCode).toBe(0);
@@ -292,10 +317,10 @@ describe('E2E CLI Operations', () => {
       const createOutput = extractLastJson(createResult.stdout) as { key: { plaintextKey: string } };
       const plaintextKey = createOutput.key.plaintextKey;
 
-      // Immediately try to authenticate with the key to /v1/models
+      // Immediately try to authenticate with the key to /api/v1/models
       // This tests that the gateway was notified via /internal/reload and has the key loaded
       const authResult = wgetGateway(
-        '/v1/models',
+        '/api/v1/models',
         'GET',
         undefined,
         { 'Authorization': `Bearer ${plaintextKey}` }
@@ -412,7 +437,7 @@ describe('E2E CLI Operations', () => {
     // These tests verify load balancing features using the production config.yaml
 
     it.skipIf(!dockerAvailable || !gatewayRunning)('should list models from configured plans', () => {
-      const result = wgetGateway('/v1/models', 'GET');
+      const result = wgetGateway('/api/v1/models', 'GET');
       expect(result.exitCode).toBe(0);
 
       const output = JSON.parse(result.stdout);
@@ -425,7 +450,7 @@ describe('E2E CLI Operations', () => {
     it.skipIf(!dockerAvailable || !gatewayRunning)('should preserve custom parameters in requests (passthrough)', () => {
       // Test that custom parameters are passed through to upstream
       const result = wgetGateway(
-        '/v1/chat/completions',
+        '/api/v1/chat/completions',
         'POST',
         JSON.stringify({
           model: 'kimi-k2.5', // Use model from config.yaml
@@ -444,11 +469,11 @@ describe('E2E CLI Operations', () => {
     it.skipIf(!dockerAvailable || !gatewayRunning)('should route requests to available plans', () => {
       // Send a request and verify it routes successfully
       const result = wgetGateway(
-        '/v1/chat/completions',
+        '/api/v1/chat/completions',
         'POST',
         JSON.stringify({
-          model: 'kimi-k2.5',
-          messages: [{ role: 'user', content: 'Test routing' }],
+          model: 'kimi-k2.5', // Use model from config.yaml
+          messages: [{ role: 'user', content: 'Hi' }],
         }),
         { 'Content-Type': 'application/json' }
       );
@@ -470,7 +495,7 @@ describe('E2E CLI Operations', () => {
       const requests = [];
       for (let i = 0; i < 3; i++) {
         const result = wgetGateway(
-          '/v1/chat/completions',
+          '/api/v1/chat/completions',
           'POST',
           JSON.stringify({
             model: 'kimi-k2.5',

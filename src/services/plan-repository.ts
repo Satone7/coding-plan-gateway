@@ -24,6 +24,35 @@ import { planSupportsModel } from '@/utils/model-alias';
 import { DEFAULT_REQUEST_TIMEOUT_SEC } from '@/config/defaults';
 import type { PlanIdCounter } from './plan-id-counter';
 
+const ENV_VAR_PATTERN = /\$\{([^}:]+)(?::-([^}]*))?\}/g;
+
+function expandEnvVars(value: string): string {
+  return value.replace(ENV_VAR_PATTERN, (_, varName: string, defaultValue?: string) => {
+    const envValue = process.env[varName];
+    if (envValue !== undefined && envValue !== '') {
+      return envValue;
+    }
+    return defaultValue ?? '';
+  });
+}
+
+function expandEnvVarsInObject<T>(obj: T): T {
+  if (typeof obj === 'string') {
+    return expandEnvVars(obj) as T;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map((item) => expandEnvVarsInObject(item)) as T;
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = expandEnvVarsInObject(value);
+    }
+    return result as T;
+  }
+  return obj;
+}
+
 /**
  * Repository interface for coding plan storage.
  * Allows swapping file-based storage for database in the future.
@@ -392,18 +421,18 @@ export class FilePlanRepository implements IPlanRepository {
     const ext = extname(this.filePath).toLowerCase();
 
     if (ext === '.yaml' || ext === '.yml') {
-      return parseYaml(content);
+      return expandEnvVarsInObject(parseYaml(content));
     }
 
     if (ext === '.json') {
-      return JSON.parse(content);
+      return expandEnvVarsInObject(JSON.parse(content));
     }
 
     // Try JSON first, then YAML
     try {
-      return JSON.parse(content);
+      return expandEnvVarsInObject(JSON.parse(content));
     } catch {
-      return parseYaml(content);
+      return expandEnvVarsInObject(parseYaml(content));
     }
   }
 

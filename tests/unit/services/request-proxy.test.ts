@@ -2,7 +2,7 @@
  * Unit tests for RequestProxy service.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { RequestProxy } from '@/services/request-proxy';
 
 describe('RequestProxy', () => {
@@ -49,6 +49,31 @@ describe('RequestProxy', () => {
           timeout: 1,
         })
       ).rejects.toThrow();
+    });
+
+    it('should not append an extra /v1 segment when the provider base URL already ends with a version path', async () => {
+      const request = {
+        model: 'test-model',
+        messages: [{ role: 'user' as const, content: 'Hello' }],
+      };
+      const makeRequest = vi
+        .spyOn(proxy as unknown as { makeRequest: RequestProxy['forwardOpenAIRequest'] }, 'makeRequest' as never)
+        .mockResolvedValue({
+          data: { id: 'chatcmpl-test', choices: [] },
+          statusCode: 200,
+          headers: {},
+          durationMs: 0,
+        } as never);
+
+      await proxy.forwardOpenAIRequest(request, {
+        baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+        apiKey: 'test-key',
+      });
+
+      expect(makeRequest).toHaveBeenCalledTimes(1);
+      expect(makeRequest.mock.calls[0]?.[0].url.toString()).toBe(
+        'https://open.bigmodel.cn/api/coding/paas/v4/chat/completions'
+      );
     });
   });
 

@@ -32,8 +32,9 @@
     "e2e:start": "bash scripts/e2e/start.sh",
     "e2e:stop": "bash scripts/e2e/stop.sh",
     "e2e:reset": "bash scripts/e2e/reset.sh",
-    "e2e:logs": "docker-compose -f docker-compose.e2e.yml logs -f",
+    "e2e:logs": "docker compose -f docker-compose.e2e.yml logs -f",
     "e2e:status": "bash scripts/e2e/status.sh",
+    "test:e2e": "vitest run tests/e2e/docker-cli.test.ts --reporter=verbose && vitest run tests/e2e/e2e-cli.test.ts --reporter=verbose && vitest run tests/e2e/claude-code-providers.test.ts --reporter=verbose",
     "dashboard": "npm run build:dashboard && node dist/dashboard.mjs"
   },
   "keywords": [

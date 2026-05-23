@@ -22,7 +22,7 @@ if ! docker info > /dev/null 2>&1; then
 fi
 
 # Stop containers
-docker-compose -f "$COMPOSE_FILE" stop
+docker compose -f "$COMPOSE_FILE" stop
 
 echo -e "${GREEN}E2E environment stopped.${NC}"
 echo ""

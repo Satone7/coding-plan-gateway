@@ -85,6 +85,18 @@ export interface StreamTokenUsage {
   outputTokens?: number;
 }
 
+function buildOpenAIEndpoint(baseUrl: string): URL {
+  const basePath = baseUrl.endsWith('/')
+    ? baseUrl.slice(0, -1)
+    : baseUrl;
+  const hasVersionedSuffix = /(?:\/v\d+(?:\.\d+)?)$|(?:\/paas\/v\d+(?:\.\d+)?)$/.test(basePath);
+  const urlPath = hasVersionedSuffix
+    ? '/chat/completions'
+    : '/v1/chat/completions';
+
+  return new URL(`${basePath}${urlPath}`);
+}
+
 /**
  * Extract token usage from the tail of an SSE stream.
  * Handles both OpenAI and Anthropic streaming formats.
@@ -215,10 +227,7 @@ export class RequestProxy {
     request: ChatCompletionRequest,
     options: ProxyRequestOptions
   ): Promise<UpstreamResponse<ChatCompletionResponse>> {
-    const basePath = options.baseUrl.endsWith('/')
-      ? options.baseUrl.slice(0, -1)
-      : options.baseUrl;
-    const url = new URL(`${basePath}/v1/chat/completions`);
+    const url = buildOpenAIEndpoint(options.baseUrl);
     const startTime = Date.now();
 
     logger.debug('Forwarding OpenAI request', {
@@ -258,10 +267,7 @@ export class RequestProxy {
     reply: FastifyReply,
     onTokenUsage?: (tokenUsage?: StreamTokenUsage, accumulatedText?: string) => void
   ): Promise<void> {
-    const basePath = options.baseUrl.endsWith('/')
-      ? options.baseUrl.slice(0, -1)
-      : options.baseUrl;
-    const url = new URL(`${basePath}/v1/chat/completions`);
+    const url = buildOpenAIEndpoint(options.baseUrl);
     const startTime = Date.now();
 
     logger.debug('Forwarding OpenAI streaming request', {

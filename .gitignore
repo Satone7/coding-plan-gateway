@@ -9,6 +9,11 @@ build/
 .env
 .env.*
 !.env.example
+e2e/test-config.yaml
+e2e/runtime/*
+!e2e/runtime/.gitkeep
+e2e/claude-home/*
+!e2e/claude-home/.gitkeep
 
 # Logs
 *.log

@@ -11,15 +11,19 @@ services:
       target: production
     container_name: gateway-e2e
     ports:
-      - "8081:8080"  # Different port to avoid conflict with production
+      - "${E2E_GATEWAY_PORT:-8081}:8080"
+    env_file:
+      - ./.env
     environment:
-      - ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      - ENCRYPTION_KEY=${E2E_ENCRYPTION_KEY}
       - LOG_LEVEL=debug
-      - GATEWAY_URL=http://localhost:8080
+      - GATEWAY_URL=http://gateway-e2e:8080
+      - CONFIG_PATH=/app/config.yaml
+      - API_KEYS_PATH=/app/data/api-keys.json
+      - USAGE_DATA_PATH=/app/data/usage-data.json
+      - PLAN_USAGE_DATA_PATH=/app/data/plan-usage-data.json
     volumes:
-      # Use test config (read-write for onboard command)
-      - ./e2e/test-config.yaml:/app/config.yaml
-      # Isolated data volumes for testing (won't pollute production)
+      - ./e2e/test-config.yaml:/app/config.yaml:ro
       - e2e-api-keys:/app/data
       - e2e-logs:/app/logs
     networks:
@@ -37,12 +41,15 @@ services:
       context: ./e2e
       dockerfile: Dockerfile
     container_name: claude-code-e2e
+    user: "1000:1000"
     environment:
-      - ANTHROPIC_BASE_URL=http://gateway-e2e:8080
-      - ANTHROPIC_MODEL=kimi-k2.5
-      - ANTHROPIC_API_KEY=cpg_Qnhp8ZikLlKutijYis0R78n8HP0roxgk
+      - ANTHROPIC_BASE_URL=http://gateway-e2e:8080/api
+      - ANTHROPIC_MODEL=${E2E_DEFAULT_MODEL:-ark-code-latest}
+      - ANTHROPIC_API_KEY=dummy-key-for-gateway
+      - HOME=/home/claude
     volumes:
-      - e2e-claude-logs:/home/claude/.claude/logs
+      - ./e2e/claude-home/.claude:/home/claude/.claude
+      - ./e2e/claude-home/.claude.json:/home/claude/.claude.json
       - ./e2e/workspace:/workspace
     networks:
       - e2e-network
@@ -58,7 +65,5 @@ networks:
     driver: bridge
 
 volumes:
-  # Named volumes for test data isolation
   e2e-api-keys:
   e2e-logs:
-  e2e-claude-logs:

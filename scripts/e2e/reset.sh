@@ -25,11 +25,11 @@ fi
 
 # Stop containers
 echo "Stopping containers..."
-docker-compose -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
+docker compose -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
 
 # Remove volumes
 echo "Removing volumes..."
-docker-compose -f "$COMPOSE_FILE" down -v --remove-orphans 2>/dev/null || true
+docker compose -f "$COMPOSE_FILE" down -v --remove-orphans 2>/dev/null || true
 
 # Remove images (optional - uncomment if needed)
 # echo "Removing images..."
@@ -38,7 +38,7 @@ docker-compose -f "$COMPOSE_FILE" down -v --remove-orphans 2>/dev/null || true
 
 # Rebuild images
 echo "Rebuilding images..."
-if ! docker-compose -f "$COMPOSE_FILE" build --no-cache; then
+if ! docker compose -f "$COMPOSE_FILE" build --no-cache; then
     echo -e "${RED}Error: Failed to rebuild images.${NC}"
     exit 2
 fi

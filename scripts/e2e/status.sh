@@ -5,6 +5,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPOSE_FILE="$PROJECT_ROOT/docker-compose.e2e.yml"
+RUNTIME_PROVIDER_FILE="$PROJECT_ROOT/e2e/runtime/providers.json"
 
 # Colors for output
 RED='\033[0;31m'
@@ -26,8 +27,8 @@ echo -e "Docker:      ${GREEN}running${NC}"
 echo ""
 
 # Check containers
-GATEWAY_STATUS=$(docker ps -a --filter "name=gateway" --format "{{.Status}}" 2>/dev/null || echo "")
-CLAUDE_STATUS=$(docker ps -a --filter "name=claude-code" --format "{{.Status}}" 2>/dev/null || echo "")
+GATEWAY_STATUS=$(docker ps -a --filter "name=gateway-e2e" --format "{{.Status}}" 2>/dev/null || echo "")
+CLAUDE_STATUS=$(docker ps -a --filter "name=claude-code-e2e" --format "{{.Status}}" 2>/dev/null || echo "")
 
 if [ -z "$GATEWAY_STATUS" ]; then
     echo -e "Gateway:     ${YELLOW}not created${NC}"
@@ -52,24 +53,26 @@ echo ""
 
 # Check config
 if [ -f "$PROJECT_ROOT/e2e/test-config.yaml" ]; then
-    echo -e "Config:      ${GREEN}valid${NC}"
+    echo -e "Config:      ${GREEN}generated${NC}"
 else
     echo -e "Config:      ${RED}missing${NC}"
-    echo "             Copy e2e/test-config.example.yaml to e2e/test-config.yaml and chmod 666 e2e/test-config.yaml"
+    echo "             Run npm run e2e:start after configuring .env"
 fi
 
-# Check logs directory
-if [ -d "$PROJECT_ROOT/logs" ]; then
-    echo "Logs:        $PROJECT_ROOT/logs/"
+# Check runtime provider matrix
+if [ -f "$RUNTIME_PROVIDER_FILE" ]; then
+    echo "Providers:"
+    node -e "const fs=require('fs');const data=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));for(const provider of data.providers){const state=provider.enabled?'enabled':'skipped';const detail=provider.enabled?'':' ('+provider.reason+')';console.log('  - '+provider.providerId+': '+state+detail);}" "$RUNTIME_PROVIDER_FILE"
 else
-    echo -e "Logs:        ${YELLOW}not created${NC}"
+    echo "Providers:   not prepared"
 fi
 
 echo ""
 
 # Check gateway health if running
 if echo "$GATEWAY_STATUS" | grep -q "^Up"; then
-    if curl -s http://localhost:8080/health > /dev/null 2>&1; then
+    GATEWAY_PORT=$(node -e "try{const fs=require('fs');const data=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(data.gatewayPort||'8081'));}catch{process.stdout.write('8081');}" "$RUNTIME_PROVIDER_FILE")
+    if curl -s "http://localhost:${GATEWAY_PORT}/health" > /dev/null 2>&1; then
         echo -e "Health:      ${GREEN}OK${NC}"
     else
         echo -e "Health:      ${RED}failing${NC}"

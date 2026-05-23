@@ -191,6 +191,29 @@ describe('PlanRepository', () => {
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe('Persisted Plan');
     });
+
+    it('should expand environment variables from YAML config when loading plans', async () => {
+      process.env.TEST_PLAN_API_KEY = 'sk-expanded-from-env';
+      await writeFile(
+        configPath,
+        [
+          'version: 2',
+          'plans:',
+          '  - id: 1',
+          '    name: Env Plan',
+          '    provider: ali',
+          '    apiKey: "${TEST_PLAN_API_KEY}"',
+          '',
+        ].join('\n'),
+        'utf-8'
+      );
+
+      const loadedRepo = new FilePlanRepository(configPath, TEST_ENCRYPTION_KEY);
+      const apiKey = await loadedRepo.getDecryptedApiKey(1);
+
+      expect(apiKey).toBe('sk-expanded-from-env');
+      delete process.env.TEST_PLAN_API_KEY;
+    });
   });
 
   describe('update', () => {

@@ -1,174 +1,111 @@
-# E2E Docker Testing Environment
+# E2E Docker Environment
 
-This directory contains the end-to-end testing infrastructure for the Coding Plan Gateway.
+This E2E setup runs the gateway and Claude Code CLI in Docker, with real upstream provider coverage driven by secrets from the repository-root `.env`.
 
-## Key Design Decisions
+## What it covers
 
-- **Uses production config.yaml**: E2E tests use the same `config.yaml` as production to test with real coding plans
-- **Isolated data volumes**: Test data is stored in Docker named volumes, separate from production
-- **Different container names**: Containers are named `gateway-e2e` and `claude-code-e2e` to avoid conflicts
-- **Different port**: Gateway runs on port 8081 (vs 8080 for production) to allow both to run simultaneously
+- Real `claude` CLI traffic through the gateway
+- Gateway CLI/key-management smoke checks
+- Real provider requests for each built-in provider:
+  - `zhipu`
+  - `volcengine`
+  - `ali`
+  - `deepseek`
 
-## Quick Start
+If a provider API key is missing from `.env`, that provider's real-request test is skipped and called out explicitly in the E2E test output.
 
-```bash
-# 1. Ensure config.yaml exists with your coding plans
-cat config.yaml
+## Files
 
-# 2. Start the E2E environment
-npm run e2e:start
+Tracked:
 
-# 3. Run tests
-npm run test:e2e
+- `docker-compose.e2e.yml`
+- `e2e/Dockerfile`
+- `e2e/README.md`
+- `e2e/claude-home/.gitkeep`
+- `e2e/runtime/.gitkeep`
 
-# 4. Stop the environment
-npm run e2e:stop
-```
+Generated at runtime and ignored by git:
 
-## Directory Structure
-
-```
-e2e/
-├── Dockerfile              # Claude Code container definition
-├── workspace/              # Mounted workspace for testing
-└── README.md               # This file
-```
+- `e2e/test-config.yaml`
+- `e2e/runtime/e2e.env`
+- `e2e/runtime/providers.json`
+- `e2e/claude-home/.claude.json`
+- `e2e/claude-home/.claude/`
 
 ## Configuration
 
-### Using Production Config
+1. Copy `.env.example` to `.env`
+2. Fill in at least one real provider API key
+3. Set `E2E_ENCRYPTION_KEY` or reuse `ENCRYPTION_KEY`
 
-The E2E environment mounts `config.yaml` from the repository root (read-only). This ensures:
+Relevant `.env` entries:
 
-1. Tests use real coding plan configurations
-2. No separate config file to maintain
-3. Tests are always in sync with production configuration
+```bash
+E2E_GATEWAY_PORT=8081
+E2E_ENCRYPTION_KEY=
+ZHIPU_API_KEY=
+VOLCENGINE_API_KEY=
+ALI_API_KEY=
+DEEPSEEK_API_KEY=
+```
 
-### Data Isolation
+## Start and stop
 
-Test data is stored in Docker named volumes:
+```bash
+npm run e2e:start
+npm run e2e:status
+npm run e2e:stop
+npm run e2e:reset
+```
 
-| Volume | Purpose |
-|--------|---------|
-| `e2e-api-keys` | API keys created during tests |
-| `e2e-logs` | Gateway logs |
-| `e2e-claude-logs` | Claude Code logs |
+`e2e:start` does three things before Docker starts:
 
-This prevents test data from polluting production storage.
+1. reads `.env`
+2. generates `e2e/test-config.yaml` with only enabled providers
+3. prepares a dedicated Claude Code home under `e2e/claude-home/`
 
-## Container Details
-
-| Container | Port | Purpose |
-|-----------|------|---------|
-| `gateway-e2e` | 8081 | Gateway service for testing |
-| `claude-code-e2e` | - | Claude Code test client |
-
-## Environment Variables
-
-### Gateway (gateway-e2e)
-
-| Variable | Value | Description |
-|----------|-------|-------------|
-| `ENCRYPTION_KEY` | 64-char hex | API key encryption key |
-| `LOG_LEVEL` | debug | Verbose logging for tests |
-| `AUTH_EXEMPT_PATHS` | /health,/ready,/internal/* | Paths without auth |
-
-### Claude Code (claude-code-e2e)
-
-| Variable | Value | Description |
-|----------|-------|-------------|
-| `ANTHROPIC_BASE_URL` | http://gateway:8080 | Gateway endpoint |
-| `ANTHROPIC_MODEL` | kimi-k2.5 | Default model |
-| `ANTHROPIC_API_KEY` | cpg_... | Test API key |
-
-## Running Tests
-
-### All E2E Tests
+## Run tests
 
 ```bash
 npm run test:e2e
 ```
 
-### Specific Test File
+Expected result:
+
+- Docker/image smoke tests run when Docker is available
+- gateway/CLI tests run when the E2E environment is up
+- provider tests run only for providers with configured API keys
+- missing providers are reported as skipped
+
+## Manual Claude Code check
+
+Create a gateway API key:
 
 ```bash
-npx vitest run tests/e2e/e2e-cli.test.ts
-npx vitest run tests/e2e/docker-cli.test.ts
+docker exec gateway-e2e cpg key create --name "Manual E2E" --json
 ```
 
-### Interactive Testing
+Then run Claude Code through the gateway:
 
 ```bash
-# Start an interactive Claude Code session
-docker exec -it claude-code-e2e claude
-
-# Test gateway health
-curl http://localhost:8081/health
-
-# List available models
-curl http://localhost:8081/v1/models
+docker exec -it claude-code-e2e env ANTHROPIC_API_KEY=<gateway-key> claude -p "Say hello in one word"
 ```
 
-## Test Scenarios
+To force a specific provider, override the model with one of the unique test models:
 
-### Load Balancing Tests
+- `glm-5-turbo` for `zhipu`
+- `ark-code-latest` for `volcengine`
+- `qwen3.6-plus` for `ali`
+- `deepseek-v4-flash` for `deepseek`
 
-The E2E tests verify:
-
-1. **Model listing**: Models from config.yaml are available
-2. **Passthrough**: Custom parameters are preserved in requests
-3. **Request routing**: Requests are routed to available plans
-4. **Load distribution**: Multiple requests are distributed fairly
-5. **Health checks**: Gateway remains healthy under load
-
-### Key Management Tests
-
-1. **Key creation**: Create API keys via CLI
-2. **Key listing**: List all created keys
-3. **Key validation**: Test key validity
-4. **Key lifecycle**: Disable/enable keys
-
-## Troubleshooting
-
-### Container won't start
+Example:
 
 ```bash
-# Check Docker is running
-docker info
-
-# Check for port conflicts
-lsof -i :8081
-
-# View gateway logs
-docker logs gateway-e2e
+docker exec -it claude-code-e2e env ANTHROPIC_API_KEY=<gateway-key> ANTHROPIC_MODEL=deepseek-v4-flash claude -p "Reply with one word"
 ```
 
-### Config file errors
+## Notes
 
-```bash
-# Verify config.yaml exists
-ls -la config.yaml
-
-# Validate YAML syntax
-cat config.yaml
-```
-
-### Clean up and restart
-
-```bash
-# Stop and remove containers
-npm run e2e:stop
-
-# Remove volumes for clean slate
-docker volume rm e2e-api-keys e2e-logs e2e-claude-logs 2>/dev/null || true
-
-# Start fresh
-npm run e2e:start
-```
-
-## Security Notes
-
-- **Never commit config.yaml** - It contains real API keys
-- **Test data is isolated** - Named volumes don't affect production
-- **Different port** - 8081 prevents accidental production access
-- **Read-only config** - Tests cannot modify the configuration
+- The gateway listens on `http://localhost:${E2E_GATEWAY_PORT:-8081}` on the host.
+- Inside Docker, Claude Code talks to `http://gateway-e2e:8080/api`.
+- Secrets stay in `.env`; generated E2E config files are ignored by git.

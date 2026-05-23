@@ -7,6 +7,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 COMPOSE_FILE="$PROJECT_ROOT/docker-compose.e2e.yml"
+RUNTIME_ENV_FILE="$PROJECT_ROOT/e2e/runtime/e2e.env"
 
 # Colors for output
 RED='\033[0;31m'
@@ -22,38 +23,60 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Check if config file exists
-if [ ! -f "$PROJECT_ROOT/e2e/test-config.yaml" ]; then
-    echo -e "${RED}Error: test-config.yaml not found.${NC}"
-    echo -e "${YELLOW}Copy test-config.example.yaml and configure your API keys:${NC}"
-    echo "  cp e2e/test-config.example.yaml e2e/test-config.yaml"
-    echo "  chmod 666 e2e/test-config.yaml"
+# Check if .env exists
+if [ ! -f "$PROJECT_ROOT/.env" ]; then
+    echo -e "${RED}Error: .env not found.${NC}"
+    echo -e "${YELLOW}Copy .env.example and configure at least one provider API key:${NC}"
+    echo "  cp .env.example .env"
     exit 2
 fi
 
-# Ensure the config file is writable by the container
-chmod 666 "$PROJECT_ROOT/e2e/test-config.yaml" || true
+# Generate runtime E2E files
+echo "Preparing generated E2E config..."
+if ! npx ts-node "$PROJECT_ROOT/scripts/e2e/prepare.ts"; then
+    echo -e "${RED}Error: Failed to prepare E2E runtime files.${NC}"
+    exit 3
+fi
+
+set -a
+# shellcheck disable=SC1091
+source "$PROJECT_ROOT/.env"
+if [ -f "$RUNTIME_ENV_FILE" ]; then
+    # shellcheck disable=SC1091
+    source "$RUNTIME_ENV_FILE"
+fi
+set +a
+
+if [ -z "${E2E_ENCRYPTION_KEY:-}" ] && [ -n "${ENCRYPTION_KEY:-}" ]; then
+    export E2E_ENCRYPTION_KEY="$ENCRYPTION_KEY"
+fi
+
+if [ -z "${E2E_ENCRYPTION_KEY:-}" ]; then
+    echo -e "${RED}Error: E2E_ENCRYPTION_KEY or ENCRYPTION_KEY must be set in .env.${NC}"
+    exit 3
+fi
 
 # Build images
 echo "Building images..."
-if ! docker-compose -f "$COMPOSE_FILE" build; then
+if ! docker compose -f "$COMPOSE_FILE" build; then
     echo -e "${RED}Error: Failed to build images. Check Docker logs for details.${NC}"
-    exit 3
+    exit 4
 fi
 
 # Start containers
 echo "Starting containers..."
-if ! docker-compose -f "$COMPOSE_FILE" up -d; then
+if ! docker compose -f "$COMPOSE_FILE" up -d; then
     echo -e "${RED}Error: Failed to start containers.${NC}"
-    exit 4
+    exit 5
 fi
 
 # Wait for gateway to be healthy
 echo "Waiting for gateway to be healthy..."
 MAX_WAIT=60
 WAITED=0
+GATEWAY_PORT="${E2E_GATEWAY_PORT:-8081}"
 while [ $WAITED -lt $MAX_WAIT ]; do
-    if curl -s http://localhost:8080/health > /dev/null 2>&1; then
+    if curl -s "http://localhost:${GATEWAY_PORT}/health" > /dev/null 2>&1; then
         echo -e "${GREEN}Gateway is healthy!${NC}"
         break
     fi
@@ -64,14 +87,14 @@ done
 
 if [ $WAITED -ge $MAX_WAIT ]; then
     echo -e "${RED}Error: Gateway failed to start within 60 seconds.${NC}"
-    echo "Check logs/gateway/ for details."
-    exit 4
+    echo "Check docker compose logs for details."
+    exit 6
 fi
 
 # Verify CLI is available
 echo "Verifying CLI availability..."
-if docker exec gateway cpg --version > /dev/null 2>&1; then
-    CLI_VERSION=$(docker exec gateway cpg --version 2>/dev/null || echo "unknown")
+if docker exec gateway-e2e cpg --version > /dev/null 2>&1; then
+    CLI_VERSION=$(docker exec gateway-e2e cpg --version 2>/dev/null || echo "unknown")
     echo -e "${GREEN}CLI is available: $CLI_VERSION${NC}"
 else
     echo -e "${YELLOW}Warning: CLI not available in container. Some features may not work.${NC}"
@@ -80,17 +103,18 @@ fi
 echo ""
 echo -e "${GREEN}E2E environment is ready!${NC}"
 echo ""
-echo "Gateway:     http://localhost:8080"
-echo "Health:      http://localhost:8080/health"
-echo "Models:      http://localhost:8080/v1/models"
+echo "Gateway:     http://localhost:${GATEWAY_PORT}"
+echo "Health:      http://localhost:${GATEWAY_PORT}/health"
+echo "Models:      http://localhost:${GATEWAY_PORT}/v1/models"
 echo ""
 echo "CLI Commands:"
-echo "  docker exec gateway cpg --help"
-echo "  docker exec gateway cpg key create --name \"Test Key\""
-echo "  docker exec gateway cpg key list"
+echo "  docker exec gateway-e2e cpg --help"
+echo "  docker exec gateway-e2e cpg key create --name \"Test Key\" --json"
+echo "  docker exec gateway-e2e cpg key list --json"
 echo ""
 echo "Run Claude Code:"
-echo "  docker exec -it claude-code claude"
+echo "  docker exec -it claude-code-e2e claude"
+echo "  docker exec -it claude-code-e2e env ANTHROPIC_API_KEY=<gateway-key> ANTHROPIC_BASE_URL=http://gateway-e2e:8080/api claude -p \"Say hello in one word\""
 echo ""
 echo "View logs:"
 echo "  npm run e2e:logs"
