@@ -68,6 +68,10 @@ export interface ProviderUsageData {
     windowLabel: string;
     nextResetTime?: number;
   }>;
+  summary?: {
+    mode: 'balance';
+    value: string;
+  };
   lastUpdated: string;
 }
 

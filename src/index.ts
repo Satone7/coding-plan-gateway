@@ -19,6 +19,7 @@ import { createExpirationScheduler } from './services/expiration-scheduler';
 import { createPlanRepository } from './services/plan-repository';
 import { createProviderRegistry } from './services/provider-registry';
 import { ZhipuUsageAdapter } from './services/usage-adapters/zhipu-adapter';
+import { DeepseekUsageAdapter } from './services/usage-adapters/deepseek-adapter';
 import { CachedUsageAdapter } from './services/usage-adapters/cached-adapter';
 import { loadAuthConfig } from './config/auth-config';
 import { decryptApiKey, isApiKeyEncrypted } from './config/encryption';
@@ -47,6 +48,9 @@ async function main(): Promise<void> {
     const providerRegistry = createProviderRegistry(config.providers);
     providerRegistry.registerUsageAdapter(
       new CachedUsageAdapter(new ZhipuUsageAdapter(), 300)
+    );
+    providerRegistry.registerUsageAdapter(
+      new CachedUsageAdapter(new DeepseekUsageAdapter(), 300)
     );
 
     // Create and initialize quota manager
@@ -145,6 +149,7 @@ async function main(): Promise<void> {
                 windowLabel: w.windowLabel,
                 nextResetTime: w.nextResetTime,
               })),
+              summary: result.summary,
               lastUpdated: new Date().toISOString(),
             }, plan.provider);
           } catch (err) {

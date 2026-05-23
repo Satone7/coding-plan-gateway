@@ -19,6 +19,16 @@ export interface UsageWindow {
 }
 
 /**
+ * Provider-supplied summary value for dashboards when percentage quota is not the right model.
+ */
+export interface UsageSummary {
+  /** Summary display mode, e.g. account balance */
+  mode: 'balance';
+  /** Human-readable value to show in the dashboard */
+  value: string;
+}
+
+/**
  * Result from a usage API query.
  */
 export interface UsageResult {
@@ -32,6 +42,8 @@ export interface UsageResult {
   expiresAt?: string;
   /** Per-window usage details, if provider tracks multiple windows */
   windows?: UsageWindow[];
+  /** Provider-supplied summary for dashboard display */
+  summary?: UsageSummary;
   /** Raw API response for debugging */
   raw?: unknown;
 }

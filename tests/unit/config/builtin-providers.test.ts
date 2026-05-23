@@ -60,6 +60,15 @@ describe('getBuiltinProvider', () => {
     expect(ali!.hasUsageApi).toBe(false);
   });
 
+  it('should return deepseek provider by id', () => {
+    const deepseek = getBuiltinProvider('deepseek');
+    expect(deepseek).toBeDefined();
+    expect(deepseek!.id).toBe('deepseek');
+    expect(deepseek!.baseUrl).toBe('https://api.deepseek.com/anthropic');
+    expect(deepseek!.models).toContain('deepseek-v4-flash');
+    expect(deepseek!.hasUsageApi).toBe(true);
+  });
+
   it('should return undefined for unknown provider id', () => {
     expect(getBuiltinProvider('unknown')).toBeUndefined();
   });

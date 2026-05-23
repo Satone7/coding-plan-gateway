@@ -4,6 +4,7 @@ import { Divider } from '../components/Divider';
 import { formatCompactNumber, getColor, renderBar, calcBarLayout, formatResetTime, formatResetTimeFromIso } from '../utils';
 import { useTheme } from '../context';
 import type { DashboardState, ActiveRequest } from '../hooks/useDashboardState';
+import { getQuotaDisplay } from '../quota-display';
 
 interface HomeViewProps {
   state: DashboardState;
@@ -173,13 +174,16 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
               for (const [name] of plans) {
                 const providerData = state.providerUsage[name];
                 const localQuotaData = state.localQuota[name];
-                if (providerData && providerData.windows.length > 0) {
-                  providerData.windows.forEach((win, i) => {
+                const quotaDisplay = getQuotaDisplay(providerData, localQuotaData);
+                if (quotaDisplay.kind === 'summary') {
+                  slotWidths[0] = Math.max(slotWidths[0] ?? 0, quotaDisplay.text.length);
+                } else if (quotaDisplay.kind === 'windows') {
+                  quotaDisplay.windows.forEach((win, i) => {
                     const textLen = quotaText(win.percentage, win.nextResetTime ? formatResetTime(win.nextResetTime) : undefined).length;
                     slotWidths[i] = Math.max(slotWidths[i] ?? 0, textLen);
                   });
-                } else if (localQuotaData) {
-                  const textLen = quotaText(localQuotaData.percentage, localQuotaData.resetAt ? formatResetTimeFromIso(localQuotaData.resetAt) : undefined).length;
+                } else if (quotaDisplay.kind === 'local') {
+                  const textLen = quotaText(quotaDisplay.percentage, quotaDisplay.resetAt ? formatResetTimeFromIso(quotaDisplay.resetAt) : undefined).length;
                   slotWidths[0] = Math.max(slotWidths[0] ?? 0, textLen);
                 }
               }
@@ -187,8 +191,8 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
 
               // Also compute separator width for this group
               const maxWindowCount = Math.max(...plans.map(([name]) => {
-                const pd = state.providerUsage[name];
-                return pd ? pd.windows.length : 1;
+                const quotaDisplay = getQuotaDisplay(state.providerUsage[name], state.localQuota[name]);
+                return quotaDisplay.kind === 'windows' ? quotaDisplay.windows.length : 1;
               }), 1);
               const totalQuotaWidth = slotWidths.reduce((sum, w) => sum + 10 + w, 0) + (maxWindowCount - 1) * 3;
               const separatorBaseWidth = 10 + 3 + reqWidth + 3 + tokWidth + 3 + rpmWidth + 3;
@@ -219,6 +223,7 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
                 const rpm = usage.rpm || 0;
                 const providerData = state.providerUsage[name];
                 const localQuotaData = state.localQuota[name];
+                const quotaDisplay = getQuotaDisplay(providerData, localQuotaData);
 
                 const reqStr = formatCompactNumber(usage.requests) + ' req';
                 const tokStr = formatCompactNumber(usage.tokens) + ' tok';
@@ -234,9 +239,17 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
                     <Box width={rpmWidth}><Text color={theme.brand}>{rpmStr}</Text></Box>
                     <Text color={theme.muted}> | </Text>
                     {/* Quota display */}
-                    {providerData && providerData.windows.length > 0 ? (
+                    {quotaDisplay.kind === 'summary' ? (
+                      (() => {
+                        const maxSlotW = slotWidths[0] ?? quotaDisplay.text.length;
+                        const paddedTxt = quotaDisplay.text.padEnd(maxSlotW);
+                        return (
+                          <Text color={theme.success}>{paddedTxt}</Text>
+                        );
+                      })()
+                    ) : quotaDisplay.kind === 'windows' ? (
                       // Usage-API plans: EXACT windows — pad each slot to group max width
-                      providerData.windows.map((win, i) => {
+                      quotaDisplay.windows.map((win, i) => {
                         const txt = quotaText(win.percentage, win.nextResetTime ? formatResetTime(win.nextResetTime) : undefined);
                         const maxSlotW = slotWidths[i] ?? txt.length;
                         const paddedTxt = txt.padEnd(maxSlotW);
@@ -248,16 +261,16 @@ export function HomeView({ state, activeRequests, now, isErrorsExpanded, showHea
                           </React.Fragment>
                         );
                       })
-                    ) : localQuotaData ? (
+                    ) : quotaDisplay.kind === 'local' ? (
                       // Local quota plans: GUESS
                       (() => {
-                        const txt = quotaText(localQuotaData.percentage, localQuotaData.resetAt ? formatResetTimeFromIso(localQuotaData.resetAt) : undefined);
+                        const txt = quotaText(quotaDisplay.percentage, quotaDisplay.resetAt ? formatResetTimeFromIso(quotaDisplay.resetAt) : undefined);
                         const maxSlotW = slotWidths[0] ?? txt.length;
                         const paddedTxt = txt.padEnd(maxSlotW);
                         return (
                           <>
-                            {renderQuotaBar(localQuotaData.percentage, 'GUESS')}
-                            <Text color={getColor(localQuotaData.percentage, theme)}>{paddedTxt}</Text>
+                            {renderQuotaBar(quotaDisplay.percentage, 'GUESS')}
+                            <Text color={getColor(quotaDisplay.percentage, theme)}>{paddedTxt}</Text>
                           </>
                         );
                       })()

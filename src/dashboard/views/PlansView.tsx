@@ -5,6 +5,7 @@ import { formatCompactNumber, renderBar, getColor, formatResetTime, formatResetT
 import { useTheme } from '../context';
 import type { DashboardState } from '../hooks/useDashboardState';
 import type { ThemeColors } from '../theme/types';
+import { getQuotaDisplay } from '../quota-display';
 
 interface PlansViewProps {
   state: DashboardState;
@@ -44,6 +45,8 @@ export function PlansView({ state, columns }: PlansViewProps) {
               const rpm = usage.rpm || 0;
               const rpmPercent = Math.min(100, Math.round((rpm / 20) * 100));
               const providerData = state.providerUsage[name];
+              const localQuotaData = state.localQuota[name];
+              const quotaDisplay = getQuotaDisplay(providerData, localQuotaData);
 
               // Helper for quota bar with centered label
               const renderQuotaBar = (percent: number, label: 'EXACT' | 'GUESS') => {
@@ -80,11 +83,11 @@ export function PlansView({ state, columns }: PlansViewProps) {
                       </Box>
                     </Box>
                   </Box>
-                  {providerData && providerData.windows.length > 0 && (
+                  {quotaDisplay.kind === 'windows' && (
                     <Box flexDirection="row">
                       <Box width={15}><Text color={theme.muted}>Quota:</Text></Box>
                       <Box flexDirection="row" flexWrap="wrap">
-                        {providerData.windows.map((win, i) => (
+                        {quotaDisplay.windows.map((win, i) => (
                           <React.Fragment key={i}>
                             {i > 0 && <Text color={theme.muted}> | </Text>}
                             <Text color={theme.muted}>{win.windowLabel} </Text>
@@ -98,12 +101,18 @@ export function PlansView({ state, columns }: PlansViewProps) {
                       </Box>
                     </Box>
                   )}
-                  {state.localQuota[name] && (
+                  {quotaDisplay.kind === 'summary' && (
+                    <Box flexDirection="row">
+                      <Box width={15}><Text color={theme.muted}>Balance:</Text></Box>
+                      <Text color={theme.success}>{quotaDisplay.text}</Text>
+                    </Box>
+                  )}
+                  {quotaDisplay.kind === 'local' && (
                     <Box flexDirection="row">
                       <Box width={15}><Text color={theme.muted}>Quota:</Text></Box>
-                      {renderQuotaBar(state.localQuota[name].percentage, 'GUESS')}
-                      <Text color={getColor(state.localQuota[name].percentage, theme)}>
-                        {' '}{state.localQuota[name].percentage}%{state.localQuota[name].resetAt ? `/${formatResetTimeFromIso(state.localQuota[name].resetAt)}` : ''}
+                      {renderQuotaBar(quotaDisplay.percentage, 'GUESS')}
+                      <Text color={getColor(quotaDisplay.percentage, theme)}>
+                        {' '}{quotaDisplay.percentage}%{quotaDisplay.resetAt ? `/${formatResetTimeFromIso(quotaDisplay.resetAt)}` : ''}
                       </Text>
                     </Box>
                   )}

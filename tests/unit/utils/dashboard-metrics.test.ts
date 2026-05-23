@@ -168,5 +168,23 @@ describe('DashboardMetrics', () => {
       expect(result.size).toBe(1);
       expect(result.get(3)).toBe(0);
     });
+
+    it('should preserve provider summary data in snapshots', () => {
+      const metrics = new DashboardMetrics();
+      metrics.setProviderUsage('DeepseekPlan', {
+        windows: [],
+        summary: {
+          mode: 'balance',
+          value: '¥12.34',
+        },
+        lastUpdated: new Date().toISOString(),
+      });
+
+      const snapshot = metrics.getSnapshot();
+      expect(snapshot.providerUsage.DeepseekPlan?.summary).toEqual({
+        mode: 'balance',
+        value: '¥12.34',
+      });
+    });
   });
 });
