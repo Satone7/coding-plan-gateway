@@ -106,11 +106,15 @@ update_gateway() {
   # --- Pull latest ---
   echo "[4/6] Pulling latest code..."
   local new_head=""
-  if ! git -C "$SCRIPT_DIR" pull --no-ff origin master 2>&1; then
+  if ! git -C "$SCRIPT_DIR" fetch origin master 2>&1; then
     echo "" >&2
-    echo "Error: git pull failed (possible merge conflict)." >&2
-    git -C "$SCRIPT_DIR" merge --abort 2>/dev/null || true
-    # Restore config backup
+    echo "Error: git fetch failed (check network)." >&2
+    [[ -n "$config_backup" && -f "$config_backup" ]] && cp "$config_backup" "$config_path"
+    exit 1
+  fi
+  if ! git -C "$SCRIPT_DIR" reset --hard origin/master 2>&1; then
+    echo "" >&2
+    echo "Error: git reset failed." >&2
     [[ -n "$config_backup" && -f "$config_backup" ]] && cp "$config_backup" "$config_path"
     exit 1
   fi
