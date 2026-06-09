@@ -65,7 +65,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     requestIdLogLabel: 'requestId',
     ignoreTrailingSlash: true,
     maxParamLength: 100,
-    bodyLimit: 0, // No body size limit — proxy large AI payloads
+    bodyLimit: 524288000, // 500 MiB — large enough for AI payloads, guards against DoS
     ...options,
   });
 

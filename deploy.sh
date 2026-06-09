@@ -49,6 +49,13 @@ fi
 
 # ---- Step 2: Update codebase ----
 echo "[2/5] Updating codebase..."
+OLD_HEAD=$(git -C "$SCRIPT_DIR" rev-parse HEAD)
+# Guard against uncommitted changes (matching cpg update behavior)
+if ! git -C "$SCRIPT_DIR" diff --quiet 2>/dev/null || \
+   ! git -C "$SCRIPT_DIR" diff --cached --quiet 2>/dev/null; then
+  echo "Error: uncommitted changes detected. Commit or stash before deploying." >&2
+  exit 1
+fi
 if ! git -C "$SCRIPT_DIR" fetch origin master 2>&1; then
   echo "Error: git fetch failed" >&2
   exit 1
@@ -105,6 +112,12 @@ compose down gateway 2>&1 || true
 if [[ -n "$CONFIG_BACKUP" && -f "$CONFIG_BACKUP" ]]; then
   cp "$CONFIG_BACKUP" "$CONFIG_PATH"
   echo "Config restored" >&2
+fi
+
+# Restore codebase
+if [[ -n "$OLD_HEAD" ]]; then
+  git -C "$SCRIPT_DIR" reset --hard "$OLD_HEAD" 2>&1 || true
+  echo "Codebase reverted to $(git -C "$SCRIPT_DIR" rev-parse --short HEAD)" >&2
 fi
 
 # Restore old image
