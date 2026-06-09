@@ -61,6 +61,27 @@ const messageRequestSchema = z.object({
 }).passthrough();
 
 /**
+ * Normalize an Anthropic request body before forwarding to upstream providers.
+ *
+ * Handles non-standard field values that some providers reject:
+ * - `output_config.effort`: maps "xhigh" → "max" (claude-cli sends "xhigh" but
+ *   many providers only accept "low", "medium", "high", "max").
+ */
+function normalizeRequest(body: AnthropicMessageRequest): void {
+  const outputConfig = (body as Record<string, unknown>).output_config;
+  if (
+    outputConfig &&
+    typeof outputConfig === 'object' &&
+    outputConfig !== null
+  ) {
+    const oc = outputConfig as Record<string, unknown>;
+    if (oc.effort === 'xhigh') {
+      oc.effort = 'max';
+    }
+  }
+}
+
+/**
  * Anthropic count tokens request schema.
  * Uses passthrough to preserve unknown fields.
  */
@@ -274,6 +295,9 @@ export function createAnthropicHandlers(
       const requestId = request.id;
       const body = validateAndParse(request);
       const model = body.model;
+
+      // Normalize non-standard field values before forwarding (e.g., output_config.effort xhigh → max)
+      normalizeRequest(body);
 
       logger.info('Anthropic message request', {
         requestId, model, stream: body.stream,
