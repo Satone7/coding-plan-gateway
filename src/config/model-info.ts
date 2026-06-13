@@ -94,6 +94,12 @@ export const MODEL_INFO: Record<string, Record<string, ModelInfo>> = {
       supportsTools: true,
       supportsStreaming: true,
     },
+    'glm-5.2': {
+      contextWindow: 1000000,
+      notes: 'Latest flagship with 1M context window',
+      supportsTools: true,
+      supportsStreaming: true,
+    },
   },
 
   volcengine: {
