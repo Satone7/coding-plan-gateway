@@ -128,7 +128,7 @@ describe('normalizePlanConfig', () => {
       expect(result.quota.limit).toBe(Number.MAX_SAFE_INTEGER);
       expect(result.quota.period.type).toBe('total');
       expect(result.baseUrl).toBe('https://open.bigmodel.cn/api/anthropic');
-      expect(result.models).toEqual(['glm-5.1', 'glm-5-turbo']);
+      expect(result.models).toEqual(['glm-5.2', 'glm-5.1', 'glm-5-turbo', 'glm-4.7']);
     });
 
     it('applies preset modelAliases when not explicitly set', () => {

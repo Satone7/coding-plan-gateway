@@ -156,15 +156,15 @@ export const MODEL_INFO: Record<string, Record<string, ModelInfo>> = {
   },
 
   ali: {
-    'qwen3.6-plus': {
+    'qwen3.7-plus': {
       contextWindow: 1000000,
       notes: 'Latest Qwen coding model, 1M context',
       supportsTools: true,
       supportsStreaming: true,
     },
-    'qwen3.5-plus': {
-      contextWindow: 128000,
-      notes: 'Qwen coding model',
+    'qwen3.6-plus': {
+      contextWindow: 1000000,
+      notes: 'Qwen coding model, 1M context',
       supportsTools: true,
       supportsStreaming: true,
     },

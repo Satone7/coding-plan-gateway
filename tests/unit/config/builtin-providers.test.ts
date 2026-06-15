@@ -56,7 +56,7 @@ describe('getBuiltinProvider', () => {
     expect(ali).toBeDefined();
     expect(ali!.id).toBe('ali');
     expect(ali!.baseUrl).toBe('https://coding.dashscope.aliyuncs.com/apps/anthropic');
-    expect(ali!.models).toContain('qwen3.5-plus');
+    expect(ali!.models).toContain('qwen3.7-plus');
     expect(ali!.hasUsageApi).toBe(false);
   });
 
