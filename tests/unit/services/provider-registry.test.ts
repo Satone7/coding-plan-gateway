@@ -116,5 +116,32 @@ describe('ProviderRegistry', () => {
       expect(provider!.name).toBe('My Provider');
       expect(provider!.baseUrl).toBe('https://api.my-provider.com/v1');
     });
+
+    it('should register an OpenAI-only custom provider with dynamicModels', () => {
+      const registry = new ProviderRegistry({
+        'lm-studio': {
+          name: 'LM Studio',
+          openaiBaseUrl: 'http://127.0.0.1:1234',
+          dynamicModels: true,
+          hasUsageApi: false,
+        },
+      });
+      const provider = registry.getProvider('lm-studio');
+      expect(provider).toBeDefined();
+      expect(provider!.openaiBaseUrl).toBe('http://127.0.0.1:1234');
+      expect(provider!.dynamicModels).toBe(true);
+      expect(provider!.baseUrl).toBe(''); // sentinel; Anthropic routing skips it
+    });
+
+    it('should skip a custom provider missing both URLs', () => {
+      const registry = new ProviderRegistry({
+        bad: {
+          name: 'Bad',
+          models: ['m'],
+          hasUsageApi: false,
+        },
+      });
+      expect(registry.getProvider('bad')).toBeUndefined();
+    });
   });
 });

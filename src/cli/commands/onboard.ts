@@ -2,7 +2,7 @@ import * as p from '@clack/prompts';
 import color from 'picocolors';
 import { copyFile, access } from 'fs/promises';
 import { dirname, join, basename } from 'path';
-import { loadConfig, saveConfig, createEmptyConfig, normalizePlanConfig, type NormalizedConfig, type NormalizedPlanConfig } from '@/config';
+import { loadConfig, saveConfig, createEmptyConfig, normalizePlanConfig, buildCustomProvidersMap, type NormalizedConfig, type NormalizedPlanConfig } from '@/config';
 import { configSchema } from '@/config/schema';
 import { BUILTIN_PROVIDERS, getBuiltinProvider } from '@/config/builtin-providers';
 import { DEFAULT_REQUEST_TIMEOUT_SEC, LATEST_CONFIG_VERSION } from '@/config/defaults';
@@ -206,7 +206,7 @@ async function managePlans(config: NormalizedConfig) {
       }, 0);
       const newPlan = await promptPlanDetails(maxId + 1);
       if (newPlan) {
-        config.plans.push(normalizePlanConfig(newPlan));
+        config.plans.push(normalizePlanConfig(newPlan, buildCustomProvidersMap(config.providers)));
         p.log.success(`Plan ${newPlan.name} added.`);
       }
     } else if (typeof action === 'string' && action.startsWith('edit:')) {
@@ -239,7 +239,7 @@ async function managePlans(config: NormalizedConfig) {
         } else if (editAction === 'update') {
           const updatedPlan = await promptPlanDetails(planId, plan);
           if (updatedPlan) {
-            config.plans[planIndex] = normalizePlanConfig(updatedPlan);
+            config.plans[planIndex] = normalizePlanConfig(updatedPlan, buildCustomProvidersMap(config.providers));
             p.log.success('Plan updated.');
           }
         }

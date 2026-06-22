@@ -21,7 +21,8 @@
 - In-memory quota tracking with periodic persistence
 - Dual API format support (OpenAI + Anthropic)
 - Quota-based load balancing
-- Provider preset system: built-in defaults (Zhipu, Volcengine, Ali) with config overrides and usage API adapters
+- Provider preset system: built-in defaults (Zhipu, Volcengine, Ali, DeepSeek) with config overrides and usage API adapters
+- Dynamic model providers: custom providers (e.g. local LM Studio) fetch `/v1/models` at runtime (`dynamicModels`); `baseUrl` is optional — omit it for OpenAI-only upstreams (Anthropic `/v1/messages` skips them) or set both `baseUrl` + `openaiBaseUrl` when the upstream serves both formats (LM Studio does)
 
 ## Config Version Management
 
@@ -31,7 +32,7 @@ Config files are **automatically migrated** on startup. When a config file with 
 
 | Constant | File | Current Value |
 |----------|------|---------------|
-| `LATEST_CONFIG_VERSION` | `src/config/defaults.ts` | `1` |
+| `LATEST_CONFIG_VERSION` | `src/config/defaults.ts` | `2` |
 
 **Migration chain:** `src/config/migrations/registry.ts` — ordered array of `ConfigMigration` objects.
 
@@ -56,6 +57,7 @@ Config files are **automatically migrated** on startup. When a config file with 
 | Migration | File | Description |
 |-----------|------|-------------|
 | v0 → v1 | `src/config/migrations/v0-to-v1.ts` | String quota periods → structured objects, UUID IDs → integer IDs |
+| v1 → v2 | `src/config/migrations/v1-to-v2.ts` | Remove deprecated `apiFormat` field from plans |
 
 ## Quick Reference
 
@@ -189,5 +191,6 @@ PRs that modify `config.yaml.example`, `src/config/schema.ts`, or the plan confi
 - **Future**: PostgreSQL with Drizzle ORM (migration path prepared)
 
 ## Recent Changes
+- feat/dynamic-providers: Custom OpenAI-only providers with runtime model fetching (`dynamicModels`, `modelsExclude`), `ModelSyncService` (startup + `MODEL_SYNC_INTERVAL_MS` refresh, in-memory only), optional `baseUrl` (Anthropic routing skips OpenAI-only plans); custom-provider field defaults now flow through `normalizePlanConfig`
 - feat/preset-providers: Added built-in provider presets (Zhipu, Volcengine, Ali), usage adapter system (Zhipu API), ProviderRegistry, `provider` field on plans
 - config-migration: Added versioned config migration system (v0→v1: quota period + UUID-to-int ID migration)

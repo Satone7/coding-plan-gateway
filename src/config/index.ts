@@ -11,7 +11,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { configSchema, planConfigSchema, type PlanConfig, type Config } from './schema';
 import { encryptApiKey } from './encryption';
 import { DEFAULT_REQUEST_TIMEOUT_SEC, CONFIG_VERSION, LATEST_CONFIG_VERSION } from './defaults';
-import { getBuiltinProvider, getBuiltinProviderByBaseUrl } from './builtin-providers';
+import { getBuiltinProvider, getBuiltinProviderByBaseUrl, mergeProviderOverride } from './builtin-providers';
+import type { ProviderPreset } from '@/types';
 import { migrateConfigFile, migrateConfigContent } from './migrations';
 import { logger } from '@/utils/logger';
 
@@ -157,7 +158,7 @@ function parseConfigContent(content: string, filePath: string): unknown {
  * After normalization, these fields are always present — either from user input
  * or from provider preset defaults.
  */
-export type NormalizedPlanConfig = PlanConfig & Required<Pick<PlanConfig, 'baseUrl' | 'models' | 'quota'>>;
+export type NormalizedPlanConfig = PlanConfig & Required<Pick<PlanConfig, 'models' | 'quota'>>;
 
 /**
  * Configuration with all plans normalized (baseUrl, models, quota guaranteed).
@@ -168,7 +169,10 @@ export type NormalizedConfig = Omit<Config, 'plans'> & { plans: NormalizedPlanCo
  * Normalize plan configuration with defaults.
  * When a plan has a `provider`, fills in baseUrl/models/quota/modelAliases from preset.
  */
-export function normalizePlanConfig(plan: PlanConfig): NormalizedPlanConfig {
+export function normalizePlanConfig(
+  plan: PlanConfig,
+  customProviders?: Record<string, ProviderPreset>
+): NormalizedPlanConfig {
   let normalized: PlanConfig = {
     ...plan,
     id: plan.id ?? uuidv4(),
@@ -177,21 +181,23 @@ export function normalizePlanConfig(plan: PlanConfig): NormalizedPlanConfig {
     enable: plan.enable ?? true,
   };
 
-  // Apply provider preset defaults
+  // Apply provider preset defaults (built-in first, then custom providers from config)
   if (plan.provider) {
-    const preset = getBuiltinProvider(plan.provider);
+    const preset = getBuiltinProvider(plan.provider) ?? customProviders?.[plan.provider];
     if (preset) {
       normalized = {
         ...normalized,
         baseUrl: normalized.baseUrl ?? preset.baseUrl,
         openaiBaseUrl: normalized.openaiBaseUrl ?? preset.openaiBaseUrl,
-        models: normalized.models ?? [...preset.models],
+        models: normalized.models ?? (preset.dynamicModels ? [] : [...preset.models]),
         modelAliases: normalized.modelAliases ?? preset.defaultModelAliases,
+        dynamicModels: normalized.dynamicModels ?? preset.dynamicModels,
+        modelsExclude: normalized.modelsExclude ?? preset.modelsExclude,
       };
     }
   }
 
-  // Auto-detect provider from baseUrl if not explicitly set
+  // Auto-detect provider from baseUrl if not explicitly set (skip when no baseUrl)
   if (!normalized.provider && normalized.baseUrl) {
     const matched = getBuiltinProviderByBaseUrl(normalized.baseUrl);
     if (matched) {
@@ -205,6 +211,11 @@ export function normalizePlanConfig(plan: PlanConfig): NormalizedPlanConfig {
       ...normalized,
       quota: { limit: Number.MAX_SAFE_INTEGER, period: { type: 'total' } },
     };
+  }
+
+  // Ensure models is always defined (dynamicModels plans default to [] until first fetch)
+  if (!normalized.models) {
+    normalized = { ...normalized, models: [] };
   }
 
   // Validate user-configured modelAliases targets (not preset defaults)
@@ -222,7 +233,7 @@ export function normalizePlanConfig(plan: PlanConfig): NormalizedPlanConfig {
           availableModels: normalized.models,
         });
         // Remove invalid alias to prevent routing errors
-        delete normalized.modelAliases![alias];
+        delete normalized.modelAliases[alias];
       }
     }
   }
@@ -230,9 +241,35 @@ export function normalizePlanConfig(plan: PlanConfig): NormalizedPlanConfig {
   return normalized as NormalizedPlanConfig;
 }
 
+/**
+ * Build a map of fully-merged provider presets from config-level overrides.
+ *
+ * Built-in providers start from their preset (override applied on top); custom
+ * providers are built fresh via mergeProviderOverride. Callers pass this map to
+ * normalizePlanConfig so plans referencing a custom `provider` get field defaults
+ * (openaiBaseUrl, dynamicModels, modelsExclude, etc.) — which the built-in-only
+ * lookup in normalizePlanConfig cannot provide on its own.
+ */
+export function buildCustomProvidersMap(
+  overrides?: Config['providers']
+): Record<string, ProviderPreset> {
+  const map: Record<string, ProviderPreset> = {};
+  if (!overrides) {return map;}
+  for (const [id, override] of Object.entries(overrides)) {
+    const existing = getBuiltinProvider(id);
+    const merged = mergeProviderOverride(id, override, existing);
+    if (merged) {
+      map[id] = merged;
+    } else {
+      logger.warn('Skipping invalid custom provider override', { id });
+    }
+  }
+  return map;
+}
+
 /** Compare two string arrays ignoring element order. */
 function arraysEqualUnordered(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
+  if (a.length !== b.length) {return false;}
   const sa = [...a].sort();
   const sb = [...b].sort();
   return sa.every((v, i) => v === sb[i]);
@@ -243,11 +280,11 @@ function objectsEqual(
   a: Record<string, string> | undefined,
   b: Record<string, string> | undefined,
 ): boolean {
-  if (a === b) return true;
-  if (!a || !b) return false;
+  if (a === b) {return true;}
+  if (!a || !b) {return false;}
   const ka = Object.keys(a).sort();
   const kb = Object.keys(b).sort();
-  if (ka.length !== kb.length) return false;
+  if (ka.length !== kb.length) {return false;}
   return ka.every((k, i) => k === kb[i] && a[k] === b[k]);
 }
 
@@ -257,26 +294,31 @@ function objectsEqual(
  */
 function checkNeedsUpgrade(config: NormalizedConfig, rawPlans: PlanConfig[]): boolean {
   // Version format needs normalizing (e.g. "1.0" string → 1 number)
-  if (config.version !== LATEST_CONFIG_VERSION) return true;
+  if (config.version !== LATEST_CONFIG_VERSION) {return true;}
 
   return config.plans.some((plan, i) => {
     const raw = rawPlans[i];
-    if (!raw) return false;
+    if (!raw) {return false;}
+
+    // dynamicModels plans must not persist models — clean up if present in raw config
+    if (plan.dynamicModels && raw.models) {
+      return true;
+    }
 
     // Provider was auto-detected (not in raw config)
-    if (plan.provider && !raw.provider) return true;
+    if (plan.provider && !raw.provider) {return true;}
 
     // Provider present but config has redundant preset-duplicated fields
     if (plan.provider) {
       const preset = getBuiltinProvider(plan.provider);
-      if (!preset) return false;
+      if (!preset) {return false;}
 
       // baseUrl matching preset should be removed
-      if (raw.baseUrl === preset.baseUrl) return true;
+      if (raw.baseUrl === preset.baseUrl) {return true;}
       // models should be removed (user accepts preset models)
-      if (raw.models) return true;
+      if (raw.models) {return true;}
       // quota for usage-API providers should be removed
-      if (preset.hasUsageApi && raw.quota) return true;
+      if (preset.hasUsageApi && raw.quota) {return true;}
     }
 
     return false;
@@ -292,14 +334,26 @@ function cleanConfigForPersist(config: NormalizedConfig, rawPlans: PlanConfig[])
   const cleanedPlans: PlanConfig[] = config.plans.map((plan, i) => {
     const raw = rawPlans[i];
     const preset = plan.provider ? getBuiltinProvider(plan.provider) : undefined;
+    let cleaned: PlanConfig;
     if (!preset || !raw?.provider) {
       // No preset match or provider just auto-detected — strip preset fields if they match
       if (plan.provider && preset) {
-        return cleanPlanFields(plan, preset);
+        cleaned = cleanPlanFields(plan, preset);
+      } else {
+        cleaned = plan as PlanConfig;
       }
-      return plan as PlanConfig;
+    } else {
+      cleaned = cleanPlanFields(plan, preset);
     }
-    return cleanPlanFields(plan, preset);
+    // dynamicModels plans fetch models at runtime — never persist the (possibly empty) list.
+    // Also drop the sentinel empty baseUrl that OpenAI-only custom providers carry.
+    if (cleaned.dynamicModels) {
+      cleaned.models = undefined;
+      if (cleaned.baseUrl === '') {
+        cleaned.baseUrl = undefined;
+      }
+    }
+    return cleaned;
   });
   return {
     ...config,
@@ -319,10 +373,10 @@ function cleanPlanFields(plan: NormalizedPlanConfig, preset: { baseUrl: string; 
     status: plan.status,
   };
 
-  if (plan.timeout !== undefined && plan.timeout !== DEFAULT_REQUEST_TIMEOUT_SEC) result.timeout = plan.timeout;
-  if (plan.expiresOn !== undefined) result.expiresOn = plan.expiresOn;
-  if (plan.expiresAt !== undefined) result.expiresAt = plan.expiresAt;
-  if (plan.weight !== undefined) result.weight = plan.weight;
+  if (plan.timeout !== undefined && plan.timeout !== DEFAULT_REQUEST_TIMEOUT_SEC) {result.timeout = plan.timeout;}
+  if (plan.expiresOn !== undefined) {result.expiresOn = plan.expiresOn;}
+  if (plan.expiresAt !== undefined) {result.expiresAt = plan.expiresAt;}
+  if (plan.weight !== undefined) {result.weight = plan.weight;}
 
   // Only include baseUrl if it differs from preset (models always from preset)
   if (plan.baseUrl !== preset.baseUrl) {
@@ -337,6 +391,12 @@ function cleanPlanFields(plan: NormalizedPlanConfig, preset: { baseUrl: string; 
   // Always include modelAliases if present (user configuration should persist)
   if (plan.modelAliases) {
     result.modelAliases = plan.modelAliases;
+  }
+
+  // Persist dynamicModels flag + excludes so runtime model fetching survives autoUpgrade
+  if (plan.dynamicModels) {
+    result.dynamicModels = true;
+    if (plan.modelsExclude) {result.modelsExclude = plan.modelsExclude;}
   }
 
   return result;
@@ -422,11 +482,14 @@ export async function loadConfig(
 
   const rawPlans = result.data.plans;
 
+  // Build merged provider presets so custom-provider plans get field defaults
+  const customProviders = buildCustomProvidersMap(result.data.providers);
+
   // Normalize plan configurations
   const config = {
     ...result.data,
     version: result.data.version ?? CONFIG_VERSION,
-    plans: result.data.plans.map(normalizePlanConfig),
+    plans: result.data.plans.map((p) => normalizePlanConfig(p, customProviders)),
   } as NormalizedConfig;
 
   // Auto-upgrade: persist normalization enrichments back to disk
@@ -456,7 +519,7 @@ export async function loadConfig(
 
   logger.info(`Loaded ${config.plans.length} plan(s) from configuration`);
 
-  return config as NormalizedConfig;
+  return config;
 }
 
 /**
@@ -496,7 +559,10 @@ export async function saveConfig(
 /**
  * Validate a plan configuration.
  */
-export function validatePlanConfig(data: unknown): NormalizedPlanConfig {
+export function validatePlanConfig(
+  data: unknown,
+  customProviders?: Record<string, ProviderPreset>
+): NormalizedPlanConfig {
   const result = planConfigSchema.safeParse(data);
 
   if (!result.success) {
@@ -504,7 +570,7 @@ export function validatePlanConfig(data: unknown): NormalizedPlanConfig {
     throw new Error(`Invalid plan configuration:\n${errors.join('\n')}`);
   }
 
-  return normalizePlanConfig(result.data);
+  return normalizePlanConfig(result.data, customProviders);
 }
 
 /**
@@ -520,7 +586,7 @@ export function createEmptyConfig(): NormalizedConfig {
 /**
  * Re-export types and utilities.
  */
-export { configSchema, planConfigSchema } from './schema';
+export { configSchema, planConfigSchema, providerOverrideSchema } from './schema';
 export type { Config, PlanConfig } from './schema';
 export { MODEL_INFO, MODEL_NAME_ALIASES, getModelInfo, findModelInfo } from './model-info';
 export type { ModelInfo } from './model-info';

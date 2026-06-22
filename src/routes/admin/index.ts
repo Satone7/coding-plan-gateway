@@ -8,6 +8,7 @@ import { createAdminHandlers } from './handlers';
 import { IPlanRepository } from '@/services/plan-repository';
 import type { QuotaManager } from '@/services/quota-manager';
 import type { PlanUsageTracker } from '@/services/plan-usage-tracker';
+import type { ProviderRegistry } from '@/services/provider-registry';
 
 /**
  * Options for admin routes.
@@ -19,6 +20,8 @@ export interface AdminRoutesOptions {
   quotaManager?: QuotaManager;
   /** Plan usage tracker instance (optional) */
   planUsageTracker?: PlanUsageTracker;
+  /** Provider registry for custom-provider lookups during plan creation (optional) */
+  providerRegistry?: ProviderRegistry;
   /** API prefix (default: '/api') */
   prefix?: string;
 }
@@ -33,8 +36,8 @@ export async function registerAdminRoutes(
   app: FastifyInstance,
   options: AdminRoutesOptions
 ): Promise<void> {
-  const { repository, quotaManager, planUsageTracker, prefix = '/api' } = options;
-  const handlers = createAdminHandlers(repository, quotaManager, planUsageTracker);
+  const { repository, quotaManager, planUsageTracker, providerRegistry, prefix = '/api' } = options;
+  const handlers = createAdminHandlers(repository, quotaManager, planUsageTracker, providerRegistry);
 
   await app.register(
     (fastify, _options, done) => {

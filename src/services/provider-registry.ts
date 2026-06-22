@@ -3,20 +3,9 @@
  * Merges built-in presets with config overrides and manages usage adapters.
  */
 
-import type { ProviderPreset, UsageAdapter } from '@/types';
-import { BUILTIN_PROVIDERS } from '@/config/builtin-providers';
+import type { ProviderPreset, ProviderOverride, UsageAdapter } from '@/types';
+import { BUILTIN_PROVIDERS, mergeProviderOverride } from '@/config/builtin-providers';
 import { logger } from '@/utils/logger';
-
-/**
- * Partial override for a provider preset from config.
- */
-export interface ProviderOverride {
-  name?: string;
-  baseUrl?: string;
-  models?: string[];
-  defaultModelAliases?: Record<string, string>;
-  hasUsageApi?: boolean;
-}
 
 /**
  * Config-level providers map: provider ID -> override or new provider.
@@ -37,30 +26,19 @@ export class ProviderRegistry {
       this.providers.set(preset.id, { ...preset });
     }
 
-    // Merge config overrides
+    // Merge config overrides (built-in presets get overridden; new providers validated+built)
     if (overrides) {
       for (const [id, override] of Object.entries(overrides)) {
         const existing = this.providers.get(id);
-        if (existing) {
-          this.providers.set(id, {
-            ...existing,
-            ...override,
-            id,
-          });
-        } else {
-          if (!override.name || !override.baseUrl || !override.models) {
-            logger.warn('Skipping custom provider with missing required fields', { id });
-            continue;
-          }
-          this.providers.set(id, {
-            id,
-            name: override.name,
-            baseUrl: override.baseUrl,
-            models: override.models,
-            defaultModelAliases: override.defaultModelAliases,
-            hasUsageApi: override.hasUsageApi ?? false,
-          });
+        const merged = mergeProviderOverride(id, override, existing);
+        if (!merged) {
+          logger.warn(
+            'Skipping custom provider: requires name, at least one URL (baseUrl or openaiBaseUrl), and models (or dynamicModels)',
+            { id }
+          );
+          continue;
         }
+        this.providers.set(id, merged);
       }
     }
 

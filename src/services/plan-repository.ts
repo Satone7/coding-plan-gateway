@@ -7,13 +7,15 @@ import { readFile, writeFile, access, rename } from 'fs/promises';
 import { constants } from 'fs';
 import { resolve, extname } from 'path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { z } from 'zod';
 import type {
   CodingPlan,
   CreateCodingPlanInput,
   UpdateCodingPlanInput,
+  ProviderPreset,
 } from '@/types';
-import { planConfigSchema, type PlanConfig } from '@/config/schema';
-import { normalizePlanConfig, type NormalizedPlanConfig } from '@/config';
+import { planConfigSchema, providerOverrideSchema, type PlanConfig } from '@/config/schema';
+import { normalizePlanConfig, buildCustomProvidersMap, type NormalizedPlanConfig } from '@/config';
 import {
   encryptApiKey,
   decryptApiKey,
@@ -85,6 +87,9 @@ export interface IPlanRepository {
   /** Get decrypted API key for a plan */
   getDecryptedApiKey(id: number): Promise<string | null>;
 
+  /** Update a plan's models in memory only (no disk persistence). Used by ModelSyncService. */
+  updateModelsInMemory(id: number, models: string[]): Promise<void>;
+
   /** Reload plans from storage */
   reload(): Promise<void>;
 
@@ -99,6 +104,7 @@ export interface IPlanRepository {
 export class FilePlanRepository implements IPlanRepository {
   private readonly filePath: string;
   private readonly encryptionKey: string | undefined;
+  private readonly customProvidersOverride: Record<string, ProviderPreset> | undefined;
   private plans: Map<number, CodingPlan> = new Map();
   private loaded: boolean = false;
   private planIdCounter: PlanIdCounter | null = null;
@@ -108,10 +114,17 @@ export class FilePlanRepository implements IPlanRepository {
    *
    * @param filePath - Path to the configuration file
    * @param encryptionKey - Optional encryption key for API keys
+   * @param customProviders - Optional merged provider presets for normalizePlanConfig.
+   *   When omitted, the file's top-level `providers` section is parsed as a fallback.
    */
-  constructor(filePath: string, encryptionKey?: string) {
+  constructor(
+    filePath: string,
+    encryptionKey?: string,
+    customProviders?: Record<string, ProviderPreset>
+  ) {
     this.filePath = resolve(filePath);
     this.encryptionKey = encryptionKey;
+    this.customProvidersOverride = customProviders;
   }
 
   /**
@@ -317,6 +330,24 @@ export class FilePlanRepository implements IPlanRepository {
   }
 
   /**
+   * Update a plan's models in memory ONLY (no disk persistence).
+   *
+   * Used by ModelSyncService to populate dynamically-fetched model lists. The fetched
+   * list must never be written back to config (it is runtime-only), so this intentionally
+   * mutates the in-memory Map without calling persist(). The mutation is a single Map#set,
+   * which is atomic under Node's single-threaded event loop.
+   */
+  async updateModelsInMemory(id: number, models: string[]): Promise<void> {
+    await this.ensureLoaded();
+    const existing = this.plans.get(id);
+    if (!existing) {
+      logger.warn('updateModelsInMemory: plan not found', { planId: id });
+      return;
+    }
+    this.plans.set(id, { ...existing, models, updatedAt: new Date() });
+  }
+
+  /**
    * Ensure plans are loaded from file.
    */
   private async ensureLoaded(): Promise<void> {
@@ -346,19 +377,29 @@ export class FilePlanRepository implements IPlanRepository {
       const content = await readFile(this.filePath, 'utf-8');
       const parsed: unknown = this.parseContent(content);
 
-      // Extract plans array from parsed config
-      const plansData =
+      // Extract plans array and providers map from parsed config
+      const root =
         parsed && typeof parsed === 'object' && 'plans' in parsed
-          ? (parsed as { plans: unknown[] }).plans
-          : [];
+          ? (parsed as { plans: unknown[]; providers?: unknown })
+          : { plans: [] };
+      const plansData = root.plans;
 
       // Config migration is handled by the startup engine (migrateConfigFile).
       // Plans should already be in the latest format at this point.
       const migratedPlans = plansData;
 
+      // Resolve custom-providers map: prefer constructor-injected (single source of truth
+      // from loadConfig); fall back to parsing the file's top-level `providers` section.
+      const providersResult = z
+        .record(z.string(), providerOverrideSchema)
+        .safeParse(root.providers);
+      const customProviders =
+        this.customProvidersOverride ??
+        (providersResult.success ? buildCustomProvidersMap(providersResult.data) : {});
+
       // Validate and convert to CodingPlan objects
       const config = planConfigSchema.array().parse(migratedPlans);
-      const normalized = config.map(normalizePlanConfig);
+      const normalized = config.map((p) => normalizePlanConfig(p, customProviders));
 
       this.plans = new Map();
       for (const planConfig of normalized) {
@@ -504,6 +545,8 @@ export class FilePlanRepository implements IPlanRepository {
       enable: config.enable ?? true,
       modelAliases: config.modelAliases,
       provider: config.provider,
+      dynamicModels: config.dynamicModels,
+      modelsExclude: config.modelsExclude,
       createdAt: now,
       updatedAt: now,
     };
@@ -537,7 +580,8 @@ export class FilePlanRepository implements IPlanRepository {
       baseUrl: plan.baseUrl,
       openaiBaseUrl: plan.openaiBaseUrl,
       apiKey: plan.apiKeyEncrypted,
-      models: plan.models,
+      // dynamicModels plans fetch models at runtime — never persist the fetched list.
+      models: plan.dynamicModels ? undefined : plan.models,
       quota: quotaWithExpiration,
       timeout: plan.timeout,
       status: persistableStatus,
@@ -545,6 +589,8 @@ export class FilePlanRepository implements IPlanRepository {
       enable: plan.enable ?? true,
       modelAliases: plan.modelAliases,
       provider: plan.provider,
+      dynamicModels: plan.dynamicModels,
+      modelsExclude: plan.modelsExclude,
     };
   }
 
@@ -577,7 +623,8 @@ export class FilePlanRepository implements IPlanRepository {
  */
 export function createPlanRepository(
   filePath: string,
-  encryptionKey?: string
+  encryptionKey?: string,
+  customProviders?: Record<string, ProviderPreset>
 ): IPlanRepository {
-  return new FilePlanRepository(filePath, encryptionKey);
+  return new FilePlanRepository(filePath, encryptionKey, customProviders);
 }

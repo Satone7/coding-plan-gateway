@@ -15,8 +15,9 @@ import type { QuotaManager } from '@/services/quota-manager';
 import type { PlanUsageTracker } from '@/services/plan-usage-tracker';
 import type { ProviderRegistry } from '@/services/provider-registry';
 import { createRequestProxy } from '@/services/request-proxy';
+import { createModelSyncService, type ModelSyncService } from '@/services/model-sync-service';
 import { dirname, join } from 'path';
-import { loadConfig } from '@/config';
+import { loadConfig, buildCustomProvidersMap } from '@/config';
 
 /**
  * Register all routes with the Fastify instance.
@@ -31,13 +32,17 @@ export async function registerRoutes(
   quotaManager?: QuotaManager,
   planUsageTracker?: PlanUsageTracker,
   providerRegistry?: ProviderRegistry
-): Promise<{ repository: IPlanRepository }> {
+): Promise<{ repository: IPlanRepository; modelSyncService: ModelSyncService }> {
   logger.info('Registering routes...');
 
   // Create dependencies
   const encryptionKey = process.env.ENCRYPTION_KEY;
   const configPath = process.env.CONFIG_PATH ?? './config.yaml';
-  const repository = createPlanRepository(configPath, encryptionKey);
+
+  // Load config once: customProviders feed repository normalization; planCount feeds /ready
+  const config = await loadConfig(configPath, encryptionKey);
+  const customProviders = buildCustomProvidersMap(config.providers);
+  const repository = createPlanRepository(configPath, encryptionKey, customProviders);
 
   // Register health endpoints
   app.get('/health', () => ({
@@ -46,8 +51,6 @@ export async function registerRoutes(
     version: process.env.npm_package_version ?? '1.0.0',
   }));
 
-  // Load config to get plan count for readiness check
-  const config = await loadConfig(configPath, encryptionKey);
   const planCount = config.plans.length;
   const modelSet = new Set<string>();
   for (const plan of config.plans) {
@@ -109,6 +112,21 @@ export async function registerRoutes(
   // Connect counter to repository
   repository.setPlanIdCounter(planIdCounter);
 
+  // Dynamic model sync for dynamicModels plans (e.g. local LM Studio providers).
+  // Updates models in memory only; never persists. Runs once now, then on an interval.
+  const modelSyncService = createModelSyncService({
+    repository,
+    defaultIntervalMs: process.env.MODEL_SYNC_INTERVAL_MS
+      ? parseInt(process.env.MODEL_SYNC_INTERVAL_MS, 10)
+      : undefined,
+  });
+  await modelSyncService.syncAll().catch((err) => {
+    logger.warn('Initial dynamic model sync failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
+  modelSyncService.start();
+
   const proxy = createRequestProxy();
 
   // Register API routes under /api prefix
@@ -132,10 +150,11 @@ export async function registerRoutes(
     repository,
     quotaManager,
     planUsageTracker,
+    providerRegistry,
     prefix: '/api/admin',
   });
 
   logger.info('All routes registered');
 
-  return { repository };
+  return { repository, modelSyncService };
 }
