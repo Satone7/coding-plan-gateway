@@ -123,14 +123,21 @@ export const planConfigSchema = z.object({
   weight: z.number().int().min(1).max(100).optional(),
   enable: z.boolean().optional().default(true),
   modelAliases: modelAliasesSchema.optional(),
+  dynamicModels: z.boolean().optional(),
+  modelsExclude: z.array(z.string().min(1)).optional(),
 }).refine(
   (plan) => {
-    if (!plan.provider) {
-      return plan.baseUrl !== undefined && plan.models !== undefined && plan.quota !== undefined;
+    if (plan.provider) {
+      return true;
     }
-    return true;
+    // No provider: require quota + at least one endpoint URL.
+    // models is required unless dynamicModels fetches it at runtime.
+    const hasUrl = plan.baseUrl !== undefined || plan.openaiBaseUrl !== undefined;
+    const hasQuota = plan.quota !== undefined;
+    const hasModels = plan.models !== undefined || plan.dynamicModels === true;
+    return hasUrl && hasQuota && hasModels;
   },
-  { message: 'baseUrl, models, and quota are required when provider is not set' }
+  { message: 'quota and at least one of baseUrl/openaiBaseUrl are required when provider is not set; models is required unless dynamicModels is true' }
 ).refine(
   (plan) => {
     if (!plan.modelAliases) return true;
@@ -149,13 +156,15 @@ export const planConfigSchema = z.object({
 /**
  * Provider override schema for config-level customization.
  */
-const providerOverrideSchema = z.object({
+export const providerOverrideSchema = z.object({
   name: z.string().min(1).optional(),
   baseUrl: z.string().url().optional(),
   openaiBaseUrl: z.string().url().optional(),
   models: z.array(z.string().min(1)).min(1).optional(),
   defaultModelAliases: modelAliasesSchema.optional(),
   hasUsageApi: z.boolean().optional(),
+  dynamicModels: z.boolean().optional(),
+  modelsExclude: z.array(z.string().min(1)).optional(),
 });
 
 /**

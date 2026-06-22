@@ -3,7 +3,7 @@
  * Default configurations for known AI providers.
  */
 
-import type { ProviderPreset } from '@/types';
+import type { ProviderPreset, ProviderOverride } from '@/types';
 
 /**
  * Built-in provider preset configurations.
@@ -69,4 +69,57 @@ export function getBuiltinProvider(id: string): ProviderPreset | undefined {
 export function getBuiltinProviderByBaseUrl(baseUrl: string): ProviderPreset | undefined {
   const normalized = baseUrl.replace(/\/+$/, '');
   return BUILTIN_PROVIDERS.find((p) => p.baseUrl.replace(/\/+$/, '') === normalized);
+}
+
+/**
+ * Merge a config-level provider override into a preset.
+ *
+ * - When `existing` is provided (override targets a built-in provider), the override
+ *   fields are applied on top of the built-in defaults.
+ * - When `existing` is undefined (new custom provider), the override must supply a
+ *   `name`, at least one endpoint URL (`baseUrl` or `openaiBaseUrl`), and either
+ *   `models` or `dynamicModels: true`. Returns null if invalid (caller skips).
+ *
+ * Shared by ProviderRegistry (runtime) and buildCustomProvidersMap (config load) so
+ * both code paths apply identical merge semantics.
+ */
+export function mergeProviderOverride(
+  id: string,
+  override: ProviderOverride,
+  existing?: ProviderPreset
+): ProviderPreset | null {
+  if (existing) {
+    return {
+      id,
+      name: override.name ?? existing.name,
+      baseUrl: override.baseUrl ?? existing.baseUrl,
+      openaiBaseUrl: override.openaiBaseUrl ?? existing.openaiBaseUrl,
+      models: override.models ?? existing.models,
+      defaultModelAliases: override.defaultModelAliases ?? existing.defaultModelAliases,
+      hasUsageApi: override.hasUsageApi ?? existing.hasUsageApi,
+      dynamicModels: override.dynamicModels ?? existing.dynamicModels,
+      modelsExclude: override.modelsExclude ?? existing.modelsExclude,
+      category: existing.category,
+    };
+  }
+
+  // New custom provider: require name + at least one URL + (models or dynamicModels).
+  const hasUrl = !!override.baseUrl || !!override.openaiBaseUrl;
+  const hasModels = !!override.models || override.dynamicModels === true;
+  if (!override.name || !hasUrl || !hasModels) {
+    return null;
+  }
+
+  return {
+    id,
+    name: override.name,
+    // Empty-string sentinel for OpenAI-only providers; routing null-guards treat '' as absent.
+    baseUrl: override.baseUrl ?? '',
+    openaiBaseUrl: override.openaiBaseUrl,
+    models: override.models ?? [],
+    defaultModelAliases: override.defaultModelAliases,
+    hasUsageApi: override.hasUsageApi ?? false,
+    dynamicModels: override.dynamicModels,
+    modelsExclude: override.modelsExclude,
+  };
 }

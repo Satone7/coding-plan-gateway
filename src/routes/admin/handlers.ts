@@ -16,6 +16,7 @@ import { usageAdjustmentRequestSchema } from '@/types/plan-usage';
 import { planIdParamSchema, quotaPeriodSchema } from '@/utils/validators';
 import { modelAliasesSchema } from '@/config/schema';
 import { getBuiltinProvider } from '@/config/builtin-providers';
+import type { ProviderRegistry } from '@/services/provider-registry';
 
 /**
  * Request with planId parameter.
@@ -38,6 +39,7 @@ const createPlanBodySchema = z.object({
   name: z.string().min(1).max(100),
   provider: z.string().min(1).optional(),
   baseUrl: z.string().url().optional(),
+  openaiBaseUrl: z.string().url().optional(),
   apiKey: z.string().min(1),
   models: z.array(z.string().min(1)).min(1).optional(),
   quota: z.object({
@@ -47,14 +49,18 @@ const createPlanBodySchema = z.object({
   timeout: z.number().int().min(1).optional(),
   enable: z.boolean().optional().default(true),
   modelAliases: modelAliasesSchema.optional(),
+  dynamicModels: z.boolean().optional(),
+  modelsExclude: z.array(z.string().min(1)).optional(),
 }).refine(
   (data) => {
-    if (!data.provider) {
-      return data.baseUrl !== undefined && data.models !== undefined && data.quota !== undefined;
-    }
-    return true;
+    if (data.provider) return true;
+    // No provider: require quota + at least one URL; models required unless dynamicModels
+    const hasUrl = data.baseUrl !== undefined || data.openaiBaseUrl !== undefined;
+    const hasQuota = data.quota !== undefined;
+    const hasModels = data.models !== undefined || data.dynamicModels === true;
+    return hasUrl && hasQuota && hasModels;
   },
-  { message: 'baseUrl, models, and quota are required when provider is not set' }
+  { message: 'quota and at least one of baseUrl/openaiBaseUrl are required when provider is not set; models is required unless dynamicModels is true' }
 );
 
 /**
@@ -85,7 +91,7 @@ interface PlanResponse {
   id: number;
   name: string;
   provider?: string;
-  baseUrl: string;
+  baseUrl?: string;
   models: string[];
   quota: {
     limit: number;
@@ -171,7 +177,7 @@ function toPlanResponse(
     id: number;
     name: string;
     provider?: string;
-    baseUrl: string;
+    baseUrl?: string;
     models: string[];
     quota: { limit: number; period: QuotaPeriod };
     timeout: number;
@@ -405,7 +411,8 @@ interface PlansUsageSummaryResponse {
 export function createAdminHandlers(
   repository: IPlanRepository,
   quotaManager?: QuotaManager,
-  planUsageTracker?: PlanUsageTracker
+  planUsageTracker?: PlanUsageTracker,
+  providerRegistry?: ProviderRegistry
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 ): AdminHandlers {
   return {
@@ -486,24 +493,33 @@ export function createAdminHandlers(
 
       // Apply provider preset defaults when provider is specified
       let baseUrl: string | undefined = input.baseUrl;
+      let openaiBaseUrl: string | undefined = input.openaiBaseUrl;
       let models: string[] | undefined = input.models;
       let modelAliases: Record<string, string> | undefined = input.modelAliases;
+      let dynamicModels: boolean | undefined = input.dynamicModels;
+      let modelsExclude: string[] | undefined = input.modelsExclude;
 
       if (input.provider) {
-        const preset = getBuiltinProvider(input.provider);
+        const preset = getBuiltinProvider(input.provider) ?? providerRegistry?.getProvider(input.provider);
         if (preset) {
-          baseUrl = baseUrl || preset.baseUrl;
-          models = models && models.length > 0 ? models : [...preset.models];
+          baseUrl = baseUrl || preset.baseUrl || undefined;
+          openaiBaseUrl = openaiBaseUrl || preset.openaiBaseUrl;
+          models = models && models.length > 0 ? models : (preset.dynamicModels ? [] : [...preset.models]);
           modelAliases = modelAliases || preset.defaultModelAliases;
+          dynamicModels = dynamicModels ?? preset.dynamicModels;
+          modelsExclude = modelsExclude ?? preset.modelsExclude;
         }
       }
 
       // Create the plan
       const plan = await repository.save({
         name: input.name,
-        baseUrl: baseUrl ?? '',
+        baseUrl,
         apiKey: input.apiKey,
         models: models ?? [],
+        openaiBaseUrl,
+        dynamicModels,
+        modelsExclude,
         quota: input.quota ?? { limit: Number.MAX_SAFE_INTEGER, period: { type: 'total' } },
         timeout: input.timeout,
         enable: input.enable,

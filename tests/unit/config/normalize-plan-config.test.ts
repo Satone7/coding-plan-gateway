@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, writeFile, readFile, readdir } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { normalizePlanConfig, loadConfig } from '@/config';
+import { normalizePlanConfig, loadConfig, buildCustomProvidersMap } from '@/config';
 
 describe('normalizePlanConfig', () => {
   describe('auto-detect provider from baseUrl', () => {
@@ -157,6 +157,51 @@ describe('normalizePlanConfig', () => {
       expect(result.models).toEqual(['custom-model']);
       expect(result.quota.limit).toBe(100);
     });
+  });
+});
+
+describe('custom provider presets', () => {
+  it('fills openaiBaseUrl/dynamicModels/modelsExclude from a custom provider', () => {
+    const customProviders = buildCustomProvidersMap({
+      'lm-studio': {
+        name: 'LM Studio',
+        openaiBaseUrl: 'http://127.0.0.1:1234',
+        dynamicModels: true,
+        modelsExclude: ['embed'],
+        hasUsageApi: false,
+      },
+    });
+
+    const result = normalizePlanConfig(
+      { name: 'LM', provider: 'lm-studio', apiKey: 'k' },
+      customProviders
+    );
+
+    expect(result.openaiBaseUrl).toBe('http://127.0.0.1:1234');
+    expect(result.dynamicModels).toBe(true);
+    expect(result.modelsExclude).toEqual(['embed']);
+    expect(result.models).toEqual([]); // dynamicModels → empty until first fetch
+    expect(result.baseUrl).toBe(''); // sentinel; Anthropic routing skips it
+  });
+
+  it('handles an OpenAI-only custom provider (no baseUrl) without error', () => {
+    const customProviders = buildCustomProvidersMap({
+      'oai-only': {
+        name: 'OAI Only',
+        openaiBaseUrl: 'http://x:1234',
+        models: ['m'],
+        hasUsageApi: false,
+      },
+    });
+
+    const result = normalizePlanConfig(
+      { name: 'P', provider: 'oai-only', apiKey: 'k' },
+      customProviders
+    );
+
+    expect(result.baseUrl).toBe('');
+    expect(result.openaiBaseUrl).toBe('http://x:1234');
+    expect(result.models).toEqual(['m']);
   });
 });
 

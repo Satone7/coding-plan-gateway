@@ -110,8 +110,8 @@ export interface CodingPlan {
   /** Human-readable name for the plan */
   name: string;
 
-  /** Base URL for the provider API */
-  baseUrl: string;
+  /** Base URL for the provider API (Anthropic format). Undefined for OpenAI-only providers. */
+  baseUrl?: string;
 
   /** Encrypted API key (AES-256-GCM) */
   apiKeyEncrypted: string;
@@ -150,6 +150,12 @@ export interface CodingPlan {
    * If not set, OpenAI-format requests will be rejected with SERVICE_UNAVAILABLE error. */
   openaiBaseUrl?: string;
 
+  /** When true, models are fetched at runtime from <openaiBaseUrl>/models (never persisted). */
+  dynamicModels?: boolean;
+
+  /** Substrings (case-insensitive) excluded from the fetched model list. */
+  modelsExclude?: string[];
+
   /** Creation timestamp */
   createdAt: Date;
 
@@ -162,7 +168,7 @@ export interface CodingPlan {
  */
 export interface CreateCodingPlanInput {
   name: string;
-  baseUrl: string;
+  baseUrl?: string;
   apiKey: string;
   models: string[];
   quota: QuotaConfig;
@@ -174,6 +180,8 @@ export interface CreateCodingPlanInput {
   modelAliases?: Record<string, string>;
   provider?: string;
   openaiBaseUrl?: string;
+  dynamicModels?: boolean;
+  modelsExclude?: string[];
 }
 
 /**
@@ -194,4 +202,6 @@ export interface UpdateCodingPlanInput {
   modelAliases?: Record<string, string>;
   provider?: string;
   openaiBaseUrl?: string;
+  dynamicModels?: boolean;
+  modelsExclude?: string[];
 }

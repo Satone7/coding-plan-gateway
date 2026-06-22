@@ -1,9 +1,9 @@
 # Coding Plan Gateway Configuration
-version: 1
+version: 2
 
 # Provider presets override (optional)
 # Override built-in defaults or add custom providers.
-# Built-in providers: zhipu, volcengine, ali
+# Built-in providers: zhipu, volcengine, ali, deepseek
 #
 # providers:
 #   zhipu:
@@ -16,15 +16,36 @@ version: 1
 #     baseUrl: https://api.custom.com/v1
 #     models: [model-a]
 #     hasUsageApi: false
+#
+#   # Local LM Studio (dynamic model list). LM Studio serves both OpenAI
+#   # (/v1/chat/completions) and Anthropic (/v1/messages) endpoints:
+#   # - dynamicModels: fetch <openaiBaseUrl>/v1/models at startup and every
+#   #   MODEL_SYNC_INTERVAL_MS ms (default 300000 = 5 min). Fetched models are kept
+#   #   in memory only and are NEVER written back to this file.
+#   # - modelsExclude: drop model IDs containing any of these substrings
+#   #   (case-insensitive). Defaults to ["embed"] to filter out embedding models.
+#   # - baseUrl is optional: omit it for OpenAI-only upstreams (Anthropic
+#   #   /v1/messages requests are then NOT routed here); set it when the upstream
+#   #   also exposes an Anthropic endpoint (as LM Studio does).
+#   lm-studio:
+#     name: LM Studio (Local)
+#     baseUrl: http://127.0.0.1:1234         # optional: Anthropic /v1/messages
+#     openaiBaseUrl: http://127.0.0.1:1234   # OpenAI /v1/chat/completions
+#     dynamicModels: true
+#     modelsExclude:
+#       - embed
+#     hasUsageApi: false
 
 plans:
   # Example: Using a provider preset with usage API (no quota needed)
-  # - name: My Zhipu Plan
+  # - id: 1
+  #   name: My Zhipu Plan
   #   provider: zhipu
   #   apiKey: YOUR_ZHIPU_API_KEY_HERE
 
   # Example: Using a provider preset without usage API (quota required)
-  # - name: My Volcengine Plan
+  # - id: 2
+  #   name: My Volcengine Plan
   #   provider: volcengine
   #   apiKey: YOUR_ARK_API_KEY_HERE
   #   quota:
@@ -32,6 +53,13 @@ plans:
   #     period:
   #       type: monthly
   #       expiresOn: 1
+
+  # Example: local LM Studio (dynamic models, OpenAI-only)
+  # - id: 3
+  #   name: LM Studio Local
+  #   provider: lm-studio
+  #   apiKey: YOUR_LM_STUDIO_TOKEN_HERE
+  #   # quota omitted → unlimited; models omitted → fetched at runtime
 
   # Example: Fully manual plan (no provider preset)
   - id: 1

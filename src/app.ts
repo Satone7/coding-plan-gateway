@@ -84,7 +84,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   registerErrorHandler(app);
 
   // Register routes
-  const { repository } = await registerRoutes(app, options.quotaManager, options.planUsageTracker, options.providerRegistry);
+  const { repository, modelSyncService } = await registerRoutes(app, options.quotaManager, options.planUsageTracker, options.providerRegistry);
 
   // Register internal API key routes if apiKeyManager is provided
   if (options.apiKeyManager) {
@@ -103,6 +103,11 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       prefix: '/api/internal',
     });
   }
+
+  // Register onClose hook for model sync service
+  app.addHook('onClose', () => {
+    modelSyncService.stop();
+  });
 
   // Register onClose hook for quota manager shutdown
   if (options.quotaManager) {

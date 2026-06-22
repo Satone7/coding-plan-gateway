@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFile, mkdir, rm } from 'fs/promises';
+import { writeFile, mkdir, rm, readFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import {
@@ -365,6 +365,60 @@ describe('PlanRepository', () => {
     it('should create a FilePlanRepository instance', () => {
       const repo = createPlanRepository(configPath, TEST_ENCRYPTION_KEY);
       expect(repo).toBeInstanceOf(FilePlanRepository);
+    });
+  });
+
+  describe('dynamic models (in-memory updates)', () => {
+    it('updateModelsInMemory updates models without writing to disk', async () => {
+      const created = await repository.save(createMockPlanInput({ name: 'Dyn' }));
+      const fileBefore = await readFile(configPath, 'utf-8');
+
+      await repository.updateModelsInMemory(created.id, ['fetched-1', 'fetched-2']);
+
+      // In-memory reflects the update
+      const plan = await repository.findById(created.id);
+      expect(plan?.models).toEqual(['fetched-1', 'fetched-2']);
+
+      // File on disk is unchanged (no persist)
+      const fileAfter = await readFile(configPath, 'utf-8');
+      expect(fileAfter).toBe(fileBefore);
+      expect(fileAfter).not.toContain('fetched-1');
+    });
+
+    it('updateModelsInMemory is a no-op for an unknown plan id', async () => {
+      await repository.save(createMockPlanInput({ name: 'Real' }));
+      await expect(repository.updateModelsInMemory(99999, ['x'])).resolves.toBeUndefined();
+    });
+
+    it('does not persist models for a dynamicModels plan on update', async () => {
+      await writeFile(
+        configPath,
+        [
+          'plans:',
+          '  - id: 1',
+          '    name: LM Studio',
+          '    provider: lm-studio',
+          '    apiKey: sk-test',
+          '    dynamicModels: true',
+          '    quota:',
+          '      limit: 1000',
+          '      period: { type: total }',
+          '    models: [should-not-persist]',
+        ].join('\n'),
+        'utf-8'
+      );
+
+      const repo = new FilePlanRepository(configPath, TEST_ENCRYPTION_KEY);
+      const plan = await repo.findById(1);
+      expect(plan?.dynamicModels).toBe(true);
+
+      // Trigger a persist via update; the dynamicModels list must be stripped from disk.
+      await repo.update(1, { name: 'LM Studio Renamed' });
+
+      const persisted = await readFile(configPath, 'utf-8');
+      expect(persisted).toContain('LM Studio Renamed');
+      expect(persisted).toContain('dynamicModels: true');
+      expect(persisted).not.toContain('should-not-persist');
     });
   });
 

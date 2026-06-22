@@ -20,7 +20,7 @@ export type {
 } from './coding-plan';
 
 // Provider preset types
-export type { ProviderPreset } from './provider';
+export type { ProviderPreset, ProviderOverride } from './provider';
 
 // Usage adapter types
 export type { UsageResult, UsageAdapter, UsageWindow, UsageSummary } from './usage-adapter';

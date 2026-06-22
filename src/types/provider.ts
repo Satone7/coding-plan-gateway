@@ -27,6 +27,25 @@ export interface ProviderPreset {
   defaultModelAliases?: Record<string, string>;
   /** Whether this provider exposes a usage query API */
   hasUsageApi: boolean;
+  /** When true, models are fetched at runtime from <openaiBaseUrl>/models; `models` may be empty. */
+  dynamicModels?: boolean;
+  /** Substrings (case-insensitive) to filter out of fetched models. Default: ['embed']. */
+  modelsExclude?: string[];
   /** Provider category for classification */
   category?: ProviderCategory;
+}
+
+/**
+ * Partial override for a provider preset from config.
+ * Applied on top of a built-in preset, or used to define a new custom provider.
+ */
+export interface ProviderOverride {
+  name?: string;
+  baseUrl?: string;
+  openaiBaseUrl?: string;
+  models?: string[];
+  defaultModelAliases?: Record<string, string>;
+  hasUsageApi?: boolean;
+  dynamicModels?: boolean;
+  modelsExclude?: string[];
 }
