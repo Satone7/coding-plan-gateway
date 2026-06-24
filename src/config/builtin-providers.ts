@@ -24,7 +24,7 @@ export const BUILTIN_PROVIDERS: readonly ProviderPreset[] = [
     name: 'Volcengine / Ark',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/coding',
     openaiBaseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
-    models: ['ark-code-latest', 'doubao-seed-2.0-code', 'kimi-k2.5', 'kimi-k2.6', 'minimax-m2.5', 'minimax-m2.7', 'glm-4.7', 'glm-5.1'],
+    models: ['ark-code-latest', 'doubao-seed-2.0-code', 'kimi-k2.5', 'kimi-k2.6', 'minimax-m2.5', 'minimax-m2.7', 'glm-4.7', 'glm-5.1', 'glm-5.2'],
     hasUsageApi: false,
   },
   {
