@@ -486,7 +486,7 @@ export class RequestProxy {
        * Handle errors after SSE headers have been sent.
        * Sends an error event to the client and ends the response.
        */
-      const handleStreamError = (errorMessage: string): void => {
+      const handleStreamError = (errorMessage: string, statusCode?: number): void => {
         if (options.reply.raw.headersSent) {
           try {
             options.reply.raw.write(`event: error\ndata: ${JSON.stringify({ error: errorMessage })}\n\n`);
@@ -495,7 +495,13 @@ export class RequestProxy {
           }
           options.reply.raw.end();
         }
-        reject(new Error(errorMessage));
+        // Attach upstream statusCode so callers can decide whether to failover
+        // (e.g. 429 = rate/quota limit is retryable on another plan).
+        const err = new Error(errorMessage) as Error & { statusCode?: number };
+        if (statusCode !== undefined) {
+          err.statusCode = statusCode;
+        }
+        reject(err);
       };
 
       const req = requestFn(
@@ -508,7 +514,7 @@ export class RequestProxy {
               data += chunk;
             });
             res.on('end', () => {
-              handleStreamError(`Upstream error: ${res.statusCode} - ${data.slice(0, 500)}`);
+              handleStreamError(`Upstream error: ${res.statusCode} - ${data.slice(0, 500)}`, res.statusCode);
             });
             return;
           }

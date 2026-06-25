@@ -214,6 +214,15 @@ function recordMetrics(
 }
 
 /**
+ * Whether an upstream error is worth retrying on an alternative plan.
+ * Only HTTP 429 (rate limit / quota exceeded) is retryable — deterministic
+ * errors (400/404/500) won't be fixed by switching plans.
+ */
+function isRetryableUpstreamError(err: unknown): boolean {
+  return (err as { statusCode?: number }).statusCode === 429;
+}
+
+/**
  * Attempt failover to an alternative plan.
  */
 async function attemptFailover(
@@ -377,18 +386,85 @@ export function createOpenAIHandlers(
               });
             }
           );
-        } catch (streamError) {
+          return; // primary plan succeeded
+        } catch (primaryError) {
           endStage(request, 'upstreamRequest');
           router.markPlanFailed(plan.id);
           // Refund quota on stream failure
           if (quotaManager) {
             quotaManager.refundQuota(plan.id);
           }
-          // If SSE headers were already sent, the error event has been
-          // delivered to the client — do not throw to avoid crash.
-          if (!reply.raw.headersSent) {
-            throw streamError;
+
+          // Failover: only when the upstream rejected before streaming started
+          // (client SSE headers not yet sent) AND the error is a retryable 429.
+          if (isRetryableUpstreamError(primaryError) && !reply.raw.headersSent) {
+            for (const altPlan of routingResult.alternativePlans) {
+              if (!router.getCircuitBreaker().canExecute(altPlan.id) || !altPlan.openaiBaseUrl) {
+                continue;
+              }
+              logger.info('Attempting streaming failover', {
+                requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id,
+              });
+              // Use the canonical model name for the upstream request
+              if (routingResult.canonicalName) {
+                body.model = routingResult.canonicalName;
+              }
+              try {
+                const altApiKey = await fetchApiKey(repository, altPlan.id, request);
+                startStage(request, 'upstreamRequest');
+                await proxy.forwardOpenAIStream(
+                  body,
+                  { baseUrl: altPlan.openaiBaseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId },
+                  (_chunk, done) => {
+                    if (done) {
+                      endStage(request, 'upstreamRequest');
+                      router.markPlanSuccess(altPlan.id);
+                    }
+                  },
+                  reply,
+                  (tokenUsage, accumulatedText) => {
+                    const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
+                      tokenUsage,
+                      body,
+                      'openai',
+                      accumulatedText,
+                      requestId
+                    );
+                    attachProviderMetrics(request, {
+                      planId: altPlan.id,
+                      planName: altPlan.name,
+                      model,
+                      durationMs: Date.now() - (request.startTime || Date.now()),
+                      statusCode: 200,
+                      tokenUsage: finalTokenUsage,
+                    });
+                  }
+                );
+                return; // failover succeeded
+              } catch (altError) {
+                endStage(request, 'upstreamRequest');
+                router.markPlanFailed(altPlan.id);
+                if (quotaManager) {
+                  quotaManager.refundQuota(altPlan.id);
+                }
+                // If the alt plan started streaming then failed, the SSE error
+                // event was already delivered to the client — cannot try further.
+                if (reply.raw.headersSent) {
+                  return;
+                }
+                // otherwise continue to the next alternative plan
+              }
+            }
+            // All alternatives exhausted and client headers still not sent:
+            // surface the primary plan's original error (per fallback policy).
+            throw primaryError;
           }
+
+          // Non-retryable error, or headers already sent mid-stream.
+          if (!reply.raw.headersSent) {
+            throw primaryError;
+          }
+          // headers already sent — handleStreamError already wrote an SSE error event.
         }
         return;
       }
@@ -425,11 +501,10 @@ export function createOpenAIHandlers(
           }
         }
 
-        throw createGatewayError(
-          'UPSTREAM_ERROR',
-          'All available plans failed to process the request',
-          { requestId, attemptedPlans: [plan.id, ...routingResult.alternativePlans.map(p => p.id)] }
-        );
+        // All alternatives exhausted — surface the primary plan's original error
+        // (preserves upstream statusCode/JSON, e.g. 429 AccountQuotaExceeded)
+        // instead of a generic UPSTREAM_ERROR, per the "pass through primary" policy.
+        throw error;
       }
     },
 
