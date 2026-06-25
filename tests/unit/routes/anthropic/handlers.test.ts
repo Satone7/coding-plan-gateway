@@ -3,7 +3,7 @@
  * Tests schema validation for system field formats.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FastifyInstance } from 'fastify';
 import Fastify from 'fastify';
 import { mkdir, rm } from 'fs/promises';
@@ -335,6 +335,80 @@ describe('Anthropic Handlers - System Field Validation', () => {
 
       // Should not return validation error
       expect(response.statusCode).not.toBe(400);
+    });
+  });
+
+  describe('Streaming 429 failover', () => {
+    it('falls over to an alternative plan when the primary returns 429', async () => {
+      await repository.save(createMockPlanInput({ name: 'Plan-A', models: ['glm-5.2'] }));
+      await repository.save(createMockPlanInput({ name: 'Plan-B', models: ['glm-5.2'] }));
+
+      const err429 = Object.assign(new Error('Upstream error: 429 - rate limited'), { statusCode: 429 });
+      const streamSpy = vi.spyOn(proxy, 'forwardAnthropicStream')
+        .mockRejectedValueOnce(err429)
+        .mockImplementationOnce(async (_body, _opts, _onChunk, reply, _onTok) => {
+          reply.raw.writeHead(200, { 'Content-Type': 'text/event-stream' });
+          reply.raw.write('event: message_start\ndata: {}\n\n');
+          reply.raw.end();
+        });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'glm-5.2',
+          messages: [{ role: 'user', content: 'hi' }],
+          max_tokens: 64,
+          stream: true,
+        },
+      });
+
+      expect(streamSpy).toHaveBeenCalledTimes(2);
+      expect(response.statusCode).toBe(200);
+    });
+
+    it('passes the primary 429 through when all alternatives also fail', async () => {
+      await repository.save(createMockPlanInput({ name: 'Plan-A', models: ['glm-5.2'] }));
+      await repository.save(createMockPlanInput({ name: 'Plan-B', models: ['glm-5.2'] }));
+
+      const err429 = Object.assign(new Error('Upstream error: 429 - quota exceeded'), { statusCode: 429 });
+      vi.spyOn(proxy, 'forwardAnthropicStream').mockRejectedValue(err429);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'glm-5.2',
+          messages: [{ role: 'user', content: 'hi' }],
+          max_tokens: 64,
+          stream: true,
+        },
+      });
+
+      // primary + alt both 429 → surface the primary's 429 (HTTP 429, not generic 502)
+      expect(response.statusCode).toBe(429);
+    });
+
+    it('does not failover on a non-429 upstream error (e.g. 500)', async () => {
+      await repository.save(createMockPlanInput({ name: 'Plan-A', models: ['glm-5.2'] }));
+      await repository.save(createMockPlanInput({ name: 'Plan-B', models: ['glm-5.2'] }));
+
+      const err500 = Object.assign(new Error('Upstream error: 500'), { statusCode: 500 });
+      const streamSpy = vi.spyOn(proxy, 'forwardAnthropicStream').mockRejectedValueOnce(err500);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'glm-5.2',
+          messages: [{ role: 'user', content: 'hi' }],
+          max_tokens: 64,
+          stream: true,
+        },
+      });
+
+      expect(streamSpy).toHaveBeenCalledTimes(1); // no failover attempted
+      expect(response.statusCode).toBe(500);
     });
   });
 });
