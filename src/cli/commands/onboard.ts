@@ -129,7 +129,10 @@ export async function handleOnboardCommand(context: CliContext): Promise<void> {
         break;
       case 'save':
         try {
-          configSchema.parse(config);
+          // Clean config before validation (removes ephemeral fields like
+          // dynamicModels plans' runtime-fetched model lists).
+          const cleanedConfig = cleanConfigForOnboard(config);
+          configSchema.parse(cleanedConfig);
 
           // Backup original config before saving
           try {
@@ -156,7 +159,6 @@ export async function handleOnboardCommand(context: CliContext): Promise<void> {
           }
 
           // Clean config before saving (remove preset-duplicated fields)
-          const cleanedConfig = cleanConfigForOnboard(config);
           await saveConfig(context.configPath, cleanedConfig, 'yaml');
           p.log.success(`Configuration saved to ${context.configPath}`);
 
