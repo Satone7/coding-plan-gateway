@@ -27,7 +27,12 @@ function cleanPlanForPersist(plan: NormalizedPlanConfig): PlanConfig {
 
   const preset = getBuiltinProvider(plan.provider);
   if (!preset) {
-    return plan as PlanConfig;
+    const out = plan as PlanConfig;
+    // dynamicModels plans fetch models at runtime — never persist an empty/outdated list
+    if (out.dynamicModels) {
+      out.models = undefined;
+    }
+    return out;
   }
 
   const result: PlanConfig = {
