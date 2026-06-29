@@ -66,6 +66,12 @@ function cleanPlanForPersist(plan: NormalizedPlanConfig): PlanConfig {
     result.modelAliases = plan.modelAliases;
   }
 
+  // Persist dynamicModels flag and excludes so runtime model fetching survives Save&Exit
+  if (plan.dynamicModels) {
+    result.dynamicModels = true;
+    if (plan.modelsExclude) result.modelsExclude = plan.modelsExclude;
+  }
+
   return result;
 }
 
@@ -75,6 +81,7 @@ function cleanConfigForOnboard(config: NormalizedConfig): Config {
     version: LATEST_CONFIG_VERSION,
     plans: config.plans.map(cleanPlanForPersist),
     loadBalancing: config.loadBalancing,
+    providers: config.providers,
   };
 }
 
