@@ -58,7 +58,7 @@ describe('Authentication Flow Integration Tests', () => {
         auth: request.auth,
       }));
 
-      app.get('/v1/models', (request, _reply) => ({
+      app.get('/v1/messages', (request, _reply) => ({
         models: [],
         auth: request.auth,
       }));
@@ -77,10 +77,10 @@ describe('Authentication Flow Integration Tests', () => {
       expect(body.auth.apiKey.name).toBe('Valid Test Key');
     });
 
-    it('should authenticate valid key on /v1/models', async () => {
+    it('should authenticate valid key on /v1/messages', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/v1/models',
+        url: '/v1/messages',
         headers: { Authorization: `Bearer ${validKey}` },
       });
 
@@ -97,7 +97,7 @@ describe('Authentication Flow Integration Tests', () => {
       // Make authenticated request
       await app.inject({
         method: 'GET',
-        url: '/v1/models',
+        url: '/v1/messages',
         headers: { Authorization: `Bearer ${validKey}` },
       });
 
@@ -238,6 +238,9 @@ describe('Authentication Flow Integration Tests', () => {
       // Add health routes
       app.get('/health', () => ({ status: 'healthy' }));
       app.get('/ready', () => ({ ready: true }));
+      // Model discovery routes (public per DEFAULT_AUTH_CONFIG.authExemptPaths)
+      app.get('/v1/models', () => ({ object: 'list', data: [] }));
+      app.get('/v1/models/:model', () => ({ object: 'model' }));
     });
 
     it('should allow /health without authentication', async () => {
@@ -261,6 +264,26 @@ describe('Authentication Flow Integration Tests', () => {
       const body = JSON.parse(response.body);
       expect(body.ready).toBe(true);
     });
+
+    it('should allow /v1/models without authentication', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/v1/models',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.object).toBe('list');
+    });
+
+    it('should allow /v1/models/:model without authentication', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/v1/models/glm-5',
+      });
+
+      expect(response.statusCode).toBe(200);
+    });
   });
 
   describe('Multiple keys', () => {
@@ -281,14 +304,14 @@ describe('Authentication Flow Integration Tests', () => {
       // Register auth middleware
       registerAuthMiddleware(app, { apiKeyManager });
 
-      // Add test route
-      app.get('/v1/models', (request) => ({ keyName: request.auth?.apiKey?.name }));
+      // Add test route (use a non-exempt path; /v1/models is public)
+      app.get('/v1/messages', (request) => ({ keyName: request.auth?.apiKey?.name }));
     });
 
     it('should authenticate key 1', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/v1/models',
+        url: '/v1/messages',
         headers: { Authorization: `Bearer ${key1}` },
       });
 
@@ -300,7 +323,7 @@ describe('Authentication Flow Integration Tests', () => {
     it('should authenticate key 2', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/v1/models',
+        url: '/v1/messages',
         headers: { Authorization: `Bearer ${key2}` },
       });
 
@@ -313,7 +336,7 @@ describe('Authentication Flow Integration Tests', () => {
       // Create a key with different value but try to use key1's token
       const response = await app.inject({
         method: 'GET',
-        url: '/v1/models',
+        url: '/v1/messages',
         headers: { Authorization: `Bearer ${key1}` },
       });
 

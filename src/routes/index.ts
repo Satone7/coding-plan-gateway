@@ -129,13 +129,23 @@ export async function registerRoutes(
 
   const proxy = createRequestProxy();
 
-  // Register API routes under /api prefix
+  // Register API routes under /api prefix (legacy/alias surface)
   await registerOpenAIRoutes(app, {
     repository,
     proxy,
     quotaManager,
     providerRegistry,
     prefix: '/api/v1',
+  });
+
+  // Standard OpenAI-compatible surface at /v1 (so /v1/models and /v1/chat/completions
+  // work as drop-in endpoints). /v1/models is auth-exempt, see DEFAULT_AUTH_CONFIG.
+  await registerOpenAIRoutes(app, {
+    repository,
+    proxy,
+    quotaManager,
+    providerRegistry,
+    prefix: '/v1',
   });
 
   await registerAnthropicRoutes(app, {

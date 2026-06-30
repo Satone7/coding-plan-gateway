@@ -147,6 +147,22 @@ describe('auth-config', () => {
       expect(isExemptPath('/api/quota/1/sync', ['*/sync'])).toBe(true);
       expect(isExemptPath('/any/path/sync', ['*/sync'])).toBe(true);
     });
+
+    it('should exempt /v1/models and /api/v1/models per default config', () => {
+      const exemptPaths = parseExemptPaths(DEFAULT_AUTH_CONFIG.authExemptPaths);
+
+      // /v1/models is public (model discovery without a key)
+      expect(isExemptPath('/v1/models', exemptPaths)).toBe(true);
+      expect(isExemptPath('/v1/models/glm-5', exemptPaths)).toBe(true);
+
+      // legacy /api/v1/models surface stays public too
+      expect(isExemptPath('/api/v1/models', exemptPaths)).toBe(true);
+      expect(isExemptPath('/api/v1/models/glm-5', exemptPaths)).toBe(true);
+
+      // chat completions must still require auth on both prefixes
+      expect(isExemptPath('/v1/chat/completions', exemptPaths)).toBe(false);
+      expect(isExemptPath('/api/v1/chat/completions', exemptPaths)).toBe(false);
+    });
   });
 
   describe('createDefaultAuthConfig', () => {
