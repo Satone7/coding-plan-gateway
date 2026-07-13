@@ -85,11 +85,20 @@ function normalizeRequest(body: AnthropicMessageRequest): void {
 
 /**
  * Whether an upstream error is worth retrying on an alternative plan.
- * Only HTTP 429 (rate limit / quota exceeded) is retryable — deterministic
- * errors (400/404/500) won't be fixed by switching plans.
+ *
+ * Retryable status codes:
+ * - 400 (Bad Request): upstream may reject due to plan-specific limits
+ *   (e.g. context window too small) that another plan may satisfy.
+ * - 429 (Too Many Requests): rate limit / quota exceeded on this plan,
+ *   another plan may still have capacity.
+ *
+ * Deterministic client errors (401, 403, 404, 405, etc.) are NOT retryable
+ * because they indicate a misconfiguration that affects all plans equally
+ * (bad API key, missing endpoint, etc.).
  */
 function isRetryableUpstreamError(err: unknown): boolean {
-  return (err as { statusCode?: number }).statusCode === 429;
+  const statusCode = (err as { statusCode?: number }).statusCode;
+  return statusCode === 400 || statusCode === 429;
 }
 
 /**
@@ -430,7 +439,7 @@ export function createAnthropicHandlers(
           }
 
           // Failover: only when the upstream rejected before streaming started
-          // (client SSE headers not yet sent) AND the error is a retryable 429.
+          // (client SSE headers not yet sent) AND the error is retryable (400/429).
           if (isRetryableUpstreamError(primaryError) && !reply.raw.headersSent) {
             for (const altPlan of routingResult.alternativePlans) {
               if (!router.getCircuitBreaker().canExecute(altPlan.id) || !altPlan.baseUrl) {

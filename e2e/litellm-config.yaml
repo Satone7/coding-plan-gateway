@@ -13,6 +13,8 @@ model_list:
       model: openai/z-ai/glm-5.2
       api_base: https://integrate.api.nvidia.com/v1
       api_key: os.environ/NVIDIA_API_KEY
+    model_info:
+      max_input_tokens: 1000000
   - model_name: llama-3.1-8b
     litellm_params:
       model: openai/meta/llama-3.1-8b-instruct
