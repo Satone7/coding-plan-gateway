@@ -10,8 +10,8 @@ import {
 } from '@/config/builtin-providers';
 
 describe('BUILTIN_PROVIDERS', () => {
-  it('should contain exactly 4 providers', () => {
-    expect(BUILTIN_PROVIDERS).toHaveLength(4);
+  it('should contain exactly 5 providers', () => {
+    expect(BUILTIN_PROVIDERS).toHaveLength(5);
   });
 
   it('should have unique IDs', () => {
@@ -23,8 +23,17 @@ describe('BUILTIN_PROVIDERS', () => {
     for (const provider of BUILTIN_PROVIDERS) {
       expect(provider.id).toBeTruthy();
       expect(provider.name).toBeTruthy();
-      expect(provider.baseUrl).toMatch(/^https?:\/\//);
-      expect(provider.models.length).toBeGreaterThan(0);
+      // baseUrl is either a real URL (Anthropic-capable) or the empty-string
+      // OpenAI-only sentinel — the latter requires openaiBaseUrl to be set.
+      if (provider.baseUrl) {
+        expect(provider.baseUrl).toMatch(/^https?:\/\//);
+      } else {
+        expect(provider.openaiBaseUrl).toMatch(/^https?:\/\//);
+      }
+      // At least one endpoint must be configured.
+      expect(provider.baseUrl || provider.openaiBaseUrl).toBeTruthy();
+      // Models come from a static list OR runtime discovery (dynamicModels).
+      expect(provider.models.length > 0 || provider.dynamicModels === true).toBe(true);
       expect(typeof provider.hasUsageApi).toBe('boolean');
     }
   });
@@ -69,6 +78,20 @@ describe('getBuiltinProvider', () => {
     expect(deepseek!.hasUsageApi).toBe(true);
   });
 
+  it('should return nvidia provider by id (OpenAI-only, dynamic models)', () => {
+    const nvidia = getBuiltinProvider('nvidia');
+    expect(nvidia).toBeDefined();
+    expect(nvidia!.id).toBe('nvidia');
+    // OpenAI-only sentinel: empty baseUrl, OpenAI surface only.
+    expect(nvidia!.baseUrl).toBe('');
+    expect(nvidia!.openaiBaseUrl).toBe('https://integrate.api.nvidia.com/v1');
+    // Catalog is discovered at runtime, not maintained statically.
+    expect(nvidia!.dynamicModels).toBe(true);
+    expect(nvidia!.models).toEqual([]);
+    expect(nvidia!.modelsExclude).toEqual(['embed', 'rerank']);
+    expect(nvidia!.hasUsageApi).toBe(false);
+  });
+
   it('should return undefined for unknown provider id', () => {
     expect(getBuiltinProvider('unknown')).toBeUndefined();
   });
@@ -76,6 +99,6 @@ describe('getBuiltinProvider', () => {
 
 describe('BUILTIN_PROVIDER_IDS', () => {
   it('should list all provider IDs', () => {
-    expect(BUILTIN_PROVIDER_IDS).toEqual(['zhipu', 'volcengine', 'ali', 'deepseek']);
+    expect(BUILTIN_PROVIDER_IDS).toEqual(['zhipu', 'volcengine', 'ali', 'deepseek', 'nvidia']);
   });
 });

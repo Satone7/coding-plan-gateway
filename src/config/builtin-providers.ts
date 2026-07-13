@@ -43,6 +43,26 @@ export const BUILTIN_PROVIDERS: readonly ProviderPreset[] = [
     models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
     hasUsageApi: true,
   },
+  {
+    id: 'nvidia',
+    name: 'NVIDIA / NIM',
+    // OpenAI-only upstream: NVIDIA's `integrate.api.nvidia.com` endpoint speaks
+    // the OpenAI Chat Completions format only — there is no Anthropic
+    // /v1/messages surface. The empty-string baseUrl is the OpenAI-only sentinel
+    // (routing null-guards treat '' as "no Anthropic support"), so this preset
+    // serves OpenAI-format clients exclusively. Anthropic clients such as Claude
+    // Code must run an external converter (e.g. claude-code-router or LiteLLM)
+    // in front of the gateway's OpenAI surface to use NVIDIA models.
+    baseUrl: '',
+    openaiBaseUrl: 'https://integrate.api.nvidia.com/v1',
+    // NVIDIA's catalog is large, vendor-namespaced (e.g. `z-ai/glm-5.2`,
+    // `meta/llama-3.3-70b-instruct`) and changes frequently — fetch it at
+    // runtime via /v1/models instead of maintaining a static list.
+    models: [],
+    dynamicModels: true,
+    modelsExclude: ['embed', 'rerank'],
+    hasUsageApi: false,
+  },
 ];
 
 /**

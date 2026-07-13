@@ -3,7 +3,9 @@ version: 2
 
 # Provider presets override (optional)
 # Override built-in defaults or add custom providers.
-# Built-in providers: zhipu, volcengine, ali, deepseek
+# Built-in providers: zhipu, volcengine, ali, deepseek, nvidia
+#   nvidia is OpenAI-only (integrate.api.nvidia.com) — serves /v1/chat/completions,
+#   not /v1/messages. Anthropic clients need an external converter in front.
 #
 # providers:
 #   zhipu:
