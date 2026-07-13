@@ -162,6 +162,25 @@ describe('TokenCounter', () => {
       });
     });
 
+    it('should fallback to local estimation if tokenUsage has totalTokens=0 (false positive from stream extraction)', () => {
+      const request: ChatCompletionRequest = {
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: 'hello world' }],
+      };
+
+      // When extractStreamTokenUsage returns {totalTokens: 0, inputTokens: 0, outputTokens: 0}
+      // due to matching a zero value in the stream tail, the fallback should still kick in.
+      const zeroUsage = { totalTokens: 0, inputTokens: 0, outputTokens: 0 };
+      const result = TokenCounter.buildTokenUsageWithFallback(zeroUsage, request, 'openai', 'response', 'req-1');
+
+      // hello world\n = 12 tokens, response = 8 tokens, total = 20
+      expect(result).toEqual({
+        inputTokens: 12,
+        outputTokens: 8,
+        totalTokens: 20,
+      });
+    });
+
     it('should return undefined if no usage and no accumulated text', () => {
       const result = TokenCounter.buildTokenUsageWithFallback(undefined, {}, 'openai', undefined, 'req-1');
       expect(result).toBeUndefined();
