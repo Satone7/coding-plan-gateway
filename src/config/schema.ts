@@ -120,7 +120,7 @@ export const planConfigSchema = z.object({
   status: z.enum(['active', 'paused']).optional(),
   expiresOn: z.number().int().min(1).max(31).optional(),
   expiresAt: z.string().datetime().optional(),
-  weight: z.number().int().min(1).max(100).optional(),
+  weight: z.number().int().min(0).max(100).optional(),
   enable: z.boolean().optional().default(true),
   modelAliases: modelAliasesSchema.optional(),
   dynamicModels: z.boolean().optional(),
