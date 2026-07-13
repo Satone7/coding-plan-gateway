@@ -42,6 +42,10 @@ declare module 'fastify' {
     startTime?: number;
     requestLogger?: ReturnType<typeof createRequestLogger>;
     providerMetrics?: ProviderMetrics;
+    /** True once a hijacked streaming responder has logged completion.
+     *  Prevents duplicate "Request completed" logs when the raw response's
+     *  finish event also fires the onResponse hook. */
+    streamingResponseLogged?: boolean;
   }
 }
 
@@ -137,13 +141,21 @@ function buildResponseLogData(
 /**
  * Log a streaming response completion without the onResponse hook.
  *
- * Hijacked replies bypass Fastify's onResponse lifecycle, so streaming
- * handlers must call this explicitly after the response stream ends.
+ * Hijacked streaming responders call this after the stream ends so that a
+ * "Request completed" log is emitted even when the client disconnects
+ * mid-stream (in which case the raw response's `finish` event never fires
+ * and the onResponse hook never runs).  Idempotent: subsequent calls (e.g.
+ * from the onResponse hook on a normal completion) are no-ops, and token
+ * usage recording is still performed by responseLoggerMiddleware.
  */
 export function logStreamingResponse(
   request: FastifyRequest,
   reply: FastifyReply
 ): void {
+  if (request.streamingResponseLogged) {
+    return;
+  }
+  request.streamingResponseLogged = true;
   const logData = buildResponseLogData(request, reply);
   logger.info('Request completed', logData);
 }
@@ -152,15 +164,19 @@ export function logStreamingResponse(
  * Response logging hook.
  * Logs response completion with timing, status, and usage metrics.
  * Records token usage to UsageTracker if available.
+ *
+ * For hijacked streaming responses, logStreamingResponse() has already
+ * emitted the log line; here we only record token usage (which requires
+ * the app-level UsageTracker not available to the streaming responder).
  */
 export function responseLoggerMiddleware(
   request: FastifyRequest,
   reply: FastifyReply,
   usageTracker?: UsageTracker
 ): void {
-  const logData = buildResponseLogData(request, reply);
-
-  // Record token usage to UsageTracker if request was authenticated
+  // Record token usage to UsageTracker if request was authenticated.
+  // Done even for hijacked streaming responses (where the log line was
+  // already emitted by logStreamingResponse) so usage stats stay accurate.
   if (usageTracker && request.auth && request.providerMetrics?.tokenUsage) {
     usageTracker.recordTokenUsage(
       request.auth.apiKey.id,
@@ -169,6 +185,12 @@ export function responseLoggerMiddleware(
     );
   }
 
+  // Streaming responder already logged completion — skip duplicate log line.
+  if (request.streamingResponseLogged) {
+    return;
+  }
+
+  const logData = buildResponseLogData(request, reply);
   logger.info('Request completed', logData);
 }
 

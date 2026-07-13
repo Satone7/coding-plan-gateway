@@ -375,9 +375,16 @@ export function createAnthropicHandlers(
       if (body.stream) {
         // Hijacked replies bypass Fastify's onResponse lifecycle, so we must
         // manually log completion and the timing summary after the stream ends.
+        // Both helpers are idempotent: if the raw response's finish event
+        // later fires the onResponse hook, it will skip the duplicate output.
         const logCompletion = (): void => {
-          logStreamingResponse(request, reply);
+          startStage(request, 'responseSent');
+          endStage(request, 'responseSent');
+          if (reply.statusCode >= 400) {
+            getRequestTimer(request).markIncomplete();
+          }
           getRequestTimer(request).logSummary();
+          logStreamingResponse(request, reply);
         };
 
         startStage(request, 'upstreamRequest');

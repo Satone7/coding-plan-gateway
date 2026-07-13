@@ -88,6 +88,7 @@ export function createRequestTrace(requestId: string): RequestTrace {
  */
 export class RequestTimer {
   private trace: RequestTrace;
+  private summaryLogged = false;
 
   /**
    * Create a new RequestTimer.
@@ -192,8 +193,16 @@ export class RequestTimer {
   /**
    * Log the timing summary as JSON.
    * Uses ANSI color prefix for terminal differentiation.
+   *
+   * Idempotent: hijacked streaming responders call this manually after the
+   * stream ends, and the onResponse hook calls it again on normal completion.
+   * Only the first call emits output.
    */
   logSummary(): void {
+    if (this.summaryLogged) {
+      return;
+    }
+    this.summaryLogged = true;
     this.finalize();
     const summary = this.toSummary();
     const colorPrefix = getAnsiColor(summary.colorIndex);
