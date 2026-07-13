@@ -527,6 +527,11 @@ export class RequestProxy {
 
           const ensureSseHeaders = (): void => {
             if (!sseHeadersSent) {
+              // Hijack the reply only when we are certain the upstream is
+              // sending a successful stream.  If the upstream returned an
+              // error before the first data chunk the handler will throw
+              // and Fastify's normal error pipeline sends the response.
+              options.reply.hijack();
               options.reply.raw.setHeader('Content-Type', 'text/event-stream');
               options.reply.raw.setHeader('Cache-Control', 'no-cache');
               options.reply.raw.setHeader('Connection', 'keep-alive');
@@ -534,22 +539,35 @@ export class RequestProxy {
             }
           };
 
+          let isDrained = true;
+
+          // Backpressure: pause upstream when the client cannot keep up
+          options.reply.raw.on('drain', () => {
+            isDrained = true;
+            if (res.isPaused()) {
+              res.resume();
+            }
+          });
+
           res.on('data', (chunk: Buffer) => {
             ensureSseHeaders();
-            options.reply.raw.write(chunk);
-            
+            isDrained = options.reply.raw.write(chunk);
+            if (!isDrained) {
+              res.pause();
+            }
+
             // Consolidate buffering: extract lines from chunk
             sseBuffer += chunk.toString();
             const lines = sseBuffer.split('\n');
             sseBuffer = lines.pop() || '';
-            
+
             for (const line of lines) {
               const lineWithNewline = line + '\n';
               tailData += lineWithNewline;
               if (tailData.length > 4096) {
                 tailData = tailData.slice(-4096);
               }
-              
+
               if (options.provider && /^data:\s+/.test(line) && line.trim() !== 'data: [DONE]') {
                 // Cheap pre-check to avoid JSON.parse overhead for lines without text content
                 if (options.provider === 'openai' && !line.includes('"content"')) {
@@ -558,7 +576,7 @@ export class RequestProxy {
                 if (options.provider === 'anthropic' && !line.includes('"delta"')) {
                   continue;
                 }
-                
+
                 try {
                   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                   const data = JSON.parse(line.replace(/^data:\s+/, ''));
@@ -595,22 +613,41 @@ export class RequestProxy {
             const tokenUsage = extractStreamTokenUsage(tailData);
             options.onComplete(tokenUsage, accumulatedText);
             options.reply.raw.end();
+            cleanupClientClose();
             resolve();
           });
 
           res.on('error', (error) => {
             handleStreamError(`Stream error: ${error.message}`);
+            cleanupClientClose();
           });
         }
       );
 
+      // Abort the upstream request when the client disconnects
+      let clientClosed = false;
+      const onClientClose = (): void => {
+        if (!clientClosed) {
+          clientClosed = true;
+          if (!req.destroyed) {
+            req.destroy();
+          }
+        }
+      };
+      const cleanupClientClose = (): void => {
+        options.reply.raw.removeListener('close', onClientClose);
+      };
+      options.reply.raw.on('close', onClientClose);
+
       req.on('error', (error) => {
         handleStreamError(`Request failed: ${error.message}`);
+        cleanupClientClose();
       });
 
       req.on('timeout', () => {
         req.destroy();
         handleStreamError('Request timeout');
+        cleanupClientClose();
       });
 
       req.write(bodyStr);

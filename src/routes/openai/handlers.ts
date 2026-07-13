@@ -17,10 +17,12 @@ import { createGatewayError } from '@/types';
 import {
   attachProviderMetrics,
   extractOpenAITokenUsage,
+  logStreamingResponse,
 } from '@/middleware/request-logger';
 import {
   startStage,
   endStage,
+  getRequestTimer,
 } from '@/middleware/request-timer';
 import type { ChatCompletionRequest, ChatCompletionResponse, ModelsResponse, Model } from '@/types/openai';
 import type { CodingPlan } from '@/types';
@@ -354,6 +356,20 @@ export function createOpenAIHandlers(
 
       // Handle streaming - forward OpenAI request to OpenAI endpoint directly
       if (body.stream) {
+        // Hijacked replies bypass Fastify's onResponse lifecycle, so we must
+        // manually log completion and the timing summary after the stream ends.
+        // Both helpers are idempotent: if the raw response's finish event
+        // later fires the onResponse hook, it will skip the duplicate output.
+        const logCompletion = (): void => {
+          startStage(request, 'responseSent');
+          endStage(request, 'responseSent');
+          if (reply.statusCode >= 400) {
+            getRequestTimer(request).markIncomplete();
+          }
+          getRequestTimer(request).logSummary();
+          logStreamingResponse(request, reply);
+        };
+
         startStage(request, 'upstreamRequest');
         try {
           await proxy.forwardOpenAIStream(
@@ -386,6 +402,7 @@ export function createOpenAIHandlers(
               });
             }
           );
+          logCompletion();
           return; // primary plan succeeded
         } catch (primaryError) {
           endStage(request, 'upstreamRequest');
@@ -440,6 +457,7 @@ export function createOpenAIHandlers(
                     });
                   }
                 );
+                logCompletion();
                 return; // failover succeeded
               } catch (altError) {
                 endStage(request, 'upstreamRequest');
@@ -450,6 +468,7 @@ export function createOpenAIHandlers(
                 // If the alt plan started streaming then failed, the SSE error
                 // event was already delivered to the client — cannot try further.
                 if (reply.raw.headersSent) {
+                  logCompletion();
                   return;
                 }
                 // otherwise continue to the next alternative plan
@@ -465,6 +484,7 @@ export function createOpenAIHandlers(
             throw primaryError;
           }
           // headers already sent — handleStreamError already wrote an SSE error event.
+          logCompletion();
         }
         return;
       }
