@@ -16,6 +16,11 @@ describe('Claude Code real-provider E2E', () => {
   const providers = loadE2EProviders();
   const enabledProviders = providers.filter((provider) => provider.enabled);
   const skippedProviders = providers.filter((provider) => !provider.enabled);
+  // Claude Code is an Anthropic client; OpenAI-only providers (NVIDIA preset,
+  // kind 'openai-preset') cannot be reached via /v1/messages and are covered
+  // by nvidia-openai-direct.test.ts instead.
+  const anthropicProviders = providers.filter((provider) => provider.kind !== 'openai-preset');
+  const anthropicEnabled = anthropicProviders.filter((provider) => provider.enabled);
 
   let gatewayApiKey: string | null = null;
 
@@ -48,10 +53,10 @@ describe('Claude Code real-provider E2E', () => {
     }
   });
 
-  it.skipIf(!dockerAvailable || !gatewayRunning || !claudeRunning || enabledProviders.length === 0)(
+  it.skipIf(!dockerAvailable || !gatewayRunning || !claudeRunning || anthropicEnabled.length === 0)(
     'should run Claude Code through the gateway for at least one configured provider',
     () => {
-      const provider = enabledProviders[0]!;
+      const provider = anthropicEnabled[0]!;
       const result = runClaudePrompt(provider, gatewayApiKey!);
 
       expect(result.exitCode).toBe(0);
@@ -61,7 +66,7 @@ describe('Claude Code real-provider E2E', () => {
     120000
   );
 
-  for (const provider of providers) {
+  for (const provider of anthropicProviders) {
     it.skipIf(!dockerAvailable || !gatewayRunning || !claudeRunning || !provider.enabled)(
       `should complete a real Claude Code request for provider ${provider.providerId}`,
       () => {

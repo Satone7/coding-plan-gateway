@@ -1,0 +1,25 @@
+# LiteLLM config for the local E2E environment.
+# Converts Anthropic /v1/messages <-> OpenAI Chat Completions so that Claude
+# Code (Anthropic) can reach NVIDIA's OpenAI-only upstream.
+#
+# Hard-won gotchas baked in (do not re-discover):
+#  - LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES=true is REQUIRED
+#    (set in docker-compose env) — without it LiteLLM's /v1/messages handler
+#    calls /v1/responses, which NVIDIA does not serve.
+#  - api_key uses os.environ/ so the secret stays in .env, not in this file.
+model_list:
+  - model_name: glm-5.2
+    litellm_params:
+      model: openai/z-ai/glm-5.2
+      api_base: https://integrate.api.nvidia.com/v1
+      api_key: os.environ/NVIDIA_API_KEY
+  - model_name: llama-3.1-8b
+    litellm_params:
+      model: openai/meta/llama-3.1-8b-instruct
+      api_base: https://integrate.api.nvidia.com/v1
+      api_key: os.environ/NVIDIA_API_KEY
+litellm_settings:
+  drop_params: true
+  request_timeout: 120
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

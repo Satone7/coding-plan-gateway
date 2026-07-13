@@ -3,6 +3,33 @@
 # This ensures tests use real configuration while keeping test data separate from production
 
 services:
+  # Local LiteLLM as an Anthropic<->OpenAI converter for the NVIDIA via-LiteLLM
+  # scenario. Claude Code (Anthropic) -> gateway -> litellm -> NVIDIA (OpenAI).
+  # Self-contained so the E2E env doesn't depend on the router's production
+  # LiteLLM (which has no host port mapping and is unreachable from here).
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: litellm-e2e
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
+      # REQUIRED: makes /v1/messages use the chat/completions path instead of
+      # the Responses API (which NVIDIA does not serve).
+      - LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES=true
+    volumes:
+      - ./e2e/litellm-config.yaml:/app/config.yaml:ro
+    command: --config /app/config.yaml --port 4000
+    networks:
+      - e2e-network
+    healthcheck:
+      # LiteLLM image has no wget/curl; use python3 (always present).
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
   gateway:
     image: coding-plan-gateway:test
     build:

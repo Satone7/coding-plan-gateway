@@ -12,6 +12,20 @@ This E2E setup runs the gateway and Claude Code CLI in Docker, with real upstrea
   - `ali`
   - `deepseek`
 
+Plus two NVIDIA scenarios (NVIDIA is OpenAI-only, so they use different paths):
+
+- **`nvidia-litellm`** — Claude Code (Anthropic) reaches NVIDIA through the
+  external LiteLLM converter. The gateway forwards `/v1/messages` to a plan
+  whose `baseUrl` points at LiteLLM (`http://192.168.100.1:4000`); LiteLLM does
+  the Anthropic→OpenAI translation and calls NVIDIA. Covered by
+  `claude-code-providers.test.ts`. Needs `LITELLM_MASTER_KEY`.
+- **`nvidia` (direct)** — the NVIDIA preset itself (`baseUrl: ''` OpenAI-only
+  sentinel, `dynamicModels`). Driven by direct OpenAI `/v1/chat/completions`
+  requests from the host (Claude Code cannot use it). Covered by
+  `nvidia-openai-direct.test.ts`. Needs `NVIDIA_API_KEY` and the `gateway-e2e`
+  container must be able to reach `integrate.api.nvidia.com` (host Mihomo TUN
+  proxy must cover docker bridge traffic).
+
 If a provider API key is missing from `.env`, that provider's real-request test is skipped and called out explicitly in the E2E test output.
 
 ## Files
@@ -47,6 +61,8 @@ ZHIPU_API_KEY=
 VOLCENGINE_API_KEY=
 ALI_API_KEY=
 DEEPSEEK_API_KEY=
+NVIDIA_API_KEY=         # NVIDIA preset OpenAI-direct scenario
+LITELLM_MASTER_KEY=     # NVIDIA via LiteLLM converter scenario
 ```
 
 ## Start and stop
@@ -97,11 +113,20 @@ To force a specific provider, override the model with one of the unique test mod
 - `ark-code-latest` for `volcengine`
 - `qwen3.6-plus` for `ali`
 - `deepseek-v4-flash` for `deepseek`
+- `glm-5.2` for NVIDIA via LiteLLM (Anthropic path through the converter)
 
 Example:
 
 ```bash
 docker exec -it claude-code-e2e env ANTHROPIC_API_KEY=<gateway-key> ANTHROPIC_MODEL=deepseek-v4-flash claude -p "Reply with one word"
+```
+
+NVIDIA direct (OpenAI path, from the host — Claude Code cannot use it):
+
+```bash
+curl -s http://localhost:${E2E_GATEWAY_PORT:-8081}/api/v1/chat/completions \
+  -H "Authorization: Bearer <gateway-key>" -H "Content-Type: application/json" \
+  -d '{"model":"meta/llama-3.1-8b-instruct","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
 ```
 
 ## Notes

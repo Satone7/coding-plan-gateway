@@ -268,7 +268,9 @@ async function promptPlanDetails(id: number, existing?: NormalizedPlanConfig): P
     { value: '', label: 'Custom (manual configuration)' },
     ...BUILTIN_PROVIDERS.map((preset) => ({
       value: preset.id,
-      label: `${preset.name}  ${color.dim(preset.baseUrl)}`,
+      // OpenAI-only presets use the empty-string baseUrl sentinel; show their
+      // openaiBaseUrl so the picker still surfaces a usable endpoint.
+      label: `${preset.name}  ${color.dim(preset.baseUrl || preset.openaiBaseUrl || '')}`,
     })),
   ];
 
