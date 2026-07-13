@@ -189,6 +189,9 @@ export function responseLoggerMiddleware(
   if (request.streamingResponseLogged) {
     return;
   }
+  // Mark as logged so a late manual logStreamingResponse() call (which runs
+  // in a Promise microtask after this nextTick-fired onResponse hook) skips.
+  request.streamingResponseLogged = true;
 
   const logData = buildResponseLogData(request, reply);
   logger.info('Request completed', logData);
