@@ -31,6 +31,7 @@ import {
   AnthropicCountTokensResponse,
 } from '@/types/anthropic';
 import type { CodingPlan } from '@/types';
+import type { LoadBalanceConfig } from '@/types/load-balancing';
 import { TokenCounter } from '@/utils/token-counter';
 
 /**
@@ -301,9 +302,10 @@ export function createAnthropicHandlers(
   repository: IPlanRepository,
   proxy: RequestProxy,
   quotaManager?: QuotaManager,
-  providerRegistry?: ProviderRegistry
+  providerRegistry?: ProviderRegistry,
+  loadBalanceConfig?: LoadBalanceConfig
 ): AnthropicHandlers {
-  const router = createRequestRouter(repository, quotaManager, undefined, providerRegistry);
+  const router = createRequestRouter(repository, quotaManager, loadBalanceConfig, providerRegistry);
   const services: HandlerServices = { repository, proxy, router };
 
   return {

@@ -9,6 +9,7 @@ import { IPlanRepository } from '@/services/plan-repository';
 import { RequestProxy } from '@/services/request-proxy';
 import { QuotaManager } from '@/services/quota-manager';
 import type { ProviderRegistry } from '@/services/provider-registry';
+import type { LoadBalanceConfig } from '@/types/load-balancing';
 
 /**
  * Options for OpenAI routes.
@@ -22,6 +23,8 @@ export interface OpenAIRoutesOptions {
   quotaManager?: QuotaManager;
   /** Provider registry for usage API integration */
   providerRegistry?: ProviderRegistry;
+  /** Load balancing configuration */
+  loadBalanceConfig?: LoadBalanceConfig;
   /** API prefix (default: '/v1') */
   prefix?: string;
 }
@@ -36,8 +39,8 @@ export async function registerOpenAIRoutes(
   app: FastifyInstance,
   options: OpenAIRoutesOptions
 ): Promise<void> {
-  const { repository, proxy, quotaManager, providerRegistry, prefix = '/v1' } = options;
-  const handlers = createOpenAIHandlers(repository, proxy, quotaManager, providerRegistry);
+  const { repository, proxy, quotaManager, providerRegistry, loadBalanceConfig, prefix = '/v1' } = options;
+  const handlers = createOpenAIHandlers(repository, proxy, quotaManager, providerRegistry, loadBalanceConfig);
 
   await app.register(
     (fastify, _options, done) => {

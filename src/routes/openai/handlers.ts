@@ -26,6 +26,7 @@ import {
 } from '@/middleware/request-timer';
 import type { ChatCompletionRequest, ChatCompletionResponse, ModelsResponse, Model } from '@/types/openai';
 import type { CodingPlan } from '@/types';
+import type { LoadBalanceConfig } from '@/types/load-balancing';
 import { TokenCounter } from '@/utils/token-counter';
 import { findModelInfo } from '@/config/model-info';
 
@@ -296,9 +297,10 @@ export function createOpenAIHandlers(
   repository: IPlanRepository,
   proxy: RequestProxy,
   quotaManager?: QuotaManager,
-  providerRegistry?: ProviderRegistry
+  providerRegistry?: ProviderRegistry,
+  loadBalanceConfig?: LoadBalanceConfig
 ): OpenAIHandlers {
-  const router = createRequestRouter(repository, quotaManager, undefined, providerRegistry);
+  const router = createRequestRouter(repository, quotaManager, loadBalanceConfig, providerRegistry);
   const services: HandlerServices = { repository, proxy, router };
 
   return {

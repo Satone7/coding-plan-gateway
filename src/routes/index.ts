@@ -135,6 +135,7 @@ export async function registerRoutes(
     proxy,
     quotaManager,
     providerRegistry,
+    loadBalanceConfig: config.loadBalancing,
     prefix: '/api/v1',
   });
 
@@ -143,6 +144,7 @@ export async function registerRoutes(
     proxy,
     quotaManager,
     providerRegistry,
+    loadBalanceConfig: config.loadBalancing,
     prefix: '/api/v1',
   });
 
