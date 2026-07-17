@@ -8,19 +8,15 @@
 
 ## Table of Contents
 
-1. Executive Summary
-2. UI Naming (N/A - Backend Only)
-3. Code Naming Conventions
-4. Files & Directories
-5. API Standards
-6. Database Standards
-7. Testing Standards
-8. Git Workflow
-9. Documentation Standards
-10. Code Style Guide
-11. Security Standards
-12. Enforcement & Tools
-13. Agent Checklist
+1. [Executive Summary](#1-executive-summary)
+2. [Code Naming Conventions](#2-code-naming-conventions)
+3. [Files & Directories](#3-files--directories)
+4. [API Standards](#4-api-standards)
+5. [Testing Standards](#5-testing-standards)
+6. [Git Workflow](#6-git-workflow)
+7. [Code Style Guide](#7-code-style-guide)
+8. [Security Standards](#8-security-standards)
+9. [Enforcement & Tools](#9-enforcement--tools)
 
 ---
 
@@ -33,23 +29,9 @@
 
 ---
 
-## 2. UI Naming (N/A - Backend Only)
+## 2. Code Naming Conventions
 
-This is a **backend-only API service**. No frontend or UI layer exists.
-
-If a UI is added in the future, create comprehensive UI naming conventions covering:
-- Component naming (PascalCase)
-- Props/attributes (camelCase)
-- Event handlers (handle/on prefix patterns)
-- State management naming
-- CSS methodology
-- Accessibility attributes
-
----
-
-## 3. Code Naming Conventions
-
-### 3.1 Variables
+### 2.1 Variables
 
 | Type | Convention | Example |
 |------|------------|---------|
@@ -72,7 +54,7 @@ const max_retry_count = 3;  // Don't use snake_case for constants
 const x = planSelector.selectBest(model);  // Don't use single letters except in loops
 ```
 
-### 3.2 Functions & Methods
+### 2.2 Functions & Methods
 
 | Type | Convention | Example |
 |------|------------|---------|
@@ -96,7 +78,7 @@ function get_quota(plan: CodingPlan) { ... }  // Don't use snake_case
 function check(plan: CodingPlan) { ... }  // Don't use vague names
 ```
 
-### 3.3 Classes, Types & Interfaces
+### 2.3 Classes, Types & Interfaces
 
 | Type | Convention | Example |
 |------|------------|---------|
@@ -136,7 +118,7 @@ class quotaManager { ... }  // Don't use camelCase for classes
 type model_identifier = string;  // Don't use snake_case for types
 ```
 
-### 3.4 Modules & Imports
+### 2.4 Modules & Imports
 
 | Type | Convention | Example |
 |------|------------|---------|
@@ -166,9 +148,9 @@ import { CodingPlan } from '@/types/coding-plan';
 
 ---
 
-## 4. Files & Directories
+## 3. Files & Directories
 
-### 4.1 File Naming
+### 3.1 File Naming
 
 | Type | Convention | Example |
 |------|------------|---------|
@@ -177,7 +159,7 @@ import { CodingPlan } from '@/types/coding-plan';
 | Configuration files | kebab-case.ext or standard names | `tsconfig.json`, `.eslintrc.js`, `vitest.config.ts` |
 | Type definition files | kebab-case.d.ts or types/index.ts | `env.d.ts`, `types/express.d.ts` |
 
-### 4.2 Directory Structure
+### 3.2 Directory Structure
 
 ```
 coding-plan-gateway/
@@ -243,7 +225,7 @@ coding-plan-gateway/
 └── Dockerfile                   # Container definition
 ```
 
-### 4.3 Module Organization
+### 3.3 Module Organization
 
 - **Feature-based structure within layers**: Group related functionality (e.g., routes/openai contains all OpenAI-related code)
 - **Single responsibility per file**: Each file has one primary export/class
@@ -252,9 +234,9 @@ coding-plan-gateway/
 
 ---
 
-## 5. API Standards
+## 4. API Standards
 
-### 5.1 REST Endpoint Naming
+### 4.1 REST Endpoint Naming
 
 | Type | Convention | Example |
 |------|------------|---------|
@@ -285,7 +267,7 @@ POST /plans                    # Don't omit /api prefix for admin routes
 GET /v1/ChatCompletions        # Don't use PascalCase in URLs
 ```
 
-### 5.2 HTTP Methods
+### 4.2 HTTP Methods
 
 | Method | Usage | Idempotent |
 |--------|-------|------------|
@@ -295,7 +277,7 @@ GET /v1/ChatCompletions        # Don't use PascalCase in URLs
 | PATCH | Partial update | No |
 | DELETE | Remove resource | Yes |
 
-### 5.3 Query Parameters
+### 4.3 Query Parameters
 
 | Type | Convention | Example |
 |------|------------|---------|
@@ -303,7 +285,7 @@ GET /v1/ChatCompletions        # Don't use PascalCase in URLs
 | Pagination | snake_case | `?page=1&page_size=20` |
 | Sorting | snake_case | `?sort_by=created_at&sort_order=desc` |
 
-### 5.4 Request/Response Format
+### 4.4 Request/Response Format
 
 **Success Response**:
 ```typescript
@@ -347,7 +329,7 @@ GET /v1/ChatCompletions        # Don't use PascalCase in URLs
 }
 ```
 
-### 5.5 HTTP Status Codes
+### 4.5 HTTP Status Codes
 
 | Code | Usage |
 |------|-------|
@@ -365,7 +347,7 @@ GET /v1/ChatCompletions        # Don't use PascalCase in URLs
 | 502 | Upstream provider error |
 | 503 | Service unavailable (no plans available) |
 
-### 5.6 API Versioning
+### 4.6 API Versioning
 
 - **Current strategy**: URL path versioning (`/v1/...`)
 - **Future**: Header-based versioning for finer control
@@ -373,51 +355,9 @@ GET /v1/ChatCompletions        # Don't use PascalCase in URLs
 
 ---
 
-## 6. Database Standards
+## 5. Testing Standards
 
-### 6.1 File-Based Configuration
-
-This project uses YAML/JSON file storage rather than a traditional database.
-
-**Config File Naming**:
-- `config.yaml` or `config.json` - Main configuration
-- `quota-state.json` - Persisted quota state
-
-### 6.2 Configuration Schema
-
-```yaml
-# config.yaml
-plans:
-  - id: string (uuid)
-    name: string
-    baseUrl: string (url)
-    apiKey: string (encrypted)
-    models: string[]
-    quota:
-      limit: number
-      used: number
-      period: daily | monthly | total
-    timeout: number (seconds, optional)
-```
-
-### 6.3 Future Database Naming (if added)
-
-If a database is added in the future:
-
-| Element | Convention | Example |
-|---------|------------|---------|
-| Tables | Plural, snake_case | `coding_plans`, `quota_usage_logs` |
-| Columns | snake_case | `plan_id`, `created_at`, `api_key_encrypted` |
-| Primary keys | `id` | `id UUID PRIMARY KEY` |
-| Foreign keys | `{table}_id` | `plan_id REFERENCES coding_plans(id)` |
-| Indexes | `idx_{table}_{columns}` | `idx_quota_usage_plan_id` |
-| Timestamps | `{action}_at` | `created_at`, `updated_at`, `deleted_at` |
-
----
-
-## 7. Testing Standards
-
-### 7.1 Test File Naming
+### 5.1 Test File Naming
 
 | Type | Convention | Example |
 |------|------------|---------|
@@ -426,7 +366,7 @@ If a database is added in the future:
 | E2E tests | `*.e2e.test.ts` | `gateway.e2e.test.ts` |
 | Fixtures | `mock-{entity}.ts` or `fixture-{name}.ts` | `mock-plans.ts`, `fixture-config.ts` |
 
-### 7.2 Test Structure (AAA Pattern)
+### 5.2 Test Structure (AAA Pattern)
 
 ```typescript
 describe('QuotaManager', () => {
@@ -451,7 +391,7 @@ describe('QuotaManager', () => {
 });
 ```
 
-### 7.3 Test Naming Convention
+### 5.3 Test Naming Convention
 
 | Type | Pattern | Example |
 |------|---------|---------|
@@ -459,7 +399,7 @@ describe('QuotaManager', () => {
 | Error cases | `should throw {error} when {condition}` | `should throw ValidationError when config invalid` |
 | Edge cases | `should handle {edge case} correctly` | `should handle empty model list correctly` |
 
-### 7.4 Mock Naming
+### 5.4 Mock Naming
 
 | Type | Convention | Example |
 |------|------------|---------|
@@ -468,7 +408,7 @@ describe('QuotaManager', () => {
 | Stub data | `stub{Noun}` or `fixture{Noun}` | `stubConfig`, `fixturePlans` |
 | Spy functions | `{verb}Spy` | `fetchSpy`, `logSpy` |
 
-### 7.5 Coverage Requirements
+### 5.5 Coverage Requirements
 
 | Type | Minimum | Target |
 |------|---------|--------|
@@ -484,9 +424,9 @@ describe('QuotaManager', () => {
 
 ---
 
-## 8. Git Workflow
+## 6. Git Workflow
 
-### 8.1 Branch Naming
+### 6.1 Branch Naming
 
 | Type | Pattern | Example |
 |------|---------|---------|
@@ -497,7 +437,7 @@ describe('QuotaManager', () => {
 | Docs | `docs/{description}` | `docs/update-api-documentation` |
 | Chore | `chore/{description}` | `chore/update-dependencies` |
 
-### 8.2 Commit Message Format
+### 6.2 Commit Message Format
 
 Follow **Conventional Commits** specification:
 
@@ -544,7 +484,7 @@ Fixes #002
 docs(api): update endpoint documentation with examples
 ```
 
-### 8.3 Pull Request Format
+### 6.3 Pull Request Format
 
 ```markdown
 ## Summary
@@ -568,71 +508,9 @@ Brief description of changes (1-3 sentences).
 
 ---
 
-## 9. Documentation Standards
+## 7. Code Style Guide
 
-### 9.1 Code Comments
-
-| Type | When to Use | Style |
-|------|-------------|-------|
-| Inline comments | Complex logic explanation | `// Explain WHY, not WHAT` |
-| TODO comments | Future work | `// TODO(username): Description` |
-| FIXME comments | Known issues | `// FIXME: Description of issue` |
-
-**Do**:
-```typescript
-// Use exponential backoff to avoid overwhelming the provider
-// during recovery from rate limiting
-const delay = Math.min(baseDelay * Math.pow(2, retryCount), maxDelay);
-```
-
-**Don't**:
-```typescript
-// Calculate delay
-const delay = baseDelay * Math.pow(2, retryCount);
-```
-
-### 9.2 TSDoc/JSDoc
-
-Use TSDoc for public APIs:
-
-```typescript
-/**
- * Selects the best coding plan for a given model based on quota availability.
- *
- * @param model - The model identifier to find a plan for
- * @param availablePlans - List of plans that support the model
- * @returns The plan with highest remaining quota, or undefined if none available
- *
- * @example
- * ```typescript
- * const plan = selectBestPlan('claude-sonnet-4-6', plans);
- * if (plan) {
- *   console.log(`Selected ${plan.name} with ${plan.quota.remaining} remaining`);
- * }
- * ```
- */
-export function selectBestPlan(
-  model: string,
-  availablePlans: CodingPlan[]
-): CodingPlan | undefined;
-```
-
-### 9.3 README Structure
-
-1. Project name and description
-2. Quick start (prerequisites, installation, run)
-3. Configuration
-4. API Reference
-5. Development (setup, testing, linting)
-6. Deployment
-7. Contributing
-8. License
-
----
-
-## 10. Code Style Guide
-
-### 10.1 Formatting Standards
+### 7.1 Formatting Standards
 
 | Element | Standard | Value |
 |---------|----------|-------|
@@ -643,7 +521,7 @@ export function selectBestPlan(
 | Trailing commas | ES5 compatible | Yes (multiline) |
 | Brace style | K&R | Same line |
 
-### 10.2 TypeScript Specific
+### 7.2 TypeScript Specific
 
 | Element | Standard |
 |---------|----------|
@@ -663,7 +541,7 @@ export function parseModel(model: string): ModelIdentifier | undefined {
 }
 ```
 
-### 10.3 Import Organization
+### 7.3 Import Organization
 
 ```typescript
 // 1. Node.js built-ins
@@ -682,7 +560,7 @@ import type { CodingPlan } from '@/types';
 import type { RequestConfig } from '@/types/request';
 ```
 
-### 10.4 Code Quality Thresholds
+### 7.4 Code Quality Thresholds
 
 | Metric | Limit |
 |--------|-------|
@@ -694,9 +572,9 @@ import type { RequestConfig } from '@/types/request';
 
 ---
 
-## 11. Security Standards
+## 8. Security Standards
 
-### 11.1 Input Validation
+### 8.1 Input Validation
 
 - Validate ALL inputs at system boundaries
 - Use schema validation (Zod recommended)
@@ -717,7 +595,7 @@ const PlanSchema = z.object({
 });
 ```
 
-### 11.2 Secret Management
+### 8.2 Secret Management
 
 - API keys encrypted at rest (AES-256)
 - Secrets via environment variables
@@ -732,7 +610,7 @@ const apiKey = process.env.PROVIDER_API_KEY;
 const apiKey = 'sk-abc123...';  // NEVER hardcode secrets
 ```
 
-### 11.3 OWASP Top 10 Prevention
+### 8.3 OWASP Top 10 Prevention
 
 | Vulnerability | Mitigation |
 |---------------|------------|
@@ -749,9 +627,9 @@ const apiKey = 'sk-abc123...';  // NEVER hardcode secrets
 
 ---
 
-## 12. Enforcement & Tools
+## 9. Enforcement & Tools
 
-### 12.1 Linting (ESLint)
+### 9.1 Linting (ESLint)
 
 ```javascript
 // .eslintrc.js
@@ -773,7 +651,7 @@ module.exports = {
 };
 ```
 
-### 12.2 Formatting (Prettier)
+### 9.2 Formatting (Prettier)
 
 ```json
 // .prettierrc
@@ -786,7 +664,7 @@ module.exports = {
 }
 ```
 
-### 12.3 Editor Configuration
+### 9.3 Editor Configuration
 
 ```ini
 # .editorconfig
@@ -804,7 +682,7 @@ trim_trailing_whitespace = true
 trim_trailing_whitespace = false
 ```
 
-### 12.4 Pre-commit Hooks
+### 9.4 Pre-commit Hooks
 
 Use `husky` + `lint-staged`:
 
@@ -818,7 +696,7 @@ Use `husky` + `lint-staged`:
 }
 ```
 
-### 12.5 CI Checks
+### 9.5 CI Checks
 
 Required checks on all PRs:
 - [ ] Lint passes
@@ -830,19 +708,92 @@ Required checks on all PRs:
 
 ---
 
-## 13. Agent Checklist
+## Quick Reference Card
 
-Before writing any code, verify:
+### Naming at a Glance
 
-- [ ] **Naming**: Functions/variables (camelCase), constants (SCREAMING_SNAKE_CASE), classes/types (PascalCase), files (kebab-case)
-- [ ] **API**: Endpoints (kebab-case, plural nouns), params (snake_case), consistent response shapes
-- [ ] **Files**: Test files adjacent or in `tests/`, one responsibility per file
-- [ ] **Tests**: AAA pattern, descriptive names, mocks with clear naming
-- [ ] **Git**: Conventional commits, feature branch naming
-- [ ] **Security**: Validate inputs, encrypt secrets, no hardcoded credentials
-- [ ] **Style**: 2-space indent, 100 char lines, explicit return types
-- [ ] **Documentation**: TSDoc for public APIs, explain "why" in comments
-- [ ] **Quality**: Max 50 lines per function, max 300 lines per file, cyclomatic complexity < 10
+| Element | Convention | Example |
+|---------|------------|---------|
+| Functions | camelCase, verb-first | `calculateQuota` |
+| Variables | camelCase | `requestCount` |
+| Constants | SCREAMING_SNAKE_CASE | `MAX_RETRY_COUNT` |
+| Classes/Types | PascalCase | `QuotaManager` |
+| Interfaces | PascalCase (no I prefix) | `CodingPlan` |
+| Files | kebab-case.ts | `quota-manager.ts` |
+| Test files | *.test.ts | `quota-manager.test.ts` |
+| Endpoints | kebab-case, plural | `/api/plans` |
+
+### Code Style
+
+- **Indent**: 2 spaces
+- **Line length**: 100 chars max
+- **Semicolons**: Required
+- **Quotes**: Single
+- **Braces**: K&R (same line)
+
+### Function Limits
+
+| Metric | Max |
+|--------|-----|
+| Lines | 50 |
+| Parameters | 4 |
+| Cyclomatic complexity | 10 |
+| Nesting depth | 3 |
+
+### HTTP Status Codes
+
+| Code | Use |
+|------|-----|
+| 200 | Success (GET, PUT, PATCH) |
+| 201 | Created (POST) |
+| 204 | No content (DELETE) |
+| 400 | Bad request |
+| 404 | Not found |
+| 422 | Validation error |
+| 500 | Server error |
+
+### Git Conventions
+
+**Branches**: `{type}/{id}-{description}`
+- `feature/001-add-quota`
+- `bugfix/002-fix-routing`
+
+**Commits**: Conventional Commits
+- `feat(quota): add tracking`
+- `fix(router): correct model matching`
+- `docs(api): update examples`
+
+### Test Patterns
+
+**Naming**: `should {behavior} when {condition}`
+```typescript
+it('should return 404 when plan not found', () => {
+  // Arrange
+  const manager = new QuotaManager();
+
+  // Act
+  const result = manager.getPlan('nonexistent');
+
+  // Assert
+  expect(result).toBeUndefined();
+});
+```
+
+### Security Checklist
+
+- [ ] Validate all inputs
+- [ ] Encrypt API keys at rest
+- [ ] Never log secrets
+- [ ] Never commit credentials
+- [ ] Use parameterized queries
+
+### Coverage Minimums
+
+| Type | Min |
+|------|-----|
+| Lines | 80% |
+| Branches | 75% |
+| Functions | 80% |
 
 ---
 
