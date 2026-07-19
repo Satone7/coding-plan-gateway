@@ -235,6 +235,14 @@ function handleResponse<T>(
       reject(new Error(`Failed to parse upstream response: ${data.slice(0, 200)}`));
     }
   });
+
+  // Handle response-level errors (e.g. invalid chunked encoding, mid-body
+  // ECONNRESET). Without this listener Node re-emits the 'error' event as an
+  // unhandled exception that can crash the process; and if the body is aborted
+  // mid-stream 'end' never fires, so the promise would otherwise hang forever.
+  res.on('error', (error) => {
+    reject(new Error(`Response error: ${error.message}`));
+  });
 }
 
 /**
