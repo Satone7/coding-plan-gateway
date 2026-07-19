@@ -13,6 +13,7 @@ import {
   quotaConfigSchema,
   createPlanSchema,
   updatePlanSchema,
+  planIdParamSchema,
   validate,
   safeValidate,
   ValidationError,
@@ -224,6 +225,26 @@ describe('Validators', () => {
       if (!result.success) {
         expect(result.error).toBeDefined();
       }
+    });
+  });
+
+  describe('planIdParamSchema (M11)', () => {
+    it('accepts a pure-digit plan id', () => {
+      const result = planIdParamSchema.safeParse('13');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toBe(13);
+      }
+    });
+
+    it('rejects a prefixed-numeric string like "13abc"', () => {
+      const result = planIdParamSchema.safeParse('13abc');
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects exponent-style "1e2"', () => {
+      const result = planIdParamSchema.safeParse('1e2');
+      expect(result.success).toBe(false);
     });
   });
 });
