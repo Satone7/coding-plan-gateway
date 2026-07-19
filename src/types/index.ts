@@ -37,6 +37,7 @@ export {
   isQuotaExhausted,
   createInitialQuotaState,
   calculateResetAt,
+  advanceResetAtForElapsed,
 } from './quota';
 
 // Gateway request types

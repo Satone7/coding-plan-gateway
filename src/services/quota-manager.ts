@@ -8,7 +8,7 @@ import { constants } from 'fs';
 import { resolve, dirname } from 'path';
 import { mkdir } from 'fs/promises';
 import type { QuotaState, QuotaPeriod } from '@/types';
-import { createInitialQuotaState, calculateResetAt } from '@/types';
+import { createInitialQuotaState, calculateResetAt, advanceResetAtForElapsed } from '@/types';
 import { logger } from '@/utils/logger';
 import { DEFAULT_QUOTA_SYNC_CONFIG } from '@/config/defaults';
 import { ensureStructuredPeriod } from '@/utils/quota-period-migration';
@@ -574,10 +574,14 @@ export class QuotaManager {
 
     for (const [planId, state] of this.quotaStates) {
       if (state.resetAt && now >= state.resetAt) {
-        // Reset quota; pass current resetAt for sliding window recalculation
+        // Period elapsed: zero usage once and advance resetAt into the future.
+        // For sliding windows this steps forward in whole windows (catching up
+        // after any downtime > one window) instead of advancing a single window
+        // per tick — which previously left resetAt permanently in the past and
+        // wiped used on every tick/restart.
         state.used = 0;
         state.lastUpdated = now;
-        state.resetAt = calculateResetAt(state.period, state.resetAt);
+        state.resetAt = advanceResetAtForElapsed(state.period, state.resetAt, now);
 
         logger.info('Quota auto-reset', {
           planId,

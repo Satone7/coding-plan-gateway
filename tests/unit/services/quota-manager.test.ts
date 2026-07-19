@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { QuotaManager, createQuotaManager } from '@/services/quota-manager';
 import type { QuotaState } from '@/types';
-import { calculateResetAt, createInitialQuotaState } from '@/types';
+import { calculateResetAt, createInitialQuotaState, advanceResetAtForElapsed } from '@/types';
 import { createMockPlans, createMockQuotaStates } from '../../fixtures/mock-plans';
 import { writeFile, readFile, mkdir, rmdir } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -610,6 +610,33 @@ describe('calculateResetAt (structured QuotaPeriod)', () => {
       const result = calculateResetAt({ type: 'total' });
       expect(result).toBeNull();
     });
+  });
+});
+
+describe('advanceResetAtForElapsed (M4 sliding-window catch-up)', () => {
+  const windowMs = 5 * 60 * 60 * 1000;
+
+  it('advances a single window when less than one window has elapsed', () => {
+    const from = new Date(Date.now() - 0.5 * windowMs); // half a window ago
+    const now = new Date();
+    const next = advanceResetAtForElapsed({ type: '5h', windowHours: 5, sliding: true }, from, now);
+    expect(next).not.toBeNull();
+    expect(next!.getTime()).toBe(from.getTime() + windowMs);
+    expect(next!.getTime()).toBeGreaterThan(now.getTime());
+  });
+
+  it('catches up multiple windows in one step (downtime > one window)', () => {
+    const from = new Date(Date.now() - 3.2 * windowMs); // ~3 windows behind
+    const now = new Date();
+    const next = advanceResetAtForElapsed({ type: '5h', windowHours: 5, sliding: true }, from, now);
+    expect(next).not.toBeNull();
+    expect(next!.getTime()).toBe(from.getTime() + 4 * windowMs); // 4 steps lands in the future
+    expect(next!.getTime()).toBeGreaterThan(now.getTime());
+  });
+
+  it('returns null for total periods', () => {
+    const next = advanceResetAtForElapsed({ type: 'total' }, new Date(), new Date());
+    expect(next).toBeNull();
   });
 });
 

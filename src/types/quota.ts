@@ -189,6 +189,34 @@ export function calculateResetAt(period: QuotaPeriod, currentResetAt?: Date | nu
 }
 
 /**
+ * Advance a reset time into the future after the current period has elapsed.
+ *
+ * For sliding windows ('5h') this steps forward in WHOLE windows from the
+ * previous resetAt until it is strictly past `now`, so a downtime longer than
+ * one window catches up in a single reset instead of advancing one window per
+ * tick (which left resetAt permanently in the past and wiped usage repeatedly).
+ *
+ * For weekly/monthly periods the next occurrence is recomputed from `now`.
+ */
+export function advanceResetAtForElapsed(
+  period: QuotaPeriod,
+  currentResetAt: Date,
+  now: Date
+): Date | null {
+  if (period.type === 'total') {
+    return null;
+  }
+  if (period.type === '5h') {
+    const windowMs = period.windowHours * 60 * 60 * 1000;
+    const elapsed = Math.max(0, now.getTime() - currentResetAt.getTime());
+    // At least one step, and enough whole steps to land strictly after now.
+    const steps = Math.max(1, Math.floor(elapsed / windowMs) + 1);
+    return new Date(currentResetAt.getTime() + steps * windowMs);
+  }
+  return calculateResetAt(period);
+}
+
+/**
  * Get the number of days in a given month (UTC-safe).
  *
  * @param year - Full year
