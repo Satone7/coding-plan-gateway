@@ -152,6 +152,45 @@ describe('ModelSyncService', () => {
     expect((await repo.findById(1))?.models).toEqual(['old']);
   });
 
+  it('clears stale models after repeated sync failures (M3)', async () => {
+    const repo = makeRepo([
+      makePlan({ id: 1, dynamicModels: true, openaiBaseUrl: 'http://x:1234/v1', models: ['old'] }),
+    ]);
+    // Reuse one service instance so the consecutive-failure counter persists.
+    const service = new ModelSyncService({ repository: repo });
+    mockFetch.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    await service.syncAll(); // failure 1 — kept
+    await service.syncAll(); // failure 2 — kept
+    expect((await repo.findById(1))?.models).toEqual(['old']);
+
+    await service.syncAll(); // failure 3 — cleared
+    expect((await repo.findById(1))?.models).toEqual([]);
+  });
+
+  it('repopulates models and resets the failure streak after a success', async () => {
+    const repo = makeRepo([
+      makePlan({ id: 1, dynamicModels: true, openaiBaseUrl: 'http://x:1234/v1', models: ['old'] }),
+    ]);
+    const service = new ModelSyncService({ repository: repo });
+    mockFetch.mockRejectedValueOnce(new Error('network'));
+    await service.syncAll(); // 1 failure
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ data: [{ id: 'fresh' }] }),
+    });
+    await service.syncAll();
+    expect((await repo.findById(1))?.models).toEqual(['fresh']);
+
+    // A single subsequent failure should NOT clear (streak was reset to 0).
+    mockFetch.mockRejectedValueOnce(new Error('network'));
+    await service.syncAll();
+    expect((await repo.findById(1))?.models).toEqual(['fresh']);
+  });
+
   it('keeps prior models when every fetched model is excluded', async () => {
     const repo = makeRepo([
       makePlan({ id: 1, dynamicModels: true, openaiBaseUrl: 'http://x:1234/v1', models: ['old'] }),
