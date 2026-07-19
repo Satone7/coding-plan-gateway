@@ -25,6 +25,9 @@ export interface ModelSyncDeps {
 
 const DEFAULT_INTERVAL_MS = 300_000; // 5 minutes
 const DEFAULT_EXCLUDE_SUBSTRINGS = ['embed'];
+/** Per-fetch timeout. A hung upstream (firewall DROP, stuck server) would
+ * otherwise hold a socket until undici's ~300s default headers timeout. */
+const FETCH_TIMEOUT_MS = 30_000;
 /**
  * After this many consecutive sync failures, clear the plan's stale model
  * list so routing stops selecting a (likely dead) upstream. A transient
@@ -37,6 +40,8 @@ export class ModelSyncService {
   private readonly defaultExcludes: string[];
   private timer: NodeJS.Timeout | null = null;
   private readonly consecutiveFailures = new Map<number, number>();
+  /** Reentrancy guard: skip a scheduled tick if the previous syncAll is still running. */
+  private syncing = false;
 
   constructor(private readonly deps: ModelSyncDeps) {
     this.intervalMs =
@@ -51,6 +56,22 @@ export class ModelSyncService {
    * and skipped without aborting the remaining plans.
    */
   async syncAll(): Promise<void> {
+    // Guard against overlapping runs: setInterval does not wait for the
+    // previous async syncAll to finish, so a slow/hung cycle could otherwise
+    // stack concurrent passes that all mutate plan models.
+    if (this.syncing) {
+      logger.debug('Model sync already in progress; skipping tick');
+      return;
+    }
+    this.syncing = true;
+    try {
+      await this.syncAllInner();
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  private async syncAllInner(): Promise<void> {
     const plans = await this.deps.repository.findAll();
     for (const plan of plans) {
       if (!plan.dynamicModels) {
@@ -102,6 +123,7 @@ export class ModelSyncService {
         Accept: 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
 
     if (!response.ok) {
