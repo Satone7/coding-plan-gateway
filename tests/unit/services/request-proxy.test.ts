@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { RequestProxy } from '@/services/request-proxy';
+import { RequestProxy, extractStreamTokenUsage, mergeStreamTokenUsage } from '@/services/request-proxy';
 
 describe('RequestProxy', () => {
   let proxy: RequestProxy;
@@ -124,5 +124,58 @@ describe('requestProxy singleton', () => {
   it('should export a default RequestProxy instance', async () => {
     const { requestProxy } = await import('@/services/request-proxy');
     expect(requestProxy).toBeInstanceOf(RequestProxy);
+  });
+});
+
+describe('stream token usage capture (H6)', () => {
+  it('extractStreamTokenUsage finds input/output in a short tail', () => {
+    const tail = [
+      'event: message_start',
+      'data: {"type":"message_start","message":{"usage":{"input_tokens":500}}}',
+      '',
+      'event: message_delta',
+      'data: {"type":"message_delta","usage":{"output_tokens":12}}',
+      '',
+    ].join('\n');
+    const usage = extractStreamTokenUsage(tail);
+    expect(usage?.inputTokens).toBe(500);
+    expect(usage?.outputTokens).toBe(12);
+  });
+
+  it('tail that evicted message_start reports input=0 (the bug shape)', () => {
+    // Simulate a >4KB stream: message_start scrolled out of the 4KB tail, only
+    // the terminal message_delta (output_tokens) remains.
+    const longPadding = 'x'.repeat(5000);
+    const tail = longPadding + '\ndata: {"type":"message_delta","usage":{"output_tokens":12}}\n';
+    const usage = extractStreamTokenUsage(tail);
+    expect(usage?.inputTokens).toBe(0); // lost
+    expect(usage?.outputTokens).toBe(12);
+  });
+
+  it('mergeStreamTokenUsage restores input_tokens captured before the tail evicted them', () => {
+    const longPadding = 'x'.repeat(5000);
+    const tail = extractStreamTokenUsage(
+      longPadding + '\ndata: {"type":"message_delta","usage":{"output_tokens":12}}\n'
+    );
+    // input_tokens were captured from message_start during streaming (500);
+    // output captured from message_delta (12).
+    const merged = mergeStreamTokenUsage(tail, 500, 12);
+    expect(merged?.inputTokens).toBe(500);
+    expect(merged?.outputTokens).toBe(12);
+    expect(merged?.totalTokens).toBe(512);
+  });
+
+  it('mergeStreamTokenUsage falls back to tail when nothing was captured', () => {
+    const tail = extractStreamTokenUsage(
+      'data: {"type":"message_start","message":{"usage":{"input_tokens":7}}}\n' +
+      'data: {"type":"message_delta","usage":{"output_tokens":3}}\n'
+    );
+    const merged = mergeStreamTokenUsage(tail, undefined, undefined);
+    expect(merged?.inputTokens).toBe(7);
+    expect(merged?.outputTokens).toBe(3);
+  });
+
+  it('mergeStreamTokenUsage returns tail untouched when no captured values and no tail', () => {
+    expect(mergeStreamTokenUsage(undefined, undefined, undefined)).toBeUndefined();
   });
 });
