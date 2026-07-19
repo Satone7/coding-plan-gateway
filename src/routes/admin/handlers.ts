@@ -47,10 +47,13 @@ const createPlanBodySchema = z.object({
     period: quotaPeriodSchema,
   }).optional(),
   timeout: z.number().int().min(1).optional(),
+  weight: z.number().int().min(0).optional(),
   enable: z.boolean().optional().default(true),
   modelAliases: modelAliasesSchema.optional(),
   dynamicModels: z.boolean().optional(),
   modelsExclude: z.array(z.string().min(1)).optional(),
+  expiresOn: z.number().int().min(1).max(31).optional(),
+  expiresAt: z.string().datetime().optional(),
 }).refine(
   (data) => {
     if (data.provider) return true;
@@ -70,6 +73,7 @@ const updatePlanBodySchema = z.object({
   name: z.string().min(1).max(100).optional(),
   provider: z.string().min(1).optional(),
   baseUrl: z.string().url().optional(),
+  openaiBaseUrl: z.string().url().optional(),
   apiKey: z.string().min(1).optional(),
   models: z.array(z.string().min(1)).min(1).optional(),
   quota: z
@@ -79,9 +83,14 @@ const updatePlanBodySchema = z.object({
     })
     .optional(),
   timeout: z.number().int().min(1).optional(),
+  weight: z.number().int().min(0).optional(),
   status: z.enum(['active', 'paused']).optional(),
   enable: z.boolean().optional(),
   modelAliases: modelAliasesSchema.optional(),
+  dynamicModels: z.boolean().optional(),
+  modelsExclude: z.array(z.string().min(1)).optional(),
+  expiresOn: z.number().int().min(1).max(31).optional(),
+  expiresAt: z.string().datetime().optional(),
 });
 
 /**
@@ -508,6 +517,15 @@ export function createAdminHandlers(
           modelAliases = modelAliases || preset.defaultModelAliases;
           dynamicModels = dynamicModels ?? preset.dynamicModels;
           modelsExclude = modelsExclude ?? preset.modelsExclude;
+        } else {
+          // Unknown provider name (typo, or not registered): the plan would be
+          // saved with no preset-derived baseUrl/models and likely never serve
+          // traffic. Warn rather than reject so legitimately ad-hoc providers
+          // still work, but surface the mismatch.
+          logger.warn('Plan created with an unknown provider; no preset applied', {
+            requestId: request.id,
+            provider: input.provider,
+          });
         }
       }
 
@@ -522,9 +540,12 @@ export function createAdminHandlers(
         modelsExclude,
         quota: input.quota ?? { limit: Number.MAX_SAFE_INTEGER, period: { type: 'total' } },
         timeout: input.timeout,
+        weight: input.weight,
         enable: input.enable,
         provider: input.provider,
         modelAliases,
+        expiresOn: input.expiresOn,
+        expiresAt: input.expiresAt,
       });
 
       logger.info('Plan created via API', {
@@ -574,9 +595,12 @@ export function createAdminHandlers(
       // Update the plan
       const plan = await repository.update(planId, input);
 
-      // Update quota manager if quota changed
-      if (input.quota?.limit && quotaManager) {
-        quotaManager.updatePlanQuota(planId, input.quota.limit);
+      // Reconcile quota manager if quota changed: this propagates BOTH limit
+      // and period (previously only limit was pushed, so a changed period was
+      // persisted to config but the in-memory state kept the old period/resetAt
+      // until a full reload).
+      if (input.quota && quotaManager) {
+        quotaManager.reconcilePlanQuota(planId, plan.quota);
       }
 
       logger.info('Plan updated via API', {
