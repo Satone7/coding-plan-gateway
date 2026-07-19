@@ -10,8 +10,8 @@ import {
 } from '@/config/builtin-providers';
 
 describe('BUILTIN_PROVIDERS', () => {
-  it('should contain exactly 5 providers', () => {
-    expect(BUILTIN_PROVIDERS).toHaveLength(5);
+  it('should contain exactly 6 providers', () => {
+    expect(BUILTIN_PROVIDERS).toHaveLength(6);
   });
 
   it('should have unique IDs', () => {
@@ -92,6 +92,19 @@ describe('getBuiltinProvider', () => {
     expect(nvidia!.hasUsageApi).toBe(false);
   });
 
+  it('should return kimi provider by id (dual-format, dynamic models)', () => {
+    const kimi = getBuiltinProvider('kimi');
+    expect(kimi).toBeDefined();
+    expect(kimi!.id).toBe('kimi');
+    // Coding-plan keys serve both Anthropic and OpenAI formats from /coding/v1.
+    expect(kimi!.baseUrl).toBe('https://api.kimi.com/coding/v1');
+    expect(kimi!.openaiBaseUrl).toBe('https://api.kimi.com/coding/v1');
+    // Catalog is discovered at runtime, not maintained statically.
+    expect(kimi!.dynamicModels).toBe(true);
+    expect(kimi!.models).toEqual([]);
+    expect(kimi!.hasUsageApi).toBe(true);
+  });
+
   it('should return undefined for unknown provider id', () => {
     expect(getBuiltinProvider('unknown')).toBeUndefined();
   });
@@ -99,6 +112,6 @@ describe('getBuiltinProvider', () => {
 
 describe('BUILTIN_PROVIDER_IDS', () => {
   it('should list all provider IDs', () => {
-    expect(BUILTIN_PROVIDER_IDS).toEqual(['zhipu', 'volcengine', 'ali', 'deepseek', 'nvidia']);
+    expect(BUILTIN_PROVIDER_IDS).toEqual(['zhipu', 'volcengine', 'ali', 'deepseek', 'kimi', 'nvidia']);
   });
 });
