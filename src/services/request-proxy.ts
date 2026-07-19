@@ -110,6 +110,15 @@ function asOptionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
+/**
+ * Coerce a loosely-typed streamed JSON value to an optional string.
+ * Used to feed tool-call arguments / reasoning content into the token-usage
+ * fallback estimator (which needs text to count).
+ */
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
 export function extractStreamTokenUsage(tail: string): StreamTokenUsage | undefined {
   // OpenAI format: "usage":{"prompt_tokens":X,"completion_tokens":Y,"total_tokens":Z}
   const openaiMatch = tail.match(/"total_tokens"\s*:\s*(\d+)/);
@@ -609,7 +618,7 @@ export class RequestProxy {
                 // carry content OR token usage (message_start / message_delta /
                 // the final OpenAI usage chunk).
                 const hasContent = options.provider === 'openai'
-                  ? line.includes('"content"')
+                  ? (line.includes('"content"') || line.includes('"tool_calls"') || line.includes('"reasoning_content"'))
                   : line.includes('"delta"');
                 const hasUsage = line.includes('"input_tokens"')
                   || line.includes('"output_tokens"')
@@ -625,9 +634,32 @@ export class RequestProxy {
                   if (options.provider === 'openai') {
                     // OpenAI format
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                    if (data.choices?.[0]?.delta?.content) {
-                      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                      accumulatedText += data.choices[0].delta.content;
+                    const contentDelta = asOptionalString(data.choices?.[0]?.delta?.content);
+                    if (contentDelta) {
+                      accumulatedText += contentDelta;
+                    }
+                    // Reasoning content (e.g. DeepSeek) counts toward output.
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    const reasoning = asOptionalString(data.choices?.[0]?.delta?.reasoning_content);
+                    if (reasoning) {
+                      accumulatedText += reasoning;
+                    }
+                    // Tool-call argument deltas are the bulk of coding-agent
+                    // output; feed them into accumulatedText so the token-usage
+                    // fallback estimator has text to count when the upstream
+                    // omits a usage chunk.
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+                    const toolCalls = data.choices?.[0]?.delta?.tool_calls;
+                    if (Array.isArray(toolCalls)) {
+                      for (const tc of toolCalls) {
+                        const args = asOptionalString(
+                          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                          tc?.function?.arguments
+                        );
+                        if (args) {
+                          accumulatedText += args;
+                        }
+                      }
                     }
                     // Final usage chunk (only present if stream_options.include_usage)
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -648,7 +680,15 @@ export class RequestProxy {
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     if (data.type === 'content_block_delta' && data.delta?.text) {
                       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                      accumulatedText += data.delta.text;
+                      accumulatedText += asOptionalString(data.delta.text) ?? '';
+                    }
+                    // Tool-use argument deltas (input_json_delta) are the bulk
+                    // of tool-call output; feed them into accumulatedText so
+                    // the fallback estimator has text to count.
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    if (data.type === 'input_json_delta') {
+                      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                      accumulatedText += asOptionalString(data.delta?.partial_json) ?? '';
                     }
                     // input_tokens arrive once, in the message_start event at the
                     // very start of the stream — capture them before the tail
