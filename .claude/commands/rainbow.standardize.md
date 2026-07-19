@@ -264,8 +264,8 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Pre-commit hook scripts
 
 2. **Create quick reference guides**:
-   - `docs/standards-cheatsheet.md` - One-page reference
-   - `docs/ui-naming-quick-ref.md` - UI naming quick reference
+   - `docs/standards.md` (Quick Reference Card section) - One-page reference
+   - `docs/ui-naming-quick-ref.md` - UI naming quick reference (frontend projects only)
 
 3. **Agent context update**:
    - Run `.rainbow/scripts/bash/update-agent-context.sh claude`
@@ -370,7 +370,7 @@ Expected output structure:
 ```
 docs/
 ├── standards.md              # Main standards document (from standards-template.md)
-├── standards-cheatsheet.md   # One-page quick reference
+├── standards.md              # Main standards document (includes Quick Reference Card)
 ├── ui-naming-quick-ref.md    # UI naming quick reference
 └── examples/                 # Optional: Code examples
     ├── component-examples/
