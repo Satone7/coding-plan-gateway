@@ -61,18 +61,23 @@ export function calculateEffectiveExpiration(info: ExpirationInfo): Date | null 
  * @returns The next occurrence of that day
  */
 function calculateNextExpirationDate(dayOfMonth: number): Date {
+  // Match the actual monthly quota reset, which happens at UTC 00:00 on the
+  // expiresOn day (see calculateResetAt). Computing in local time at 23:59
+  // desynchronized the "expiring soon" score from the real reset by the TZ
+  // offset (e.g. 8h for Asia/Shanghai), collapsing the burn-before-expiry
+  // boost at the wrong time.
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-  const currentDay = now.getDate();
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth();
+  const currentDay = now.getUTCDate();
 
   // Get days in current month
   const daysInCurrentMonth = getDaysInMonth(currentYear, currentMonth);
   const targetDay = Math.min(dayOfMonth, daysInCurrentMonth);
 
-  // If we haven't passed this month's target day, use this month
+  // If we haven't passed this month's target day, use this month (UTC midnight)
   if (currentDay < targetDay) {
-    return new Date(currentYear, currentMonth, targetDay, 23, 59, 59, 999);
+    return new Date(Date.UTC(currentYear, currentMonth, targetDay, 0, 0, 0, 0));
   }
 
   // Otherwise, use next month
@@ -86,7 +91,7 @@ function calculateNextExpirationDate(dayOfMonth: number): Date {
   const daysInNextMonth = getDaysInMonth(nextYear, nextMonth);
   const nextTargetDay = Math.min(dayOfMonth, daysInNextMonth);
 
-  return new Date(nextYear, nextMonth, nextTargetDay, 23, 59, 59, 999);
+  return new Date(Date.UTC(nextYear, nextMonth, nextTargetDay, 0, 0, 0, 0));
 }
 
 /**

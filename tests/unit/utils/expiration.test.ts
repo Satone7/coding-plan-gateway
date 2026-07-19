@@ -135,6 +135,17 @@ describe('calculateEffectiveExpiration', () => {
     expect(result?.getDate()).toBe(28);
   });
 
+  it('anchors the expiresOn reset to UTC midnight, matching the quota reset (M6)', () => {
+    const result = calculateEffectiveExpiration({ expiresOn: 28 });
+    expect(result).toBeInstanceOf(Date);
+    // The actual quota reset is UTC 00:00 on the expiresOn day; the score must
+    // not use local 23:59 (which desyncs from the reset by the TZ offset).
+    expect(result?.getUTCHours()).toBe(0);
+    expect(result?.getUTCMinutes()).toBe(0);
+    expect(result?.getUTCSeconds()).toBe(0);
+    expect(result?.getUTCMilliseconds()).toBe(0);
+  });
+
   it('should handle invalid expiresAt gracefully', () => {
     const expiresAt = 'invalid-date';
     const expiresOn = 15;
