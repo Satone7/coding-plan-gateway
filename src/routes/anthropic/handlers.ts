@@ -13,6 +13,7 @@ import { RequestProxy } from '@/services/request-proxy';
 import { QuotaManager } from '@/services/quota-manager';
 import type { ProviderRegistry } from '@/services/provider-registry';
 import { logger } from '@/utils/logger';
+import { isRetryableUpstreamError } from '@/utils/retryable-error';
 import { createGatewayError } from '@/types';
 import {
   attachProviderMetrics,
@@ -86,21 +87,8 @@ function normalizeRequest(body: AnthropicMessageRequest): void {
 
 /**
  * Whether an upstream error is worth retrying on an alternative plan.
- *
- * Retryable status codes:
- * - 400 (Bad Request): upstream may reject due to plan-specific limits
- *   (e.g. context window too small) that another plan may satisfy.
- * - 429 (Too Many Requests): rate limit / quota exceeded on this plan,
- *   another plan may still have capacity.
- *
- * Deterministic client errors (401, 403, 404, 405, etc.) are NOT retryable
- * because they indicate a misconfiguration that affects all plans equally
- * (bad API key, missing endpoint, etc.).
+ * Shared with the OpenAI handler — see `src/utils/retryable-error.ts`.
  */
-function isRetryableUpstreamError(err: unknown): boolean {
-  const statusCode = (err as { statusCode?: number }).statusCode;
-  return statusCode === 400 || statusCode === 429;
-}
 
 /**
  * Anthropic count tokens request schema.

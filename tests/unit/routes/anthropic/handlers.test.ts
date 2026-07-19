@@ -389,12 +389,12 @@ describe('Anthropic Handlers - System Field Validation', () => {
       expect(response.statusCode).toBe(429);
     });
 
-    it('does not failover on a non-429 upstream error (e.g. 500)', async () => {
+    it('does not failover on a deterministic client error (e.g. 401)', async () => {
       await repository.save(createMockPlanInput({ name: 'Plan-A', models: ['glm-5.2'] }));
       await repository.save(createMockPlanInput({ name: 'Plan-B', models: ['glm-5.2'] }));
 
-      const err500 = Object.assign(new Error('Upstream error: 500'), { statusCode: 500 });
-      const streamSpy = vi.spyOn(proxy, 'forwardAnthropicStream').mockRejectedValueOnce(err500);
+      const err401 = Object.assign(new Error('Upstream error: 401 - unauthorized'), { statusCode: 401 });
+      const streamSpy = vi.spyOn(proxy, 'forwardAnthropicStream').mockRejectedValueOnce(err401);
 
       const response = await app.inject({
         method: 'POST',
@@ -408,7 +408,38 @@ describe('Anthropic Handlers - System Field Validation', () => {
       });
 
       expect(streamSpy).toHaveBeenCalledTimes(1); // no failover attempted
-      expect(response.statusCode).toBe(500);
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('fails over to an alternative plan on a transport error (socket hang up, no status code)', async () => {
+      // Regression: the prod incident where a Kimi plan socket-hang-up'd and
+      // the equally-capable failover plan was never tried because transport
+      // errors carry no statusCode and the old gate only accepted 400/429.
+      await repository.save(createMockPlanInput({ name: 'Plan-A', models: ['glm-5.2'] }));
+      await repository.save(createMockPlanInput({ name: 'Plan-B', models: ['glm-5.2'] }));
+
+      const socketErr = new Error('Request failed: socket hang up'); // no statusCode
+      const streamSpy = vi.spyOn(proxy, 'forwardAnthropicStream')
+        .mockRejectedValueOnce(socketErr)
+        .mockImplementationOnce(async (_body, _opts, _onChunk, reply, _onTok) => {
+          reply.raw.writeHead(200, { 'Content-Type': 'text/event-stream' });
+          reply.raw.write('event: message_start\ndata: {}\n\n');
+          reply.raw.end();
+        });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'glm-5.2',
+          messages: [{ role: 'user', content: 'hi' }],
+          max_tokens: 64,
+          stream: true,
+        },
+      });
+
+      expect(streamSpy).toHaveBeenCalledTimes(2); // primary failed, failover tried
+      expect(response.statusCode).toBe(200);
     });
   });
 });
