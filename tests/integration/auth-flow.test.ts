@@ -386,5 +386,13 @@ describe('Authentication Flow Integration Tests', () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({ reloaded: true });
     });
+
+    it('treats an exempt path with a query string as exempt (M10)', async () => {
+      app.get('/health', async () => ({ ok: true }));
+      // /health is exempt by default; a cache-busting query must not turn it into a 401.
+      const response = await app.inject({ method: 'GET', url: '/health?probe=1&ts=42' });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ ok: true });
+    });
   });
 });
