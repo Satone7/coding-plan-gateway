@@ -404,8 +404,26 @@ function roundRobinStrategy(context: SelectionContext): CodingPlan | undefined {
 }
 
 /**
- * Weighted round-robin strategy.
- * Distributes requests proportionally to plan weights.
+ * Effective (non-negative) weight for a plan. A weight of 0 means
+ * "failover-only" — the plan is excluded from primary weighted selection.
+ * Missing weight defaults to 1 (equal share).
+ */
+function effectiveWeight(plan: CodingPlan): number {
+  const weight = plan.weight ?? 1;
+  return weight > 0 ? weight : 0;
+}
+
+/**
+ * Weighted round-robin strategy (smooth / interleaved WRR).
+ *
+ * Uses the classic "current weight" algorithm: each turn adds every plan's
+ * weight to a running counter, selects the plan with the highest counter, then
+ * subtracts the total weight from it. This produces a smooth, proportional
+ * distribution that does NOT degenerate to "first plan wins 100%" the way the
+ * previous decrement-and-reset counter did.
+ *
+ * Weight-0 plans (failover-only) contribute 0 each turn and are therefore
+ * never selected as long as any positive-weight candidate exists.
  */
 function weightedRoundRobinStrategy(context: SelectionContext): CodingPlan | undefined {
   const { model, plans } = context;
@@ -414,55 +432,62 @@ function weightedRoundRobinStrategy(context: SelectionContext): CodingPlan | und
     return undefined;
   }
 
-  // Get or initialize weight state for this model
+  // Get or initialize running-counter state for this model
   let modelState = weightedRoundRobinState.get(model);
   if (!modelState) {
     modelState = new Map();
     weightedRoundRobinState.set(model, modelState);
   }
 
-  // Initialize counters for new plans
+  // Initialize counters for new plans (start at 0)
   for (const plan of plans) {
     if (!modelState.has(plan.id)) {
-      modelState.set(plan.id, plan.weight ?? 1);
+      modelState.set(plan.id, 0);
     }
   }
 
-  // Find plan with highest counter
-  let selectedPlan: CodingPlan | undefined;
-  let highestCounter = -1;
+  const weightById = new Map<number, number>();
+  let totalWeight = 0;
+  for (const plan of plans) {
+    const w = effectiveWeight(plan);
+    weightById.set(plan.id, w);
+    totalWeight += w;
+  }
+
+  // All candidates are weight-0 (failover-only): no weighted selection is
+  // possible, so fall back to plain round-robin among them so they are at
+  // least tried in turn.
+  if (totalWeight <= 0) {
+    const currentIndex = roundRobinState.get(model) ?? 0;
+    const nextIndex = currentIndex % plans.length;
+    roundRobinState.set(model, nextIndex + 1);
+    return plans[nextIndex];
+  }
+
+  // Interleaved WRR: advance every counter by its weight, pick the max,
+  // then subtract the total from the winner.
+  let selectedPlan: CodingPlan = plans[0]!;
+  let bestCounter = -Infinity;
 
   for (const plan of plans) {
-    const counter = modelState.get(plan.id) ?? 0;
-    if (counter > highestCounter) {
-      highestCounter = counter;
+    const weight = weightById.get(plan.id) ?? 0;
+    const current = (modelState.get(plan.id) ?? 0) + weight;
+    modelState.set(plan.id, current);
+    if (current > bestCounter) {
+      bestCounter = current;
       selectedPlan = plan;
     }
   }
 
-  if (!selectedPlan) {
-    return plans[0];
-  }
-
-  // Decrement counter for selected plan
-  const weight = selectedPlan.weight ?? 1;
-  const currentCounter = modelState.get(selectedPlan.id) ?? weight;
-  const newCounter = currentCounter - 1;
-
-  if (newCounter <= 0) {
-    // Reset to weight when counter reaches 0
-    modelState.set(selectedPlan.id, weight);
-  } else {
-    modelState.set(selectedPlan.id, newCounter);
-  }
+  modelState.set(selectedPlan.id, bestCounter - totalWeight);
 
   logger.debug('Selected plan via weighted-round-robin', {
     requestId: context.requestId,
     model,
     planId: selectedPlan.id,
     planName: selectedPlan.name,
-    weight,
-    previousCounter: highestCounter,
+    weight: weightById.get(selectedPlan.id) ?? 0,
+    counter: bestCounter,
   });
 
   return selectedPlan;
