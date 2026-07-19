@@ -110,29 +110,16 @@ export class QuotaManager {
     // Load persisted state
     const persistedStates = await this.loadPersistedState();
 
-    // Initialize states for all plans
+    // Initialize states for all plans, reconciling against persisted state
     for (const plan of plans) {
       // Skip plans without an id
       if (!plan.id) {
         continue;
       }
-
-      if (persistedStates.has(plan.id)) {
-        // Use persisted state but update limit from plan config
-        const persisted = persistedStates.get(plan.id)!;
-        this.quotaStates.set(plan.id, {
-          ...persisted,
-          limit: plan.quota.limit, // Always use latest limit from config
-        });
-      } else {
-        // Create new initial state
-        const state = createInitialQuotaState(
-          plan.id,
-          plan.quota.limit,
-          plan.quota.period
-        );
-        this.quotaStates.set(plan.id, state);
-      }
+      this.quotaStates.set(
+        plan.id,
+        this.reconcileState(plan.id, plan.quota, persistedStates.get(plan.id))
+      );
     }
 
     // Check for quota resets (daily/monthly)
@@ -143,6 +130,47 @@ export class QuotaManager {
       planCount: plans.length,
       statePath: this.quotaStatePath,
     });
+  }
+
+  /**
+   * Build the live QuotaState for a plan from its current config, reconciling
+   * against any previously persisted (or current in-memory) state.
+   *
+   * The limit always follows the latest config. If the period changed since
+   * the state was last persisted — including a quota being added or removed
+   * (which flips to/from the synthetic `total` period injected by
+   * normalizePlanConfig) — the window is restarted fresh; otherwise the
+   * persisted `used`/`resetAt` are kept so legitimate usage survives a restart.
+   */
+  private reconcileState(
+    planId: number,
+    quota: { limit: number; period: QuotaPeriod },
+    persisted?: QuotaState
+  ): QuotaState {
+    if (!persisted) {
+      return createInitialQuotaState(planId, quota.limit, quota.period);
+    }
+    const periodUnchanged =
+      JSON.stringify(persisted.period) === JSON.stringify(quota.period);
+    if (!periodUnchanged) {
+      logger.info('Quota period reconciled from config', {
+        planId,
+        oldPeriod: persisted.period,
+        newPeriod: quota.period,
+      });
+      return createInitialQuotaState(planId, quota.limit, quota.period);
+    }
+    return { ...persisted, limit: quota.limit };
+  }
+
+  /**
+   * Reconcile a single plan's quota against updated config (limit + period).
+   * Intended for runtime config changes via the admin plane: if the period
+   * changed the window restarts, otherwise only the limit is refreshed.
+   */
+  reconcilePlanQuota(planId: number, quota: { limit: number; period: QuotaPeriod }): void {
+    const existing = this.quotaStates.get(planId);
+    this.quotaStates.set(planId, this.reconcileState(planId, quota, existing));
   }
 
   /**
@@ -410,6 +438,11 @@ export class QuotaManager {
     }
 
     this.syncInterval = setInterval(() => {
+      // Reset any quotas whose period has elapsed before persisting. Without
+      // this, a monthly plan that crosses its reset boundary mid-run would
+      // stay QUOTA_EXHAUSTED until process restart, because checkQuotaResets
+      // was previously only invoked from initialize().
+      this.checkQuotaResets();
       this.persist().catch((error) => {
         logger.error('Periodic quota sync failed', error as Error);
       });

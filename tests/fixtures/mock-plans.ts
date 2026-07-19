@@ -127,8 +127,10 @@ export function createMockQuotaStates(): QuotaState[] {
     createMockQuotaState({ planId: 1, used: 450, limit: 1000 }),
     createMockQuotaState({ planId: 2, used: 200, limit: 500 }),
     createMockQuotaState({ planId: 3, used: 1500, limit: 2000 }),
-    createMockQuotaState({ planId: 4, used: 50, limit: 100 }),
-    createMockQuotaState({ planId: 5, used: 10, limit: 10 }),
+    // Periods intentionally match createMockPlans so reconciliation preserves
+    // used (plan 4 = 5h sliding, plan 5 = total).
+    createMockQuotaState({ planId: 4, used: 50, limit: 100, period: { type: '5h', windowHours: 5, sliding: true } }),
+    createMockQuotaState({ planId: 5, used: 10, limit: 10, period: { type: 'total' } }),
   ];
 }
 
