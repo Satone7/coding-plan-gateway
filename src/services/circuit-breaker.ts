@@ -98,15 +98,22 @@ export class CircuitBreaker {
         if (stats.lastFailureAt) {
           const elapsed = now.getTime() - stats.lastFailureAt.getTime();
           if (elapsed >= this.config.resetTimeoutMs) {
-            this.transitionTo(planId, 'half-open');
+            this.transitionTo(planId, 'half-open'); // resets halfOpenCalls to 0
+            stats.halfOpenCalls += 1; // this probe counts toward the limit
             return true;
           }
         }
         return false;
 
       case 'half-open':
-        // Allow limited calls in half-open state
-        return stats.halfOpenCalls < this.config.halfOpenMaxCalls;
+        // Allow only a bounded number of probe calls. Without incrementing
+        // halfOpenCalls here, the limit was dead config and a burst of
+        // concurrent requests all passed before the first result arrived.
+        if (stats.halfOpenCalls < this.config.halfOpenMaxCalls) {
+          stats.halfOpenCalls += 1;
+          return true;
+        }
+        return false;
 
       default:
         return false;

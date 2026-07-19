@@ -54,6 +54,20 @@ describe('CircuitBreaker', () => {
 
       expect(breaker.canExecute('plan-1')).toBe(true);
     });
+
+    it('caps half-open probe calls at halfOpenMaxCalls (H7)', async () => {
+      // halfOpenMaxCalls is 2 in this suite's config.
+      breaker.recordFailure('plan-1');
+      breaker.recordFailure('plan-1');
+      breaker.recordFailure('plan-1');
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      // First call transitions open->half-open and counts as probe 1.
+      expect(breaker.canExecute('plan-1')).toBe(true); // probe 1
+      expect(breaker.canExecute('plan-1')).toBe(true); // probe 2
+      // Third probe exceeds halfOpenMaxCalls -> blocked until a result arrives.
+      expect(breaker.canExecute('plan-1')).toBe(false);
+    });
   });
 
   describe('recordSuccess', () => {
