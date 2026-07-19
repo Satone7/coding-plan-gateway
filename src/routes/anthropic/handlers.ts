@@ -435,6 +435,12 @@ export function createAnthropicHandlers(
               if (!router.getCircuitBreaker().canExecute(altPlan.id) || !altPlan.baseUrl) {
                 continue;
               }
+              // Charge the alternative plan for the request it is about to serve.
+              // The matching refund on failure below makes this net-zero if the
+              // attempt fails, so the serving plan is the only one charged.
+              if (quotaManager && !quotaManager.consumeQuota(altPlan.id)) {
+                continue; // alternative exhausted — try the next one
+              }
               logger.info('Attempting streaming failover', {
                 requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id,
               });
@@ -536,12 +542,21 @@ export function createAnthropicHandlers(
           if (!router.getCircuitBreaker().canExecute(altPlan.id)) {
             continue;
           }
+          // Charge the alternative plan for the request it is about to serve;
+          // refund below if the attempt fails (net-zero for a failed attempt).
+          if (quotaManager && !quotaManager.consumeQuota(altPlan.id)) {
+            continue; // alternative exhausted — try the next one
+          }
 
           logger.info('Attempting failover', { requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id });
           const result = await attemptFailover(services, body, requestId, altPlan, request, routingResult.canonicalName);
           if (result) {
             recordMetrics(request, altPlan, model, result);
             return result.data as AnthropicMessageResponse;
+          }
+          // attemptFailover returned null (failed) — refund the quota we charged.
+          if (quotaManager) {
+            quotaManager.refundQuota(altPlan.id);
           }
         }
 
