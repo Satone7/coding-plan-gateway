@@ -14,6 +14,7 @@ import type { AuthConfig } from './schema';
 const ENV_VARS = {
   API_KEYS_PATH: 'API_KEYS_PATH',
   USAGE_DATA_PATH: 'USAGE_DATA_PATH',
+  AUTH_EXEMPT_PATHS: 'AUTH_EXEMPT_PATHS',
   USAGE_SYNC_INTERVAL_MS: 'USAGE_SYNC_INTERVAL_MS',
 } as const;
 
@@ -64,10 +65,16 @@ function parsePositiveInt(value: string | undefined, defaultValue: number): numb
  * ```
  */
 export function loadAuthConfig(): AuthConfig {
+  const authExemptPathsEnv = process.env[ENV_VARS.AUTH_EXEMPT_PATHS]?.trim();
   return {
     apiKeysPath: process.env[ENV_VARS.API_KEYS_PATH] ?? DEFAULT_AUTH_CONFIG.apiKeysPath,
     usageDataPath: process.env[ENV_VARS.USAGE_DATA_PATH] ?? DEFAULT_AUTH_CONFIG.usageDataPath,
-    authExemptPaths: DEFAULT_AUTH_CONFIG.authExemptPaths,
+    // Honor AUTH_EXEMPT_PATHS when set (non-empty); otherwise use the secure
+    // default. An operator can widen this (e.g. to restore the legacy broad
+    // /api/internal/* exemption) but the out-of-the-box posture is narrow.
+    authExemptPaths: authExemptPathsEnv && authExemptPathsEnv.length > 0
+      ? authExemptPathsEnv
+      : DEFAULT_AUTH_CONFIG.authExemptPaths,
     usageSyncIntervalMs: parsePositiveInt(
       process.env[ENV_VARS.USAGE_SYNC_INTERVAL_MS],
       DEFAULT_AUTH_CONFIG.usageSyncIntervalMs
