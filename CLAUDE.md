@@ -21,7 +21,7 @@
 - In-memory quota tracking with periodic persistence
 - Dual API format support (OpenAI + Anthropic)
 - Quota-based load balancing
-- Provider preset system: built-in defaults (Zhipu, Volcengine, Ali, DeepSeek, NVIDIA) with config overrides and usage API adapters; NVIDIA is OpenAI-only (`baseUrl: ''` sentinel) and uses `dynamicModels`
+- Provider preset system: built-in defaults (Zhipu, Volcengine, Ali, DeepSeek, Kimi, NVIDIA) with config overrides and usage API adapters; NVIDIA is OpenAI-only (`baseUrl: ''` sentinel) and uses `dynamicModels`; Kimi For Coding serves both formats from `api.kimi.com/coding/v1` (coding-plan `sk-kimi-` keys only — public `api.moonshot.*` rejects them) and queries usage from `/coding/v1/usages`
 - Dynamic model providers: custom providers (e.g. local LM Studio) fetch `/v1/models` at runtime (`dynamicModels`); `baseUrl` is optional — omit it for OpenAI-only upstreams (Anthropic `/v1/messages` skips them) or set both `baseUrl` + `openaiBaseUrl` when the upstream serves both formats (LM Studio does)
 
 ## Config Version Management
@@ -191,6 +191,7 @@ PRs that modify `config.yaml.example`, `src/config/schema.ts`, or the plan confi
 - **Future**: PostgreSQL with Drizzle ORM (migration path prepared)
 
 ## Recent Changes
+- feat/kimi-provider: Added Kimi For Coding as a built-in preset (`api.kimi.com/coding/v1` for both formats, `dynamicModels`, `hasUsageApi`). `KimiUsageAdapter` queries `/coding/v1/usages` (approach adapted from cc-switch): rolling 5h windows from `limits[].detail` + weekly quota from `usage`, numeric fields arrive as strings, overall percentage = max across windows. Model metadata added to `MODEL_INFO`.
 - feat/nvidia-provider: Added NVIDIA / NIM as a built-in OpenAI-only preset (`integrate.api.nvidia.com/v1`, `dynamicModels`, `baseUrl: ''`). Serves OpenAI clients only; Anthropic clients require an external converter — see `docs/` or the preset comment in `src/config/builtin-providers.ts`. No in-gateway format conversion (deliberate: no reliable maintained Node library exists; conversion is external per the chosen design).
 - feat/dynamic-providers: Custom OpenAI-only providers with runtime model fetching (`dynamicModels`, `modelsExclude`), `ModelSyncService` (startup + `MODEL_SYNC_INTERVAL_MS` refresh, in-memory only), optional `baseUrl` (Anthropic routing skips OpenAI-only plans); custom-provider field defaults now flow through `normalizePlanConfig`
 - feat/preset-providers: Added built-in provider presets (Zhipu, Volcengine, Ali), usage adapter system (Zhipu API), ProviderRegistry, `provider` field on plans

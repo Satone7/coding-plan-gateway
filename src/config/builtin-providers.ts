@@ -44,6 +44,21 @@ export const BUILTIN_PROVIDERS: readonly ProviderPreset[] = [
     hasUsageApi: true,
   },
   {
+    id: 'kimi',
+    name: 'Kimi For Coding',
+    // Kimi coding-plan subscription (sk-kimi-… keys). Both Anthropic
+    // (/v1/messages) and OpenAI (/v1/chat/completions) formats are served from
+    // the same /coding/v1 surface; the public api.moonshot.* endpoints reject
+    // these keys. Usage is queried from /coding/v1/usages (KimiUsageAdapter).
+    baseUrl: 'https://api.kimi.com/coding/v1',
+    openaiBaseUrl: 'https://api.kimi.com/coding/v1',
+    // Catalog is small but evolves with model generations (e.g. k3) — fetch it
+    // at runtime via /v1/models instead of maintaining a static list.
+    models: [],
+    dynamicModels: true,
+    hasUsageApi: true,
+  },
+  {
     id: 'nvidia',
     name: 'NVIDIA / NIM',
     // OpenAI-only upstream: NVIDIA's `integrate.api.nvidia.com` endpoint speaks

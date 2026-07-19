@@ -20,6 +20,7 @@ import { createPlanRepository } from './services/plan-repository';
 import { createProviderRegistry } from './services/provider-registry';
 import { ZhipuUsageAdapter } from './services/usage-adapters/zhipu-adapter';
 import { DeepseekUsageAdapter } from './services/usage-adapters/deepseek-adapter';
+import { KimiUsageAdapter } from './services/usage-adapters/kimi-adapter';
 import { CachedUsageAdapter } from './services/usage-adapters/cached-adapter';
 import { loadAuthConfig } from './config/auth-config';
 import { decryptApiKey, isApiKeyEncrypted } from './config/encryption';
@@ -51,6 +52,9 @@ async function main(): Promise<void> {
     );
     providerRegistry.registerUsageAdapter(
       new CachedUsageAdapter(new DeepseekUsageAdapter(), 300)
+    );
+    providerRegistry.registerUsageAdapter(
+      new CachedUsageAdapter(new KimiUsageAdapter(), 300)
     );
 
     // Create and initialize quota manager

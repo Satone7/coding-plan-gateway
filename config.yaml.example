@@ -3,7 +3,9 @@ version: 2
 
 # Provider presets override (optional)
 # Override built-in defaults or add custom providers.
-# Built-in providers: zhipu, volcengine, ali, deepseek, nvidia
+# Built-in providers: zhipu, volcengine, ali, deepseek, kimi, nvidia
+#   kimi serves both /v1/messages and /v1/chat/completions from
+#   api.kimi.com/coding/v1 (coding-plan keys only, prefix sk-kimi-).
 #   nvidia is OpenAI-only (integrate.api.nvidia.com) — serves /v1/chat/completions,
 #   not /v1/messages. Anthropic clients need an external converter in front.
 #
@@ -44,6 +46,12 @@ plans:
   #   name: My Zhipu Plan
   #   provider: zhipu
   #   apiKey: YOUR_ZHIPU_API_KEY_HERE
+
+  # Example: Kimi For Coding (usage API + dynamic model list, no quota needed)
+  # - id: 2
+  #   name: My Kimi Plan
+  #   provider: kimi
+  #   apiKey: YOUR_KIMI_CODING_KEY_HERE   # sk-kimi-… from kimi.com coding plan
 
   # Example: Using a provider preset without usage API (quota required)
   # - id: 2

@@ -211,6 +211,33 @@ export const MODEL_INFO: Record<string, Record<string, ModelInfo>> = {
       supportsStreaming: true,
     },
   },
+
+  kimi: {
+    // Metadata from GET /coding/v1/models (2026-07-19). The preset uses
+    // dynamicModels, so new entries appear automatically; this map only adds
+    // context-window/capability metadata for known models.
+    'kimi-for-coding': {
+      contextWindow: 262144,
+      notes: 'K2.7 Coding — default coding-plan model',
+      supportsVision: true,
+      supportsTools: true,
+      supportsStreaming: true,
+    },
+    'kimi-for-coding-highspeed': {
+      contextWindow: 262144,
+      notes: 'K2.7 Coding Highspeed',
+      supportsVision: true,
+      supportsTools: true,
+      supportsStreaming: true,
+    },
+    k3: {
+      contextWindow: 1048576,
+      notes: 'K3 — 1M context, thinking efforts low/high/max',
+      supportsVision: true,
+      supportsTools: true,
+      supportsStreaming: true,
+    },
+  },
 };
 
 /**
