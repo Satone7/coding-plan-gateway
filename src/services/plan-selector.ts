@@ -232,9 +232,17 @@ export class PlanSelector {
       return availablePlans[0];
     }
 
+    // weight=0 plans are failover-only: never selected as the primary plan when
+    // any positive-weight candidate exists. This applies to ALL strategies
+    // (previously only weighted-round-robin happened to exclude them). If every
+    // candidate is weight=0, fall back to selecting among them so the request
+    // is still served.
+    const selectablePlans = availablePlans.filter((plan) => effectiveWeight(plan) > 0);
+    const primaryPool = selectablePlans.length > 0 ? selectablePlans : availablePlans;
+
     // Get strategy function and execute
     const strategy = getStrategy(config.strategy);
-    return strategy({ ...context, plans: availablePlans });
+    return strategy({ ...context, plans: primaryPool });
   }
 
   /**

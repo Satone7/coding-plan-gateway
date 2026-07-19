@@ -453,6 +453,45 @@ describe('PlanSelector', () => {
       expect(counts.get(14)).toBe(0);
     });
   });
+
+  describe('weight=0 failover-only across strategies (M1)', () => {
+    it('excludes a weight-0 plan from primary selection under quota-priority even if it scores higher', () => {
+      resetStrategyState();
+      // Default strategy is quota-priority. Give the weight-0 plan a much
+      // larger remaining quota so it would win on score alone.
+      const highQuota = (id: number, weight?: number): CodingPlan => ({
+        ...makeWrrPlan(id, 'k3', weight),
+        quota: { limit: 1_000_000, period: 'total' },
+      }) as CodingPlan;
+      const plans: CodingPlan[] = [
+        highQuota(13, 1),
+        highQuota(14, 0), // failover-only despite huge quota
+      ];
+      const selector = createPlanSelector(); // default quota-priority
+      for (let i = 0; i < 10; i++) {
+        const picked = selector.selectBestPlan({
+          model: 'k3',
+          plans,
+          quotaStates: new Map(),
+          config: { strategy: 'quota-priority', factorWeights: { expiration: 0.4, rpm: 0.4, quota: 0.2 } },
+        });
+        expect(picked?.id).toBe(13);
+      }
+    });
+
+    it('still selects a weight-0 plan when it is the only candidate', () => {
+      resetStrategyState();
+      const plans: CodingPlan[] = [makeWrrPlan(14, 'k3', 0)];
+      const selector = createPlanSelector();
+      const picked = selector.selectBestPlan({
+        model: 'k3',
+        plans,
+        quotaStates: new Map(),
+        config: { strategy: 'quota-priority', factorWeights: { expiration: 0.4, rpm: 0.4, quota: 0.2 } },
+      });
+      expect(picked?.id).toBe(14);
+    });
+  });
 });
 
 describe('createPlanSelector', () => {
