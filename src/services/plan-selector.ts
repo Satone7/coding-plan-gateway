@@ -67,6 +67,43 @@ type StrategyFunction = (context: SelectionContext) => CodingPlan | undefined;
 const roundRobinState: Map<string, number> = new Map();
 
 /**
+ * Whether the factorWeights-ignored warning has already been logged. Avoids
+ * repeating the warning for every PlanSelector instance (the gateway creates
+ * one per request format).
+ */
+let factorWeightsWarningShown = false;
+
+/**
+ * Warn once if the operator customized factorWeights but selected a strategy
+ * that does not use them (only quota-priority scores factors). The default
+ * weights are ignored silently; a customized value under e.g. weighted-round-
+ * robin is almost certainly an operator expectation mismatch.
+ */
+function warnIfFactorWeightsIgnored(config: LoadBalanceConfig): void {
+  if (factorWeightsWarningShown) {
+    return;
+  }
+  if (config.strategy === 'quota-priority') {
+    return;
+  }
+  const fw = config.factorWeights;
+  if (!fw) {
+    return; // no factorWeights configured — nothing to ignore
+  }
+  const isDefault = fw.expiration === DEFAULT_FACTOR_WEIGHTS.expiration
+    && fw.rpm === DEFAULT_FACTOR_WEIGHTS.rpm
+    && fw.quota === DEFAULT_FACTOR_WEIGHTS.quota;
+  if (isDefault) {
+    return;
+  }
+  factorWeightsWarningShown = true;
+  logger.warn('factorWeights is configured but the active strategy ignores it', {
+    strategy: config.strategy,
+    note: 'factorWeights only affects the quota-priority strategy; it has no effect under weighted-round-robin / round-robin / random',
+  });
+}
+
+/**
  * Weighted round-robin state per model.
  * Tracks the current weight counter for each plan.
  */
@@ -91,6 +128,7 @@ export class PlanSelector {
   constructor(config?: LoadBalanceConfig, rpmTracker?: RpmTrackerInterface) {
     this.config = config ?? DEFAULT_LOAD_BALANCE_CONFIG;
     this.rpmTracker = rpmTracker;
+    warnIfFactorWeightsIgnored(this.config);
   }
 
   /**
@@ -98,6 +136,7 @@ export class PlanSelector {
    */
   setConfig(config: LoadBalanceConfig): void {
     this.config = config;
+    warnIfFactorWeightsIgnored(this.config);
   }
 
   /**
@@ -619,6 +658,7 @@ function calculatePlanScore(
 export function resetStrategyState(): void {
   roundRobinState.clear();
   weightedRoundRobinState.clear();
+  factorWeightsWarningShown = false;
 }
 
 /**

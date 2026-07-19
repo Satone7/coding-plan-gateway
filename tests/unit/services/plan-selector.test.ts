@@ -3,8 +3,9 @@
  * Tests plan selection logic based on model availability and quota.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PlanSelector, createPlanSelector, resetStrategyState } from '@/services/plan-selector';
+import { logger } from '@/utils/logger';
 import { createMockPlans, createMockQuotaStates } from '../../fixtures/mock-plans';
 import type { CodingPlan, QuotaState } from '@/types';
 
@@ -490,6 +491,27 @@ describe('PlanSelector', () => {
         config: { strategy: 'quota-priority', factorWeights: { expiration: 0.4, rpm: 0.4, quota: 0.2 } },
       });
       expect(picked?.id).toBe(14);
+    });
+  });
+
+  describe('factorWeights warning (M2)', () => {
+    it('does not warn under quota-priority with custom factorWeights', () => {
+      resetStrategyState();
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      createPlanSelector({ strategy: 'quota-priority', factorWeights: { expiration: 0.5, rpm: 0.3, quota: 0.2 } });
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('warns when custom factorWeights are set under a non-scoring strategy', () => {
+      resetStrategyState();
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      createPlanSelector({ strategy: 'weighted-round-robin', factorWeights: { expiration: 0.5, rpm: 0.3, quota: 0.2 } });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('factorWeights is configured but the active strategy ignores it'),
+        expect.anything(),
+      );
+      warnSpy.mockRestore();
     });
   });
 });
