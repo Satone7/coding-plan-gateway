@@ -201,8 +201,19 @@ function passthroughOpts(request: FastifyRequest): {
 }
 
 /**
- * Attach provider metrics and log response.
+ * Rewrite the response `model` field back to the alias the client requested.
+ * When a plan aliases glm-5 -> glm-5-turbo, the upstream response carries the
+ * canonical name; clients comparing request vs response model see a mismatch.
+ * Only rewrites when a canonical name was actually substituted.
  */
+function rewriteModelField(data: unknown, requestedModel: string, canonicalModel?: string): void {
+  if (!canonicalModel || canonicalModel === requestedModel) {
+    return;
+  }
+  if (data && typeof data === 'object' && 'model' in data) {
+    (data as { model?: unknown }).model = requestedModel;
+  }
+}
 function recordMetrics(
   request: FastifyRequest<{ Body: AnthropicMessageRequest }>,
   plan: CodingPlan,
@@ -548,6 +559,7 @@ export function createAnthropicHandlers(
         endStage(request, 'upstreamRequest');
         router.markPlanSuccess(plan.id);
         recordMetrics(request, plan, model, response);
+        rewriteModelField(response.data, model, routingResult.canonicalName);
         return response.data as AnthropicMessageResponse;
       } catch (error) {
         endStage(request, 'upstreamRequest');
@@ -579,6 +591,7 @@ export function createAnthropicHandlers(
           const result = await attemptFailover(services, body, requestId, altPlan, request, routingResult.canonicalName);
           if (result) {
             recordMetrics(request, altPlan, model, result);
+            rewriteModelField(result.data, model, routingResult.canonicalName);
             return result.data as AnthropicMessageResponse;
           }
           // attemptFailover returned null (failed) — refund the quota we charged.

@@ -442,4 +442,36 @@ describe('Anthropic Handlers - System Field Validation', () => {
       expect(response.statusCode).toBe(200);
     });
   });
+
+  describe('Model alias response rewrite (M8)', () => {
+    it('rewrites the response model field back to the requested alias (non-streaming)', async () => {
+      await repository.save(createMockPlanInput({
+        name: 'Aliased',
+        models: ['glm-5-turbo'],
+        modelAliases: { 'glm-5': 'glm-5-turbo' },
+      }));
+
+      vi.spyOn(proxy, 'forwardAnthropicRequest').mockResolvedValue({
+        // Upstream responds with the canonical model name.
+        data: { model: 'glm-5-turbo', content: [] } as never,
+        statusCode: 200,
+        headers: {},
+        durationMs: 5,
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'glm-5', // the alias the client requested
+          messages: [{ role: 'user', content: 'hi' }],
+          max_tokens: 64,
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      // Client asked for glm-5; the gateway must not leak the canonical name.
+      expect(response.json().model).toBe('glm-5');
+    });
+  });
 });
