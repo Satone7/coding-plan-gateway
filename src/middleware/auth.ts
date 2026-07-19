@@ -36,6 +36,8 @@ export interface AuthContext {
     id: string;
     name: string;
     prefix: string;
+    /** Whether this key may access the admin plane. */
+    isAdmin?: boolean;
   };
 }
 
@@ -196,6 +198,7 @@ function createAuthHook(options: AuthMiddlewareOptions) {
         id: apiKey.id,
         name: apiKey.name,
         prefix: apiKey.prefix,
+        isAdmin: apiKey.isAdmin,
       },
     };
 

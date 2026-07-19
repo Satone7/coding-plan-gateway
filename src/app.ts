@@ -84,7 +84,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   registerErrorHandler(app);
 
   // Register routes
-  const { repository, modelSyncService } = await registerRoutes(app, options.quotaManager, options.planUsageTracker, options.providerRegistry);
+  const { repository, modelSyncService } = await registerRoutes(app, options.quotaManager, options.planUsageTracker, options.providerRegistry, options.apiKeyManager);
 
   // Register internal API key routes if apiKeyManager is provided
   if (options.apiKeyManager) {

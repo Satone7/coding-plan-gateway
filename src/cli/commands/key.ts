@@ -49,9 +49,14 @@ async function handleCreate(
     console.error(formatter.formatError(
       createCliError('validation', '--name is required for create command', CLI_EXIT_CODES.GENERAL_ERROR)
     ));
-    console.error('Usage: cpg key create --name "My Key" [--expires 2026-12-31]');
+    console.error('Usage: cpg key create --name "My Key" [--expires 2026-12-31] [--admin]');
     exit(CLI_EXIT_CODES.GENERAL_ERROR);
   }
+
+  // --admin grants access to the admin plane (/api/admin/*). Used to bootstrap
+  // admin enforcement: once at least one admin key exists, regular keys are
+  // blocked from the admin plane.
+  const isAdmin = options.admin === true;
 
   // Parse expiration date if provided
   let expiresAt: Date | undefined;
@@ -73,7 +78,7 @@ async function handleCreate(
   }
 
   try {
-    const result = await manager.createKey({ name, expiresAt });
+    const result = await manager.createKey({ name, expiresAt, isAdmin });
     console.log(formatter.formatKeyCreate(result));
 
     // Notify gateway of the new key
