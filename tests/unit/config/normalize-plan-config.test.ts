@@ -320,6 +320,30 @@ describe('loadConfig autoUpgrade', () => {
     expect(updated).not.toContain('quota:');  // usage-API provider strips quota
   });
 
+  it('persists a user-set openaiBaseUrl that differs from the preset (H2)', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'cpg-test-'));
+    const configPath = join(tempDir, 'config.yaml');
+
+    const yaml = [
+      'version: 2',
+      'plans:',
+      '  - id: 1',
+      '    name: Dual-format Zhipu',
+      '    provider: zhipu',
+      '    baseUrl: https://open.bigmodel.cn/api/anthropic',
+      '    openaiBaseUrl: https://proxy.example.com/v1',
+      '    apiKey: test-key',
+    ].join('\n');
+
+    await writeFile(configPath, yaml, 'utf-8');
+    await loadConfig(configPath, undefined, { autoUpgrade: true });
+
+    const updated = await readFile(configPath, 'utf-8');
+    // baseUrl matches the preset → stripped; openaiBaseUrl differs → preserved.
+    expect(updated).not.toContain('baseUrl: https://open.bigmodel');
+    expect(updated).toContain('openaiBaseUrl: https://proxy.example.com/v1');
+  });
+
   it('does not persist when no enrichment is needed', async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'cpg-test-'));
     const configPath = join(tempDir, 'config.yaml');
