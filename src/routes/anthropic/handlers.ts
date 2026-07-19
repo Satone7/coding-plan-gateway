@@ -175,6 +175,32 @@ async function fetchApiKey(
 }
 
 /**
+ * Extract client-side query string and Anthropic beta headers to forward to
+ * the upstream. The gateway previously rebuilt the upstream URL and headers
+ * from scratch, dropping ?beta=true and the client's anthropic-version /
+ * anthropic-beta headers, which silently disabled beta-gated features.
+ */
+function passthroughOpts(request: FastifyRequest): {
+  queryString?: string;
+  passthroughHeaders?: Record<string, string>;
+} {
+  const qIndex = request.url.indexOf('?');
+  const queryString = qIndex >= 0 ? request.url.slice(qIndex + 1) : undefined;
+  const headers = request.headers;
+  const passthroughHeaders: Record<string, string> = {};
+  if (headers['anthropic-version']) {
+    passthroughHeaders['anthropic-version'] = String(headers['anthropic-version']);
+  }
+  if (headers['anthropic-beta']) {
+    passthroughHeaders['anthropic-beta'] = String(headers['anthropic-beta']);
+  }
+  return {
+    queryString,
+    passthroughHeaders: Object.keys(passthroughHeaders).length > 0 ? passthroughHeaders : undefined,
+  };
+}
+
+/**
  * Attach provider metrics and log response.
  */
 function recordMetrics(
@@ -265,6 +291,7 @@ async function attemptFailover(
       apiKey,
       timeout: plan.timeout,
       requestId,
+      ...passthroughOpts(request),
     });
     endStage(request, 'upstreamRequest');
     services.router.markPlanSuccess(plan.id);
@@ -390,7 +417,7 @@ export function createAnthropicHandlers(
         try {
           await proxy.forwardAnthropicStream(
             body,
-            { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
+            { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId, ...passthroughOpts(request) },
             (_chunk, done) => {
               if (done) {
                 endStage(request, 'upstreamRequest');
@@ -453,7 +480,7 @@ export function createAnthropicHandlers(
                 startStage(request, 'upstreamRequest');
                 await proxy.forwardAnthropicStream(
                   body,
-                  { baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId },
+                  { baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId, ...passthroughOpts(request) },
                   (_chunk, done) => {
                     if (done) {
                       endStage(request, 'upstreamRequest');
@@ -516,7 +543,7 @@ export function createAnthropicHandlers(
       startStage(request, 'upstreamRequest');
       try {
         const response = await proxy.forwardAnthropicRequest(body, {
-          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId, ...passthroughOpts(request),
         });
         endStage(request, 'upstreamRequest');
         router.markPlanSuccess(plan.id);
@@ -612,7 +639,7 @@ export function createAnthropicHandlers(
       startStage(request, 'upstreamRequest');
       try {
         const response = await proxy.forwardAnthropicCountTokensRequest(body, {
-          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId, ...passthroughOpts(request),
         });
         endStage(request, 'upstreamRequest');
         // Do not mark circuit breaker success/failure for count_tokens to avoid skewing stats
@@ -677,7 +704,7 @@ export function createAnthropicHandlers(
           startStage(request, 'upstreamRequest');
           try {
             const result = await proxy.forwardAnthropicCountTokensRequest(body, {
-              baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId
+              baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId, ...passthroughOpts(request),
             });
             endStage(request, 'upstreamRequest');
             

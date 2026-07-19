@@ -33,6 +33,18 @@ export interface ProxyRequestOptions {
   timeout?: number;
   /** Request ID for tracing */
   requestId?: string;
+  /**
+   * Client query string to forward to the upstream (e.g. "beta=true"), without
+   * the leading '?'. Some providers gate features (Anthropic beta) on query
+   * params that the gateway otherwise dropped when rebuilding the URL.
+   */
+  queryString?: string;
+  /**
+   * Client headers to pass through to the upstream (e.g. anthropic-version,
+   * anthropic-beta). Merged on top of the gateway's defaults so the client's
+   * values win.
+   */
+  passthroughHeaders?: Record<string, string>;
 }
 
 /**
@@ -359,7 +371,8 @@ export class RequestProxy {
     
     // Support both baseUrl with and without /v1
     const urlPath = basePath.endsWith('/v1') ? '/messages' : '/v1/messages';
-    const url = new URL(`${basePath}${urlPath}`);
+    const qs = options.queryString ? `?${options.queryString.replace(/^\?/, '')}` : '';
+    const url = new URL(`${basePath}${urlPath}${qs}`);
     const startTime = Date.now();
 
     logger.debug('Forwarding Anthropic request', {
@@ -379,6 +392,7 @@ export class RequestProxy {
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
+        ...options.passthroughHeaders,
       },
     });
 
@@ -406,7 +420,8 @@ export class RequestProxy {
     
     // Support both baseUrl with and without /v1
     const urlPath = basePath.endsWith('/v1') ? '/messages/count_tokens' : '/v1/messages/count_tokens';
-    const url = new URL(`${basePath}${urlPath}`);
+    const qs = options.queryString ? `?${options.queryString.replace(/^\?/, '')}` : '';
+    const url = new URL(`${basePath}${urlPath}${qs}`);
     const startTime = Date.now();
 
     logger.debug('Forwarding Anthropic count tokens request', {
@@ -425,6 +440,7 @@ export class RequestProxy {
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
+        ...options.passthroughHeaders,
       },
     });
 
@@ -455,7 +471,8 @@ export class RequestProxy {
     
     // Support both baseUrl with and without /v1
     const urlPath = basePath.endsWith('/v1') ? '/messages' : '/v1/messages';
-    const url = new URL(`${basePath}${urlPath}`);
+    const qs = options.queryString ? `?${options.queryString.replace(/^\?/, '')}` : '';
+    const url = new URL(`${basePath}${urlPath}${qs}`);
     const startTime = Date.now();
 
     logger.debug('Forwarding Anthropic streaming request', {
@@ -475,6 +492,7 @@ export class RequestProxy {
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
+        ...options.passthroughHeaders,
       },
       reply,
       onComplete: (tokenUsage, accumulatedText) => {
