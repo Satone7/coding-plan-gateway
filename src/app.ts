@@ -58,6 +58,12 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   const host = options.host ?? DEFAULT_SERVER_CONFIG.host;
   const logLevel = options.logLevel ?? DEFAULT_SERVER_CONFIG.logLevel;
 
+  // Body size limit. 500 MiB previously let a few concurrent oversized bodies
+  // OOM the (router-host) container; AI payloads with base64 images realistically
+  // need tens of MB. Default 64 MiB, overridable via BODY_LIMIT_MB.
+  const bodyLimitMb = Number(process.env.BODY_LIMIT_MB);
+  const bodyLimitBytes = (Number.isFinite(bodyLimitMb) && bodyLimitMb > 0 ? bodyLimitMb : 64) * 1024 * 1024;
+
   // Create Fastify instance
   const app = Fastify({
     logger: false, // We use our own logger
@@ -65,7 +71,12 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     requestIdLogLabel: 'requestId',
     ignoreTrailingSlash: true,
     maxParamLength: 100,
-    bodyLimit: 524288000, // 500 MiB — large enough for AI payloads, guards against DoS
+    bodyLimit: bodyLimitBytes,
+    // Close open connections during shutdown so app.close() (and the quota/usage
+    // onClose persist hooks) completes within the docker SIGTERM grace window,
+    // instead of hanging on long-lived SSE streams until SIGKILL drops the final
+    // sync period of state.
+    forceCloseConnections: true,
     ...options,
   });
 
@@ -84,7 +95,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   registerErrorHandler(app);
 
   // Register routes
-  const { repository, modelSyncService } = await registerRoutes(app, options.quotaManager, options.planUsageTracker, options.providerRegistry);
+  const { repository, modelSyncService } = await registerRoutes(app, options.quotaManager, options.planUsageTracker, options.providerRegistry, options.apiKeyManager);
 
   // Register internal API key routes if apiKeyManager is provided
   if (options.apiKeyManager) {

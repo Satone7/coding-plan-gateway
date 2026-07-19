@@ -13,6 +13,7 @@ import { RequestProxy } from '@/services/request-proxy';
 import { QuotaManager } from '@/services/quota-manager';
 import type { ProviderRegistry } from '@/services/provider-registry';
 import { logger } from '@/utils/logger';
+import { isRetryableUpstreamError } from '@/utils/retryable-error';
 import { createGatewayError } from '@/types';
 import {
   attachProviderMetrics,
@@ -218,21 +219,8 @@ function recordMetrics(
 
 /**
  * Whether an upstream error is worth retrying on an alternative plan.
- *
- * Retryable status codes:
- * - 400 (Bad Request): upstream may reject due to plan-specific limits
- *   (e.g. context window too small) that another plan may satisfy.
- * - 429 (Too Many Requests): rate limit / quota exceeded on this plan,
- *   another plan may still have capacity.
- *
- * Deterministic client errors (401, 403, 404, 405, etc.) are NOT retryable
- * because they indicate a misconfiguration that affects all plans equally
- * (bad API key, missing endpoint, etc.).
+ * Shared with the Anthropic handler — see `src/utils/retryable-error.ts`.
  */
-function isRetryableUpstreamError(err: unknown): boolean {
-  const statusCode = (err as { statusCode?: number }).statusCode;
-  return statusCode === 400 || statusCode === 429;
-}
 
 /**
  * Attempt failover to an alternative plan.
@@ -430,6 +418,12 @@ export function createOpenAIHandlers(
               if (!router.getCircuitBreaker().canExecute(altPlan.id) || !altPlan.openaiBaseUrl) {
                 continue;
               }
+              // Charge the alternative plan for the request it is about to serve.
+              // The matching refund on failure below makes this net-zero if the
+              // attempt fails, so the serving plan is the only one charged.
+              if (quotaManager && !quotaManager.consumeQuota(altPlan.id)) {
+                continue; // alternative exhausted — try the next one
+              }
               logger.info('Attempting streaming failover', {
                 requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id,
               });
@@ -523,12 +517,21 @@ export function createOpenAIHandlers(
           if (!router.getCircuitBreaker().canExecute(altPlan.id)) {
             continue;
           }
+          // Charge the alternative plan for the request it is about to serve;
+          // refund below if the attempt fails (net-zero for a failed attempt).
+          if (quotaManager && !quotaManager.consumeQuota(altPlan.id)) {
+            continue; // alternative exhausted — try the next one
+          }
 
           logger.info('Attempting failover', { requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id });
           const result = await attemptFailover(services, body, requestId, altPlan, request, routingResult.canonicalName);
           if (result) {
             recordMetrics(request, altPlan, model, result);
             return result.data as ChatCompletionResponse;
+          }
+          // attemptFailover returned null (failed) — refund the quota we charged.
+          if (quotaManager) {
+            quotaManager.refundQuota(altPlan.id);
           }
         }
 

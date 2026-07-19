@@ -115,11 +115,19 @@ export const BCRYPT_COST_FACTOR = 12;
 
 /**
  * Default auth configuration.
+ *
+ * `authExemptPaths` is intentionally narrow. Only health/readiness probes and
+ * the gateway's self-reload notification (`/api/internal/reload`, invoked by
+ * GatewayNotifier over loopback after a config/key change) are unauthenticated.
+ * The internal key-management and usage-report endpoints
+ * (`/api/internal/keys*`, `/api/internal/usage/*`) require a valid client key —
+ * leaving them exempt would let anyone who can reach the port mint or delete
+ * API keys without credentials. Operators can override via AUTH_EXEMPT_PATHS.
  */
 export const DEFAULT_AUTH_CONFIG = {
   apiKeysPath: './api-keys.json',
   usageDataPath: './usage-data.json',
-  authExemptPaths: '/health,/ready,/api/internal/*,/api/admin/quota/*/sync,/api/v1/models,/api/v1/models/*',
+  authExemptPaths: '/health,/ready,/api/internal/reload,/api/admin/quota/*/sync,/api/v1/models,/api/v1/models/*',
   usageSyncIntervalMs: 60000, // 60 seconds
 };
 

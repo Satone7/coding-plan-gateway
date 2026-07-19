@@ -26,11 +26,14 @@ export const planIdSchema = z.number()
 
 /**
  * Plan ID string schema (for URL params).
- * Parses string to integer and validates.
+ * Rejects non-numeric input (e.g. "13abc", "1e2") instead of leniently
+ * parseInt-ing the prefix, which previously made DELETE /api/admin/plans/13-old
+ * target plan 13. Requires a pure-digit string, then coerces to an integer.
  */
 export const planIdParamSchema = z.string()
+  .regex(/^\d+$/, { message: 'Plan ID must be a positive integer' })
   .transform((val) => parseInt(val, 10))
-  .refine((val) => !isNaN(val) && val > 0 && val <= Number.MAX_SAFE_INTEGER, {
+  .refine((val) => val > 0 && val <= Number.MAX_SAFE_INTEGER, {
     message: 'Plan ID must be a positive integer',
   });
 

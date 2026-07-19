@@ -344,4 +344,55 @@ describe('Authentication Flow Integration Tests', () => {
       expect(validated?.name).toBe('Persistent Key');
     });
   });
+
+  describe('Internal route authentication (C3 regression)', () => {
+    beforeEach(async () => {
+      apiKeyManager = createApiKeyManager({ apiKeysPath: keysPath });
+      await apiKeyManager.initialize();
+      // Uses the REAL default exempt list (no config override).
+      registerAuthMiddleware(app, { apiKeyManager });
+
+      // Sensitive internal endpoints (key CRUD) ...
+      app.post('/api/internal/keys', async () => ({ created: true }));
+      app.get('/api/internal/keys/:keyId', async () => ({ key: 'ok' }));
+      // ... and the loopback self-reload notification.
+      app.post('/api/internal/reload', async () => ({ reloaded: true }));
+    });
+
+    it('rejects unauthenticated POST /api/internal/keys (no longer exempt)', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/internal/keys',
+        payload: { name: 'sneaky' },
+      });
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('rejects unauthenticated GET /api/internal/keys/:id', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/internal/keys/abc-123',
+      });
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('still allows the loopback self-reload without auth', async () => {
+      // GatewayNotifier calls this over localhost after a config/key change.
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/internal/reload',
+        payload: { type: 'config' },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ reloaded: true });
+    });
+
+    it('treats an exempt path with a query string as exempt (M10)', async () => {
+      app.get('/health', async () => ({ ok: true }));
+      // /health is exempt by default; a cache-busting query must not turn it into a 401.
+      const response = await app.inject({ method: 'GET', url: '/health?probe=1&ts=42' });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ ok: true });
+    });
+  });
 });

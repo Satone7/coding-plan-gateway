@@ -161,6 +161,7 @@ export class ApiKeyManager {
       keyHash,
       prefix,
       status: 'active',
+      isAdmin: input.isAdmin ?? false,
       createdAt: new Date(),
       expiresAt: input.expiresAt,
     };
@@ -176,9 +177,25 @@ export class ApiKeyManager {
       id: key.id,
       name: key.name,
       prefix: key.prefix,
+      isAdmin: key.isAdmin,
     });
 
     return { plaintextKey, key };
+  }
+
+  /**
+   * Whether at least one active admin-scoped key exists. Used by the admin
+   * plane to decide whether to enforce admin-only access (bootstrap mode:
+   * until the first admin key is created, the plane stays open to any valid
+   * key so a fresh deploy is not locked out).
+   */
+  hasAdminKeys(): boolean {
+    for (const key of this.keys.values()) {
+      if (key.isAdmin && key.status === 'active') {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

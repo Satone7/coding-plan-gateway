@@ -12,6 +12,7 @@ import { createPlanRepository, type IPlanRepository } from '@/services/plan-repo
 import { createPlanIdCounter } from '@/services/plan-id-counter';
 import { isMigrationNeeded, performMigration } from '@/migration/uuid-to-int';
 import type { QuotaManager } from '@/services/quota-manager';
+import type { ApiKeyManager } from '@/services/api-key-manager';
 import type { PlanUsageTracker } from '@/services/plan-usage-tracker';
 import type { ProviderRegistry } from '@/services/provider-registry';
 import { createRequestProxy } from '@/services/request-proxy';
@@ -31,7 +32,8 @@ export async function registerRoutes(
   app: FastifyInstance,
   quotaManager?: QuotaManager,
   planUsageTracker?: PlanUsageTracker,
-  providerRegistry?: ProviderRegistry
+  providerRegistry?: ProviderRegistry,
+  apiKeyManager?: ApiKeyManager
 ): Promise<{ repository: IPlanRepository; modelSyncService: ModelSyncService }> {
   logger.info('Registering routes...');
 
@@ -153,6 +155,7 @@ export async function registerRoutes(
     quotaManager,
     planUsageTracker,
     providerRegistry,
+    apiKeyManager,
     prefix: '/api/admin',
   });
 

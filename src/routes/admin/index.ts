@@ -9,6 +9,7 @@ import { IPlanRepository } from '@/services/plan-repository';
 import type { QuotaManager } from '@/services/quota-manager';
 import type { PlanUsageTracker } from '@/services/plan-usage-tracker';
 import type { ProviderRegistry } from '@/services/provider-registry';
+import type { ApiKeyManager } from '@/services/api-key-manager';
 
 /**
  * Options for admin routes.
@@ -22,6 +23,8 @@ export interface AdminRoutesOptions {
   planUsageTracker?: PlanUsageTracker;
   /** Provider registry for custom-provider lookups during plan creation (optional) */
   providerRegistry?: ProviderRegistry;
+  /** API key manager, used to enforce admin-only access (optional) */
+  apiKeyManager?: ApiKeyManager;
   /** API prefix (default: '/api') */
   prefix?: string;
 }
@@ -36,11 +39,30 @@ export async function registerAdminRoutes(
   app: FastifyInstance,
   options: AdminRoutesOptions
 ): Promise<void> {
-  const { repository, quotaManager, planUsageTracker, providerRegistry, prefix = '/api' } = options;
+  const { repository, quotaManager, planUsageTracker, providerRegistry, apiKeyManager, prefix = '/api' } = options;
   const handlers = createAdminHandlers(repository, quotaManager, planUsageTracker, providerRegistry);
 
   await app.register(
     (fastify, _options, done) => {
+      // Admin-plane authorization gate (bootstrap mode). Once at least one
+      // admin-scoped key exists, only admin keys may use this plane — so a
+      // regular data-plane key cannot rewrite plan baseUrl/apiKey or reset
+      // quotas. Until the first admin key is created (fresh deploy or legacy
+      // keys), the plane stays open to any valid key to avoid a lockout.
+      if (apiKeyManager) {
+        fastify.addHook('preHandler', async (request, reply) => {
+          if (apiKeyManager.hasAdminKeys() && !request.auth?.apiKey?.isAdmin) {
+            return reply.code(403).send({
+              error: {
+                message: 'Admin privileges required for this endpoint',
+                type: 'authorization_error',
+                code: 'FORBIDDEN',
+              },
+            });
+          }
+        });
+      }
+
       // Plan CRUD endpoints
       // GET /api/plans - List all plans
       fastify.get('/plans', handlers.listPlans);

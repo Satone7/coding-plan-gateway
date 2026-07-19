@@ -36,6 +36,8 @@ export interface AuthContext {
     id: string;
     name: string;
     prefix: string;
+    /** Whether this key may access the admin plane. */
+    isAdmin?: boolean;
   };
 }
 
@@ -143,7 +145,10 @@ function createAuthHook(options: AuthMiddlewareOptions) {
 
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     const requestId = request.id;
-    const path = request.url;
+    // Match on the pathname only: request.url includes the query string, so an
+    // exact-match exempt path like /health returned 401 for /health?probe=1
+    // (fail-closed) and made health probes that append a cache-buster fail.
+    const path = request.url.split('?')[0] ?? request.url;
 
     // Check if path is exempt from authentication
     if (isExemptPath(path, exemptPaths)) {
@@ -196,6 +201,7 @@ function createAuthHook(options: AuthMiddlewareOptions) {
         id: apiKey.id,
         name: apiKey.name,
         prefix: apiKey.prefix,
+        isAdmin: apiKey.isAdmin,
       },
     };
 

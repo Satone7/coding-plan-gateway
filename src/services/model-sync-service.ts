@@ -25,11 +25,23 @@ export interface ModelSyncDeps {
 
 const DEFAULT_INTERVAL_MS = 300_000; // 5 minutes
 const DEFAULT_EXCLUDE_SUBSTRINGS = ['embed'];
+/** Per-fetch timeout. A hung upstream (firewall DROP, stuck server) would
+ * otherwise hold a socket until undici's ~300s default headers timeout. */
+const FETCH_TIMEOUT_MS = 30_000;
+/**
+ * After this many consecutive sync failures, clear the plan's stale model
+ * list so routing stops selecting a (likely dead) upstream. A transient
+ * failure does not clear; a sustained outage does.
+ */
+const STALE_CLEAR_THRESHOLD = 3;
 
 export class ModelSyncService {
   private readonly intervalMs: number;
   private readonly defaultExcludes: string[];
   private timer: NodeJS.Timeout | null = null;
+  private readonly consecutiveFailures = new Map<number, number>();
+  /** Reentrancy guard: skip a scheduled tick if the previous syncAll is still running. */
+  private syncing = false;
 
   constructor(private readonly deps: ModelSyncDeps) {
     this.intervalMs =
@@ -44,6 +56,22 @@ export class ModelSyncService {
    * and skipped without aborting the remaining plans.
    */
   async syncAll(): Promise<void> {
+    // Guard against overlapping runs: setInterval does not wait for the
+    // previous async syncAll to finish, so a slow/hung cycle could otherwise
+    // stack concurrent passes that all mutate plan models.
+    if (this.syncing) {
+      logger.debug('Model sync already in progress; skipping tick');
+      return;
+    }
+    this.syncing = true;
+    try {
+      await this.syncAllInner();
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  private async syncAllInner(): Promise<void> {
     const plans = await this.deps.repository.findAll();
     for (const plan of plans) {
       if (!plan.dynamicModels) {
@@ -51,12 +79,28 @@ export class ModelSyncService {
       }
       try {
         await this.syncPlan(plan);
+        this.consecutiveFailures.delete(plan.id); // success resets the streak
       } catch (err) {
+        const failures = (this.consecutiveFailures.get(plan.id) ?? 0) + 1;
+        this.consecutiveFailures.set(plan.id, failures);
         logger.warn('Dynamic model sync failed for plan', {
           planId: plan.id,
           planName: plan.name,
           error: err instanceof Error ? err.message : String(err),
+          consecutiveFailures: failures,
         });
+        // A sustained outage (e.g. an upstream host that is down) would otherwise
+        // leave the last-good model list in place indefinitely, so routing keeps
+        // selecting the dead plan and every matched request fails at the proxy.
+        // Clear the list after repeated failures so the plan stops matching.
+        if (failures >= STALE_CLEAR_THRESHOLD) {
+          await this.deps.repository.updateModelsInMemory(plan.id, []);
+          logger.warn('Cleared stale dynamic model list after repeated sync failures', {
+            planId: plan.id,
+            planName: plan.name,
+            consecutiveFailures: failures,
+          });
+        }
       }
     }
   }
@@ -79,6 +123,7 @@ export class ModelSyncService {
         Accept: 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
 
     if (!response.ok) {

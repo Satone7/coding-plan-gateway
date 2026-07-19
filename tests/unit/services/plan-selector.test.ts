@@ -3,10 +3,27 @@
  * Tests plan selection logic based on model availability and quota.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { PlanSelector, createPlanSelector } from '@/services/plan-selector';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { PlanSelector, createPlanSelector, resetStrategyState } from '@/services/plan-selector';
+import { logger } from '@/utils/logger';
 import { createMockPlans, createMockQuotaStates } from '../../fixtures/mock-plans';
 import type { CodingPlan, QuotaState } from '@/types';
+
+/** Build a minimal active plan that serves `model`, with optional weight. */
+function makeWrrPlan(id: number, model: string, weight?: number): CodingPlan {
+  return {
+    id,
+    name: `plan-${id}`,
+    provider: 'custom',
+    baseUrl: 'https://example.test',
+    apiKeyEncrypted: 'key',
+    models: [model],
+    quota: { limit: 1000, period: 'total' },
+    status: 'active',
+    enable: true,
+    weight,
+  } as unknown as CodingPlan;
+}
 
 describe('PlanSelector', () => {
   let planSelector: PlanSelector;
@@ -361,6 +378,140 @@ describe('PlanSelector', () => {
         expect(remaining).toBeLessThanOrEqual(prevRemaining);
         prevRemaining = remaining;
       }
+    });
+  });
+
+  describe('weighted-round-robin strategy', () => {
+    // Regression: the previous WRR implementation always awarded ties to the
+    // first plan in config order and reset a plan's counter to full weight the
+    // instant it hit zero, so two equally-weighted plans degenerated to
+    // "first plan wins 100%" — the second plan was never selected.
+    it('distributes requests evenly across two equally-weighted plans', () => {
+      resetStrategyState();
+      const selector = createPlanSelector({ strategy: 'weighted-round-robin' });
+      const plans: CodingPlan[] = [
+        makeWrrPlan(13, 'k3'),
+        makeWrrPlan(14, 'k3'),
+      ];
+      const counts = new Map<number, number>([[13, 0], [14, 0]]);
+      for (let i = 0; i < 20; i++) {
+        const picked = selector.selectBestPlan({
+          model: 'k3',
+          plans,
+          quotaStates: new Map(),
+          config: { strategy: 'weighted-round-robin' },
+        });
+        counts.set(picked!.id, (counts.get(picked!.id) ?? 0) + 1);
+      }
+      // Both plans must receive traffic — the old bug gave plan 13 all 20.
+      expect(counts.get(13)).toBeGreaterThan(0);
+      expect(counts.get(14)).toBeGreaterThan(0);
+      // Smooth WRR alternates: exactly half each over an even run.
+      expect(counts.get(13)).toBe(10);
+      expect(counts.get(14)).toBe(10);
+    });
+
+    it('distributes requests proportionally to plan weights', () => {
+      resetStrategyState();
+      const selector = createPlanSelector({ strategy: 'weighted-round-robin' });
+      const plans: CodingPlan[] = [
+        makeWrrPlan(13, 'k3', 3),
+        makeWrrPlan(14, 'k3', 1),
+      ];
+      const counts = new Map<number, number>([[13, 0], [14, 0]]);
+      for (let i = 0; i < 40; i++) {
+        const picked = selector.selectBestPlan({
+          model: 'k3',
+          plans,
+          quotaStates: new Map(),
+          config: { strategy: 'weighted-round-robin' },
+        });
+        counts.set(picked!.id, (counts.get(picked!.id) ?? 0) + 1);
+      }
+      // 3:1 ratio over 40 selections → 30 vs 10.
+      expect(counts.get(13)).toBe(30);
+      expect(counts.get(14)).toBe(10);
+    });
+
+    it('never selects a weight-0 plan when a positive-weight plan exists', () => {
+      resetStrategyState();
+      const selector = createPlanSelector({ strategy: 'weighted-round-robin' });
+      const plans: CodingPlan[] = [
+        makeWrrPlan(13, 'k3', 1),
+        makeWrrPlan(14, 'k3', 0), // failover-only
+      ];
+      const counts = new Map<number, number>([[13, 0], [14, 0]]);
+      for (let i = 0; i < 10; i++) {
+        const picked = selector.selectBestPlan({
+          model: 'k3',
+          plans,
+          quotaStates: new Map(),
+          config: { strategy: 'weighted-round-robin' },
+        });
+        counts.set(picked!.id, (counts.get(picked!.id) ?? 0) + 1);
+      }
+      expect(counts.get(13)).toBe(10);
+      expect(counts.get(14)).toBe(0);
+    });
+  });
+
+  describe('weight=0 failover-only across strategies (M1)', () => {
+    it('excludes a weight-0 plan from primary selection under quota-priority even if it scores higher', () => {
+      resetStrategyState();
+      // Default strategy is quota-priority. Give the weight-0 plan a much
+      // larger remaining quota so it would win on score alone.
+      const highQuota = (id: number, weight?: number): CodingPlan => ({
+        ...makeWrrPlan(id, 'k3', weight),
+        quota: { limit: 1_000_000, period: 'total' },
+      }) as CodingPlan;
+      const plans: CodingPlan[] = [
+        highQuota(13, 1),
+        highQuota(14, 0), // failover-only despite huge quota
+      ];
+      const selector = createPlanSelector(); // default quota-priority
+      for (let i = 0; i < 10; i++) {
+        const picked = selector.selectBestPlan({
+          model: 'k3',
+          plans,
+          quotaStates: new Map(),
+          config: { strategy: 'quota-priority', factorWeights: { expiration: 0.4, rpm: 0.4, quota: 0.2 } },
+        });
+        expect(picked?.id).toBe(13);
+      }
+    });
+
+    it('still selects a weight-0 plan when it is the only candidate', () => {
+      resetStrategyState();
+      const plans: CodingPlan[] = [makeWrrPlan(14, 'k3', 0)];
+      const selector = createPlanSelector();
+      const picked = selector.selectBestPlan({
+        model: 'k3',
+        plans,
+        quotaStates: new Map(),
+        config: { strategy: 'quota-priority', factorWeights: { expiration: 0.4, rpm: 0.4, quota: 0.2 } },
+      });
+      expect(picked?.id).toBe(14);
+    });
+  });
+
+  describe('factorWeights warning (M2)', () => {
+    it('does not warn under quota-priority with custom factorWeights', () => {
+      resetStrategyState();
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      createPlanSelector({ strategy: 'quota-priority', factorWeights: { expiration: 0.5, rpm: 0.3, quota: 0.2 } });
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('warns when custom factorWeights are set under a non-scoring strategy', () => {
+      resetStrategyState();
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      createPlanSelector({ strategy: 'weighted-round-robin', factorWeights: { expiration: 0.5, rpm: 0.3, quota: 0.2 } });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('factorWeights is configured but the active strategy ignores it'),
+        expect.anything(),
+      );
+      warnSpy.mockRestore();
     });
   });
 });

@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { QuotaManager, createQuotaManager } from '@/services/quota-manager';
 import type { QuotaState } from '@/types';
-import { calculateResetAt, createInitialQuotaState } from '@/types';
+import { calculateResetAt, createInitialQuotaState, advanceResetAtForElapsed } from '@/types';
 import { createMockPlans, createMockQuotaStates } from '../../fixtures/mock-plans';
 import { writeFile, readFile, mkdir, rmdir } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -267,6 +267,111 @@ describe('QuotaManager', () => {
     });
   });
 
+  describe('period reconciliation (C5/H4)', () => {
+    it('restarts the window when the persisted period differs from config', async () => {
+      const plans = createMockPlans();
+      const plan = plans[0];
+      // Persist a stale state with a DIFFERENT period (monthly) and some used.
+      const stale: QuotaState = {
+        planId: plan.id,
+        used: 42,
+        limit: plan.quota.limit,
+        period: 'monthly',
+        lastUpdated: new Date(),
+        resetAt: calculateResetAt('monthly'),
+      };
+      await writeFile(
+        quotaPath,
+        JSON.stringify({
+          version: '1.0',
+          lastSync: new Date().toISOString(),
+          states: { [plan.id]: { ...stale, lastUpdated: stale.lastUpdated.toISOString(), resetAt: stale.resetAt?.toISOString() ?? null } },
+        }),
+        'utf-8'
+      );
+
+      await quotaManager.initialize(plans);
+
+      const state = quotaManager.getQuotaState(plan.id);
+      // Period follows config; used is reset because the window restarted.
+      expect(state?.period).toEqual(plan.quota.period);
+      expect(state?.used).toBe(0);
+    });
+
+    it('keeps persisted used when the period is unchanged', async () => {
+      const plans = createMockPlans();
+      const plan = plans[0];
+      const stale: QuotaState = {
+        planId: plan.id,
+        used: 42,
+        limit: 1000,
+        period: plan.quota.period,
+        lastUpdated: new Date(),
+        resetAt: calculateResetAt(plan.quota.period),
+      };
+      await writeFile(
+        quotaPath,
+        JSON.stringify({
+          version: '1.0',
+          lastSync: new Date().toISOString(),
+          states: { [plan.id]: { ...stale, lastUpdated: stale.lastUpdated.toISOString(), resetAt: stale.resetAt?.toISOString() ?? null } },
+        }),
+        'utf-8'
+      );
+
+      await quotaManager.initialize(plans);
+
+      const state = quotaManager.getQuotaState(plan.id);
+      expect(state?.used).toBe(42); // preserved
+      expect(state?.limit).toBe(plan.quota.limit); // refreshed from config
+    });
+
+    it('reconcilePlanQuota restarts the window on period change at runtime', async () => {
+      const plans = createMockPlans();
+      const plan = plans[0];
+      await quotaManager.initialize(plans);
+      // Burn some quota.
+      await quotaManager.consumeQuota(plan.id, 10);
+      expect(quotaManager.getQuotaState(plan.id)?.used).toBe(10);
+
+      quotaManager.reconcilePlanQuota(plan.id, { limit: plan.quota.limit, period: 'total' });
+
+      const state = quotaManager.getQuotaState(plan.id);
+      expect(state?.period).toBe('total');
+      expect(state?.used).toBe(0); // window restarted
+    });
+  });
+
+  describe('periodic quota reset (C5)', () => {
+    it('resets elapsed quotas on the periodic sync tick, not only at init', async () => {
+      vi.useFakeTimers();
+      try {
+        const manager = createQuotaManager({ quotaStatePath: quotaPath, syncIntervalMs: 1000 });
+        // Stub file persistence so the test exercises only the in-memory reset
+        // logic without racing real file IO against cleanup.
+        vi.spyOn(manager as unknown as { persist: () => Promise<void> }, 'persist')
+          .mockResolvedValue(undefined);
+
+        const plans = createMockPlans();
+        const plan = plans[0];
+        await manager.initialize(plans);
+        await manager.consumeQuota(plan.id, 5);
+        expect(manager.getQuotaState(plan.id)?.used).toBe(5);
+
+        // Force the resetAt into the past so a reset is due.
+        manager.getQuotaState(plan.id)!.resetAt = new Date(Date.now() - 60_000);
+
+        manager.startPeriodicSync();
+        await vi.advanceTimersByTimeAsync(1000);
+        manager.stopPeriodicSync();
+
+        expect(manager.getQuotaState(plan.id)?.used).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   describe('removePlan', () => {
     it('should remove quota state for a plan', async () => {
       const plans = createMockPlans();
@@ -505,6 +610,33 @@ describe('calculateResetAt (structured QuotaPeriod)', () => {
       const result = calculateResetAt({ type: 'total' });
       expect(result).toBeNull();
     });
+  });
+});
+
+describe('advanceResetAtForElapsed (M4 sliding-window catch-up)', () => {
+  const windowMs = 5 * 60 * 60 * 1000;
+
+  it('advances a single window when less than one window has elapsed', () => {
+    const from = new Date(Date.now() - 0.5 * windowMs); // half a window ago
+    const now = new Date();
+    const next = advanceResetAtForElapsed({ type: '5h', windowHours: 5, sliding: true }, from, now);
+    expect(next).not.toBeNull();
+    expect(next!.getTime()).toBe(from.getTime() + windowMs);
+    expect(next!.getTime()).toBeGreaterThan(now.getTime());
+  });
+
+  it('catches up multiple windows in one step (downtime > one window)', () => {
+    const from = new Date(Date.now() - 3.2 * windowMs); // ~3 windows behind
+    const now = new Date();
+    const next = advanceResetAtForElapsed({ type: '5h', windowHours: 5, sliding: true }, from, now);
+    expect(next).not.toBeNull();
+    expect(next!.getTime()).toBe(from.getTime() + 4 * windowMs); // 4 steps lands in the future
+    expect(next!.getTime()).toBeGreaterThan(now.getTime());
+  });
+
+  it('returns null for total periods', () => {
+    const next = advanceResetAtForElapsed({ type: 'total' }, new Date(), new Date());
+    expect(next).toBeNull();
   });
 });
 

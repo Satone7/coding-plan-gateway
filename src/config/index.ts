@@ -202,6 +202,18 @@ export function normalizePlanConfig(
     const matched = getBuiltinProviderByBaseUrl(normalized.baseUrl);
     if (matched) {
       normalized.provider = matched.id;
+      // Surface the reclassification: assigning a built-in preset can change
+      // runtime behavior (dynamicModels, usage-API quota enforcement) even
+      // though the user did not write `provider:` in config. Logging avoids
+      // the previously-silent switch that surprised operators on upgrade.
+      logger.info('Auto-detected provider from baseUrl', {
+        planId: normalized.id,
+        planName: normalized.name,
+        baseUrl: normalized.baseUrl,
+        provider: matched.id,
+        hasUsageApi: matched.hasUsageApi,
+        dynamicModels: matched.dynamicModels,
+      });
     }
   }
 
@@ -363,7 +375,7 @@ function cleanConfigForPersist(config: NormalizedConfig, rawPlans: PlanConfig[])
 }
 
 /** Strip preset-duplicated fields from a single plan. */
-function cleanPlanFields(plan: NormalizedPlanConfig, preset: { baseUrl: string; models: string[]; hasUsageApi: boolean; defaultModelAliases?: Record<string, string> }): PlanConfig {
+function cleanPlanFields(plan: NormalizedPlanConfig, preset: { baseUrl: string; openaiBaseUrl?: string; models: string[]; hasUsageApi: boolean; defaultModelAliases?: Record<string, string> }): PlanConfig {
   const result: PlanConfig = {
     id: plan.id,
     name: plan.name,
@@ -381,6 +393,14 @@ function cleanPlanFields(plan: NormalizedPlanConfig, preset: { baseUrl: string; 
   // Only include baseUrl if it differs from preset (models always from preset)
   if (plan.baseUrl !== preset.baseUrl) {
     result.baseUrl = plan.baseUrl;
+  }
+
+  // Preserve a user-set openaiBaseUrl that differs from the preset. Previously
+  // this field was never written, so a dual-format plan (e.g. LM Studio or
+  // Kimi) that explicitly set its OpenAI endpoint lost it on the next
+  // autoUpgrade persist.
+  if (plan.openaiBaseUrl && plan.openaiBaseUrl !== preset.openaiBaseUrl) {
+    result.openaiBaseUrl = plan.openaiBaseUrl;
   }
 
   // Include quota unless provider has usage API (usage API manages quota externally)

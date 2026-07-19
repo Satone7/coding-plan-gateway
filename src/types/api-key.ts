@@ -24,6 +24,12 @@ export interface ApiKey {
   prefix: string;
   /** Key status */
   status: ApiKeyStatus;
+  /**
+   * Whether this key may access the admin plane (/api/plans, /api/quota, ...).
+   * Undefined/absent is treated as false (data-plane only) for backward
+   * compatibility with keys created before the role split.
+   */
+  isAdmin?: boolean;
   /** Key creation timestamp */
   createdAt: Date;
   /** Optional expiration date */
@@ -47,6 +53,7 @@ export interface ApiKeyStorage {
 export interface CreateApiKeyInput {
   name: string;
   expiresAt?: Date;
+  isAdmin?: boolean;
 }
 
 /**
@@ -63,6 +70,7 @@ export const apiKeySchema = z.object({
   keyHash: z.string().min(1),
   prefix: z.string().length(8).regex(/^[a-zA-Z0-9]+$/),
   status: apiKeyStatusSchema,
+  isAdmin: z.boolean().optional(),
   createdAt: z.coerce.date(),
   expiresAt: z.coerce.date().optional(),
   lastUsedAt: z.coerce.date().optional(),

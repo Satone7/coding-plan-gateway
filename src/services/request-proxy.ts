@@ -33,6 +33,18 @@ export interface ProxyRequestOptions {
   timeout?: number;
   /** Request ID for tracing */
   requestId?: string;
+  /**
+   * Client query string to forward to the upstream (e.g. "beta=true"), without
+   * the leading '?'. Some providers gate features (Anthropic beta) on query
+   * params that the gateway otherwise dropped when rebuilding the URL.
+   */
+  queryString?: string;
+  /**
+   * Client headers to pass through to the upstream (e.g. anthropic-version,
+   * anthropic-beta). Merged on top of the gateway's defaults so the client's
+   * values win.
+   */
+  passthroughHeaders?: Record<string, string>;
 }
 
 /**
@@ -101,7 +113,25 @@ function buildOpenAIEndpoint(baseUrl: string): URL {
  * Extract token usage from the tail of an SSE stream.
  * Handles both OpenAI and Anthropic streaming formats.
  */
-function extractStreamTokenUsage(tail: string): StreamTokenUsage | undefined {
+export /**
+ * Coerce a loosely-typed streamed JSON value to an optional number.
+ * Passing parsed-JSON `any` values through this `unknown` sink avoids
+ * no-unsafe-assignment while keeping a runtime type guard.
+ */
+function asOptionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+/**
+ * Coerce a loosely-typed streamed JSON value to an optional string.
+ * Used to feed tool-call arguments / reasoning content into the token-usage
+ * fallback estimator (which needs text to count).
+ */
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+export function extractStreamTokenUsage(tail: string): StreamTokenUsage | undefined {
   // OpenAI format: "usage":{"prompt_tokens":X,"completion_tokens":Y,"total_tokens":Z}
   const openaiMatch = tail.match(/"total_tokens"\s*:\s*(\d+)/);
   if (openaiMatch) {
@@ -123,6 +153,26 @@ function extractStreamTokenUsage(tail: string): StreamTokenUsage | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * Merge tail-extracted usage with values captured while streaming.
+ *
+ * Captured values (seen in message_start / message_delta / the OpenAI usage
+ * chunk) take precedence, because the 4KB tail can evict Anthropic's
+ * message_start event — losing input_tokens — on long generations.
+ */
+export function mergeStreamTokenUsage(
+  tail: StreamTokenUsage | undefined,
+  capturedInputTokens?: number,
+  capturedOutputTokens?: number
+): StreamTokenUsage | undefined {
+  if (capturedInputTokens === undefined && capturedOutputTokens === undefined) {
+    return tail;
+  }
+  const inputTokens = capturedInputTokens ?? tail?.inputTokens ?? 0;
+  const outputTokens = capturedOutputTokens ?? tail?.outputTokens ?? 0;
+  return { totalTokens: inputTokens + outputTokens, inputTokens, outputTokens };
 }
 
 /**
@@ -196,6 +246,14 @@ function handleResponse<T>(
     } catch {
       reject(new Error(`Failed to parse upstream response: ${data.slice(0, 200)}`));
     }
+  });
+
+  // Handle response-level errors (e.g. invalid chunked encoding, mid-body
+  // ECONNRESET). Without this listener Node re-emits the 'error' event as an
+  // unhandled exception that can crash the process; and if the body is aborted
+  // mid-stream 'end' never fires, so the promise would otherwise hang forever.
+  res.on('error', (error) => {
+    reject(new Error(`Response error: ${error.message}`));
   });
 }
 
@@ -313,7 +371,8 @@ export class RequestProxy {
     
     // Support both baseUrl with and without /v1
     const urlPath = basePath.endsWith('/v1') ? '/messages' : '/v1/messages';
-    const url = new URL(`${basePath}${urlPath}`);
+    const qs = options.queryString ? `?${options.queryString.replace(/^\?/, '')}` : '';
+    const url = new URL(`${basePath}${urlPath}${qs}`);
     const startTime = Date.now();
 
     logger.debug('Forwarding Anthropic request', {
@@ -333,6 +392,7 @@ export class RequestProxy {
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
+        ...options.passthroughHeaders,
       },
     });
 
@@ -360,7 +420,8 @@ export class RequestProxy {
     
     // Support both baseUrl with and without /v1
     const urlPath = basePath.endsWith('/v1') ? '/messages/count_tokens' : '/v1/messages/count_tokens';
-    const url = new URL(`${basePath}${urlPath}`);
+    const qs = options.queryString ? `?${options.queryString.replace(/^\?/, '')}` : '';
+    const url = new URL(`${basePath}${urlPath}${qs}`);
     const startTime = Date.now();
 
     logger.debug('Forwarding Anthropic count tokens request', {
@@ -379,6 +440,7 @@ export class RequestProxy {
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
+        ...options.passthroughHeaders,
       },
     });
 
@@ -409,7 +471,8 @@ export class RequestProxy {
     
     // Support both baseUrl with and without /v1
     const urlPath = basePath.endsWith('/v1') ? '/messages' : '/v1/messages';
-    const url = new URL(`${basePath}${urlPath}`);
+    const qs = options.queryString ? `?${options.queryString.replace(/^\?/, '')}` : '';
+    const url = new URL(`${basePath}${urlPath}${qs}`);
     const startTime = Date.now();
 
     logger.debug('Forwarding Anthropic streaming request', {
@@ -429,6 +492,7 @@ export class RequestProxy {
       extraHeaders: {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
+        ...options.passthroughHeaders,
       },
       reply,
       onComplete: (tokenUsage, accumulatedText) => {
@@ -523,6 +587,13 @@ export class RequestProxy {
           let tailData = '';
           let sseBuffer = '';
           let accumulatedText = '';
+          // Capture token usage as it streams by. The tail-based extraction
+          // below only sees the last 4KB, which evicts Anthropic's message_start
+          // event (it carries input_tokens at the very start of the stream) on
+          // long generations — so input_tokens was systematically lost. Capturing
+          // here and merging on 'end' preserves it regardless of stream length.
+          let capturedInputTokens: number | undefined;
+          let capturedOutputTokens: number | undefined;
           let sseHeadersSent = false;
 
           const ensureSseHeaders = (): void => {
@@ -569,11 +640,17 @@ export class RequestProxy {
               }
 
               if (options.provider && /^data:\s+/.test(line) && line.trim() !== 'data: [DONE]') {
-                // Cheap pre-check to avoid JSON.parse overhead for lines without text content
-                if (options.provider === 'openai' && !line.includes('"content"')) {
-                  continue;
-                }
-                if (options.provider === 'anthropic' && !line.includes('"delta"')) {
+                // Cheap pre-check to avoid JSON.parse overhead. Parse lines that
+                // carry content OR token usage (message_start / message_delta /
+                // the final OpenAI usage chunk).
+                const hasContent = options.provider === 'openai'
+                  ? (line.includes('"content"') || line.includes('"tool_calls"') || line.includes('"reasoning_content"'))
+                  : line.includes('"delta"');
+                const hasUsage = line.includes('"input_tokens"')
+                  || line.includes('"output_tokens"')
+                  || line.includes('"prompt_tokens"')
+                  || line.includes('"completion_tokens"');
+                if (!hasContent && !hasUsage) {
                   continue;
                 }
 
@@ -583,16 +660,81 @@ export class RequestProxy {
                   if (options.provider === 'openai') {
                     // OpenAI format
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                    if (data.choices?.[0]?.delta?.content) {
+                    const contentDelta = asOptionalString(data.choices?.[0]?.delta?.content);
+                    if (contentDelta) {
+                      accumulatedText += contentDelta;
+                    }
+                    // Reasoning content (e.g. DeepSeek) counts toward output.
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    const reasoning = asOptionalString(data.choices?.[0]?.delta?.reasoning_content);
+                    if (reasoning) {
+                      accumulatedText += reasoning;
+                    }
+                    // Tool-call argument deltas are the bulk of coding-agent
+                    // output; feed them into accumulatedText so the token-usage
+                    // fallback estimator has text to count when the upstream
+                    // omits a usage chunk.
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+                    const toolCalls = data.choices?.[0]?.delta?.tool_calls;
+                    if (Array.isArray(toolCalls)) {
+                      for (const tc of toolCalls) {
+                        const args = asOptionalString(
+                          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                          tc?.function?.arguments
+                        );
+                        if (args) {
+                          accumulatedText += args;
+                        }
+                      }
+                    }
+                    // Final usage chunk (only present if stream_options.include_usage)
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    if (data.usage) {
                       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                      accumulatedText += data.choices[0].delta.content;
+                      const inT = asOptionalNumber(data.usage.prompt_tokens);
+                      if (inT !== undefined) {
+                        capturedInputTokens = inT;
+                      }
+                      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                      const outT = asOptionalNumber(data.usage.completion_tokens);
+                      if (outT !== undefined) {
+                        capturedOutputTokens = outT;
+                      }
                     }
                   } else if (options.provider === 'anthropic') {
                     // Anthropic format
                     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     if (data.type === 'content_block_delta' && data.delta?.text) {
                       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                      accumulatedText += data.delta.text;
+                      accumulatedText += asOptionalString(data.delta.text) ?? '';
+                    }
+                    // Tool-use argument deltas (input_json_delta) are the bulk
+                    // of tool-call output; feed them into accumulatedText so
+                    // the fallback estimator has text to count.
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    if (data.type === 'input_json_delta') {
+                      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                      accumulatedText += asOptionalString(data.delta?.partial_json) ?? '';
+                    }
+                    // input_tokens arrive once, in the message_start event at the
+                    // very start of the stream — capture them before the tail
+                    // evicts that event on long generations.
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    if (data.type === 'message_start' && data.message?.usage) {
+                      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                      const inT = asOptionalNumber(data.message.usage.input_tokens);
+                      if (inT !== undefined) {
+                        capturedInputTokens = inT;
+                      }
+                    }
+                    // output_tokens are finalized in the terminal message_delta.
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    if (data.type === 'message_delta' && data.usage) {
+                      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                      const outT = asOptionalNumber(data.usage.output_tokens);
+                      if (outT !== undefined) {
+                        capturedOutputTokens = outT;
+                      }
                     }
                   }
                 } catch {
@@ -610,7 +752,7 @@ export class RequestProxy {
                 tailData = tailData.slice(-4096);
               }
             }
-            const tokenUsage = extractStreamTokenUsage(tailData);
+            const tokenUsage = mergeStreamTokenUsage(extractStreamTokenUsage(tailData), capturedInputTokens, capturedOutputTokens);
             options.onComplete(tokenUsage, accumulatedText);
             options.reply.raw.end();
             cleanupClientClose();

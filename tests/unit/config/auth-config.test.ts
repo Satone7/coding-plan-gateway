@@ -51,12 +51,29 @@ describe('auth-config', () => {
       expect(config.usageDataPath).toBe('/custom/usage.json');
     });
 
-    it('should always use default exempt paths ignoring environment', () => {
+    it('should read AUTH_EXEMPT_PATHS from the environment when set', () => {
       process.env.AUTH_EXEMPT_PATHS = '/health,/ready,/metrics';
 
       const config = loadAuthConfig();
 
+      expect(config.authExemptPaths).toBe('/health,/ready,/metrics');
+    });
+
+    it('should fall back to the secure default when AUTH_EXEMPT_PATHS is empty', () => {
+      process.env.AUTH_EXEMPT_PATHS = '   ';
+
+      const config = loadAuthConfig();
+
       expect(config.authExemptPaths).toBe(DEFAULT_AUTH_CONFIG.authExemptPaths);
+    });
+
+    it('the default exempt list must not expose internal key CRUD unauthenticated', () => {
+      const paths = parseExemptPaths(DEFAULT_AUTH_CONFIG.authExemptPaths);
+      // The broad wildcard that previously exempted POST /api/internal/keys,
+      // DELETE /api/internal/keys/:id and the usage report must be gone.
+      expect(paths).not.toContain('/api/internal/*');
+      // The self-reload notification (loopback GatewayNotifier call) stays exempt.
+      expect(paths).toContain('/api/internal/reload');
     });
 
     it('should parse sync interval from environment', () => {

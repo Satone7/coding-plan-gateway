@@ -13,6 +13,7 @@ import { RequestProxy } from '@/services/request-proxy';
 import { QuotaManager } from '@/services/quota-manager';
 import type { ProviderRegistry } from '@/services/provider-registry';
 import { logger } from '@/utils/logger';
+import { isRetryableUpstreamError } from '@/utils/retryable-error';
 import { createGatewayError } from '@/types';
 import {
   attachProviderMetrics,
@@ -86,21 +87,8 @@ function normalizeRequest(body: AnthropicMessageRequest): void {
 
 /**
  * Whether an upstream error is worth retrying on an alternative plan.
- *
- * Retryable status codes:
- * - 400 (Bad Request): upstream may reject due to plan-specific limits
- *   (e.g. context window too small) that another plan may satisfy.
- * - 429 (Too Many Requests): rate limit / quota exceeded on this plan,
- *   another plan may still have capacity.
- *
- * Deterministic client errors (401, 403, 404, 405, etc.) are NOT retryable
- * because they indicate a misconfiguration that affects all plans equally
- * (bad API key, missing endpoint, etc.).
+ * Shared with the OpenAI handler — see `src/utils/retryable-error.ts`.
  */
-function isRetryableUpstreamError(err: unknown): boolean {
-  const statusCode = (err as { statusCode?: number }).statusCode;
-  return statusCode === 400 || statusCode === 429;
-}
 
 /**
  * Anthropic count tokens request schema.
@@ -187,8 +175,45 @@ async function fetchApiKey(
 }
 
 /**
- * Attach provider metrics and log response.
+ * Extract client-side query string and Anthropic beta headers to forward to
+ * the upstream. The gateway previously rebuilt the upstream URL and headers
+ * from scratch, dropping ?beta=true and the client's anthropic-version /
+ * anthropic-beta headers, which silently disabled beta-gated features.
  */
+function passthroughOpts(request: FastifyRequest): {
+  queryString?: string;
+  passthroughHeaders?: Record<string, string>;
+} {
+  const qIndex = request.url.indexOf('?');
+  const queryString = qIndex >= 0 ? request.url.slice(qIndex + 1) : undefined;
+  const headers = request.headers;
+  const passthroughHeaders: Record<string, string> = {};
+  if (headers['anthropic-version']) {
+    passthroughHeaders['anthropic-version'] = String(headers['anthropic-version']);
+  }
+  if (headers['anthropic-beta']) {
+    passthroughHeaders['anthropic-beta'] = String(headers['anthropic-beta']);
+  }
+  return {
+    queryString,
+    passthroughHeaders: Object.keys(passthroughHeaders).length > 0 ? passthroughHeaders : undefined,
+  };
+}
+
+/**
+ * Rewrite the response `model` field back to the alias the client requested.
+ * When a plan aliases glm-5 -> glm-5-turbo, the upstream response carries the
+ * canonical name; clients comparing request vs response model see a mismatch.
+ * Only rewrites when a canonical name was actually substituted.
+ */
+function rewriteModelField(data: unknown, requestedModel: string, canonicalModel?: string): void {
+  if (!canonicalModel || canonicalModel === requestedModel) {
+    return;
+  }
+  if (data && typeof data === 'object' && 'model' in data) {
+    (data as { model?: unknown }).model = requestedModel;
+  }
+}
 function recordMetrics(
   request: FastifyRequest<{ Body: AnthropicMessageRequest }>,
   plan: CodingPlan,
@@ -277,6 +302,7 @@ async function attemptFailover(
       apiKey,
       timeout: plan.timeout,
       requestId,
+      ...passthroughOpts(request),
     });
     endStage(request, 'upstreamRequest');
     services.router.markPlanSuccess(plan.id);
@@ -402,7 +428,7 @@ export function createAnthropicHandlers(
         try {
           await proxy.forwardAnthropicStream(
             body,
-            { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId },
+            { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId, ...passthroughOpts(request) },
             (_chunk, done) => {
               if (done) {
                 endStage(request, 'upstreamRequest');
@@ -447,6 +473,12 @@ export function createAnthropicHandlers(
               if (!router.getCircuitBreaker().canExecute(altPlan.id) || !altPlan.baseUrl) {
                 continue;
               }
+              // Charge the alternative plan for the request it is about to serve.
+              // The matching refund on failure below makes this net-zero if the
+              // attempt fails, so the serving plan is the only one charged.
+              if (quotaManager && !quotaManager.consumeQuota(altPlan.id)) {
+                continue; // alternative exhausted — try the next one
+              }
               logger.info('Attempting streaming failover', {
                 requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id,
               });
@@ -459,7 +491,7 @@ export function createAnthropicHandlers(
                 startStage(request, 'upstreamRequest');
                 await proxy.forwardAnthropicStream(
                   body,
-                  { baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId },
+                  { baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId, ...passthroughOpts(request) },
                   (_chunk, done) => {
                     if (done) {
                       endStage(request, 'upstreamRequest');
@@ -522,11 +554,12 @@ export function createAnthropicHandlers(
       startStage(request, 'upstreamRequest');
       try {
         const response = await proxy.forwardAnthropicRequest(body, {
-          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId, ...passthroughOpts(request),
         });
         endStage(request, 'upstreamRequest');
         router.markPlanSuccess(plan.id);
         recordMetrics(request, plan, model, response);
+        rewriteModelField(response.data, model, routingResult.canonicalName);
         return response.data as AnthropicMessageResponse;
       } catch (error) {
         endStage(request, 'upstreamRequest');
@@ -548,12 +581,22 @@ export function createAnthropicHandlers(
           if (!router.getCircuitBreaker().canExecute(altPlan.id)) {
             continue;
           }
+          // Charge the alternative plan for the request it is about to serve;
+          // refund below if the attempt fails (net-zero for a failed attempt).
+          if (quotaManager && !quotaManager.consumeQuota(altPlan.id)) {
+            continue; // alternative exhausted — try the next one
+          }
 
           logger.info('Attempting failover', { requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id });
           const result = await attemptFailover(services, body, requestId, altPlan, request, routingResult.canonicalName);
           if (result) {
             recordMetrics(request, altPlan, model, result);
+            rewriteModelField(result.data, model, routingResult.canonicalName);
             return result.data as AnthropicMessageResponse;
+          }
+          // attemptFailover returned null (failed) — refund the quota we charged.
+          if (quotaManager) {
+            quotaManager.refundQuota(altPlan.id);
           }
         }
 
@@ -609,7 +652,7 @@ export function createAnthropicHandlers(
       startStage(request, 'upstreamRequest');
       try {
         const response = await proxy.forwardAnthropicCountTokensRequest(body, {
-          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId,
+          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId, ...passthroughOpts(request),
         });
         endStage(request, 'upstreamRequest');
         // Do not mark circuit breaker success/failure for count_tokens to avoid skewing stats
@@ -674,7 +717,7 @@ export function createAnthropicHandlers(
           startStage(request, 'upstreamRequest');
           try {
             const result = await proxy.forwardAnthropicCountTokensRequest(body, {
-              baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId
+              baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId, ...passthroughOpts(request),
             });
             endStage(request, 'upstreamRequest');
             
