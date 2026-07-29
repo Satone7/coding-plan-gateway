@@ -27,12 +27,12 @@ describe('TokenCounter', () => {
       };
 
       const tokens = TokenCounter.estimateAnthropicInputTokens(request);
-      
-      const expectedTokens = 
-        'You are a helpful assistant\n\n'.length + 
-        'Hello world\n\n'.length + 
-        'Hi there\n\n'.length;
-        
+
+      const expectedTokens =
+        'You are a helpful assistant\n'.length +
+        '\nHello world\n'.length +
+        '\nHi there\n'.length;
+
       expect(tokens).toBe(expectedTokens);
     });
 
@@ -52,7 +52,7 @@ describe('TokenCounter', () => {
       };
 
       const tokens = TokenCounter.estimateAnthropicInputTokens(request);
-      const expectedTokens = 'Analyze this image\n\n'.length + 1000;
+      const expectedTokens = 'Analyze this image\n'.length + 1000;
       expect(tokens).toBe(expectedTokens);
     });
 
@@ -83,7 +83,88 @@ describe('TokenCounter', () => {
         messages: [{ role: 'user', content: 'throw error' }],
       };
       const tokens = TokenCounter.estimateAnthropicInputTokens(request);
-      const expectedTokens = Math.ceil('throw error\n'.length / 4);
+      const expectedTokens = Math.ceil('throw error'.length / 4);
+      expect(tokens).toBe(expectedTokens);
+    });
+
+    it('should count tool_use blocks (input JSON + tool name)', () => {
+      const request: AnthropicMessageRequest = {
+        model: 'claude-3-opus',
+        max_tokens: 1000,
+        messages: [
+          {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'toolu_1',
+                name: 'Read',
+                input: { file_path: '/src/index.ts' },
+              },
+            ],
+          },
+        ],
+      };
+
+      const tokens = TokenCounter.estimateAnthropicInputTokens(request);
+      const expectedTokens = JSON.stringify({ file_path: '/src/index.ts' }).length + '\nRead'.length;
+      expect(tokens).toBe(expectedTokens);
+    });
+
+    it('should count tool_result blocks with string content', () => {
+      const fileBody = 'const x = 1;\n'.repeat(100); // 1300 chars of tool output
+      const request: AnthropicMessageRequest = {
+        model: 'claude-3-opus',
+        max_tokens: 1000,
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: fileBody }],
+          },
+        ],
+      };
+
+      const tokens = TokenCounter.estimateAnthropicInputTokens(request);
+      expect(tokens).toBe(fileBody.length);
+    });
+
+    it('should count tool_result blocks with structured content', () => {
+      const request: AnthropicMessageRequest = {
+        model: 'claude-3-opus',
+        max_tokens: 1000,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_1',
+                content: [
+                  { type: 'text', text: 'first part' },
+                  { type: 'text', text: 'second part' },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      const tokens = TokenCounter.estimateAnthropicInputTokens(request);
+      const expectedTokens = 'first part'.length + '\nsecond part'.length;
+      expect(tokens).toBe(expectedTokens);
+    });
+
+    it('should count tool definitions', () => {
+      const tool = { name: 'Read', description: 'Read a file', input_schema: { type: 'object' } };
+      const request: AnthropicMessageRequest = {
+        model: 'claude-3-opus',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: 'hi' }],
+        tools: [tool],
+      };
+
+      const tokens = TokenCounter.estimateAnthropicInputTokens(request);
+      const expectedTokens = 'hi'.length + '\n'.length + JSON.stringify(tool).length;
       expect(tokens).toBe(expectedTokens);
     });
   });
@@ -99,7 +180,7 @@ describe('TokenCounter', () => {
       };
 
       const tokens = TokenCounter.estimateOpenAIInputTokens(request);
-      const expectedTokens = 'You are a bot\n\n'.length + 'Hello\n\n'.length;
+      const expectedTokens = 'You are a bot\n'.length + '\nHello\n'.length;
       expect(tokens).toBe(expectedTokens);
     });
 
@@ -118,7 +199,46 @@ describe('TokenCounter', () => {
       };
 
       const tokens = TokenCounter.estimateOpenAIInputTokens(request);
-      const expectedTokens = 'Look at this\n\n'.length + 1000;
+      const expectedTokens = 'Look at this\n'.length + 1000;
+      expect(tokens).toBe(expectedTokens);
+    });
+
+    it('should count tool_calls arguments and function names', () => {
+      const request: ChatCompletionRequest = {
+        model: 'gpt-4',
+        messages: [
+          {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'call_1',
+                type: 'function',
+                function: { name: 'get_weather', arguments: '{"city":"Paris"}' },
+              },
+            ],
+          },
+        ],
+      };
+
+      const tokens = TokenCounter.estimateOpenAIInputTokens(request);
+      const expectedTokens = '{"city":"Paris"}'.length + '\nget_weather'.length;
+      expect(tokens).toBe(expectedTokens);
+    });
+
+    it('should count tool definitions', () => {
+      const tool = {
+        type: 'function',
+        function: { name: 'get_weather', parameters: { type: 'object' } },
+      };
+      const request: ChatCompletionRequest = {
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: 'hi' }],
+        tools: [tool],
+      };
+
+      const tokens = TokenCounter.estimateOpenAIInputTokens(request);
+      const expectedTokens = 'hi'.length + '\n'.length + JSON.stringify(tool).length;
       expect(tokens).toBe(expectedTokens);
     });
   });
@@ -151,14 +271,14 @@ describe('TokenCounter', () => {
         model: 'gpt-4',
         messages: [{ role: 'user', content: 'prompt' }],
       };
-      
+
       const result = TokenCounter.buildTokenUsageWithFallback(undefined, request, 'openai', 'response', 'req-1');
-      
-      // prompt\n = 7, response = 8
+
+      // prompt = 6, response = 8
       expect(result).toEqual({
-        inputTokens: 7,
+        inputTokens: 6,
         outputTokens: 8,
-        totalTokens: 15,
+        totalTokens: 14,
       });
     });
 
@@ -173,11 +293,11 @@ describe('TokenCounter', () => {
       const zeroUsage = { totalTokens: 0, inputTokens: 0, outputTokens: 0 };
       const result = TokenCounter.buildTokenUsageWithFallback(zeroUsage, request, 'openai', 'response', 'req-1');
 
-      // hello world\n = 12 tokens, response = 8 tokens, total = 20
+      // hello world = 11 tokens, response = 8 tokens, total = 19
       expect(result).toEqual({
-        inputTokens: 12,
+        inputTokens: 11,
         outputTokens: 8,
-        totalTokens: 20,
+        totalTokens: 19,
       });
     });
 
