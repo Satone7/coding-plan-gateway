@@ -57,6 +57,7 @@ const CLIENT_SCRIPT = String.raw`
     flows: [],
     summary: null,
     errors: [],
+    stats: null,
     hover: null,
     pinned: null,
     colorBy: new Map(),
@@ -88,10 +89,12 @@ const CLIENT_SCRIPT = String.raw`
       fetchJson('/api/dashboard/flows?minutes=' + state.minutes),
       fetchJson('/api/dashboard/summary'),
       fetchJson('/api/dashboard/errors'),
+      fetchJson('/api/dashboard/stats'),
     ]).then(function (results) {
       state.flows = results[0].flows || [];
       state.summary = results[1];
       state.errors = (results[2] && results[2].errors) || [];
+      state.stats = results[3] && results[3].days ? results[3] : null;
       state.lastErr = '';
       setStatus('更新于 ' + new Date().toLocaleTimeString() + ' · 共 ' + state.flows.length + ' 条记录');
       render();
@@ -617,6 +620,68 @@ const CLIENT_SCRIPT = String.raw`
     renderGraph();
     renderSummary();
     renderErrors();
+    renderHistory();
+  }
+
+  // ---------- historical stats (persisted) ----------
+  function renderHistory() {
+    var wrap = $('#historyWrap');
+    if (!wrap) return;
+    var s = state.stats;
+    if (!s || !s.days) {
+      wrap.innerHTML = '<div class="empty-sm">暂无历史统计数据（usage-stats 持久化未启用或无记录）</div>';
+      return;
+    }
+    var days = s.days;
+    var totalTok = 0, totalReq = 0;
+    days.forEach(function (d) { totalTok += d.totalTokens; totalReq += d.requests; });
+
+    // only render the trailing N days that have activity (plus a little headroom)
+    var N = 30;
+    var shown = days.slice(-N);
+
+    var html = '<div class="hist-summary">' +
+      '<span>近 ' + days.length + ' 天累计</span>' +
+      '<b>' + fmtNum(totalTok) + '</b> tokens · <b>' + fmtNum(totalReq) + '</b> 请求</div>';
+
+    // daily bar chart
+    var maxTok = 1;
+    shown.forEach(function (d) { if (d.totalTokens > maxTok) maxTok = d.totalTokens; });
+    html += '<div class="hist-chart">';
+    shown.forEach(function (d) {
+      var pct = Math.round((d.totalTokens / maxTok) * 100);
+      var label = d.date.slice(5); // MM-DD
+      html += '<div class="hist-col" title="' + d.date + '：' + fmtNum(d.totalTokens) + ' tok · ' + d.requests + ' 次">' +
+        '<div class="hist-bar-wrap"><div class="hist-bar" style="height:' + Math.max(pct, d.totalTokens > 0 ? 3 : 0) + '%"></div></div>' +
+        '<div class="hist-x">' + label + '</div></div>';
+    });
+    html += '</div>';
+
+    // per-plan / per-model totals
+    html += '<div class="hist-breakdown">';
+    html += histList('按 Plan', s.byPlan, 'planId');
+    html += histList('按模型', s.byModel, null);
+    html += '</div>';
+
+    wrap.innerHTML = html;
+  }
+
+  function histList(title, obj, idKey) {
+    var rows = Object.keys(obj || {}).map(function (k) { return { name: k, v: obj[k] }; });
+    rows.sort(function (a, b) { return b.v.totalTokens - a.v.totalTokens; });
+    var max = rows.length ? rows[0].v.totalTokens : 1;
+    var out = '<div class="hist-list"><div class="hist-list-title">' + title + '</div>';
+    if (!rows.length) { out += '<div class="empty-sm">无数据</div>'; }
+    rows.forEach(function (r) {
+      var pct = Math.round((r.v.totalTokens / max) * 100);
+      out += '<div class="hist-row">' +
+        '<span class="hist-name">' + escHtml(r.name) + '</span>' +
+        '<span class="hist-bar2"><span style="width:' + pct + '%"></span></span>' +
+        '<span class="hist-val">' + fmtNum(r.v.totalTokens) + '</span>' +
+        '<span class="hist-req">' + fmtNum(r.v.requests) + ' 次</span></div>';
+    });
+    out += '</div>';
+    return out;
   }
 
   // ---------- auth prompt ----------
@@ -749,6 +814,29 @@ a { color: var(--brand); text-decoration: none; }
   color: var(--muted); font-size: 11px; flex-wrap: wrap; }
 .legend .sw { display: inline-block; width: 18px; height: 4px; border-radius: 2px;
   vertical-align: middle; margin-right: 5px; }
+/* historical stats */
+.hist-summary { padding: 10px 14px 0; color: var(--muted); font-size: 12px; }
+.hist-summary b { color: var(--text); font-variant-numeric: tabular-nums; }
+.hist-chart { display: flex; align-items: flex-end; gap: 2px; height: 110px;
+  padding: 12px 14px 4px; }
+.hist-col { flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: flex-end; height: 100%; min-width: 0; cursor: default; }
+.hist-bar-wrap { width: 100%; flex: 1; display: flex; align-items: flex-end; }
+.hist-bar { width: 100%; background: var(--brand); border-radius: 2px 2px 0 0;
+  opacity: .75; min-height: 0; }
+.hist-col:hover .hist-bar { opacity: 1; }
+.hist-x { font-size: 9px; color: var(--muted); margin-top: 4px; white-space: nowrap;
+  transform: rotate(-45deg); transform-origin: center; }
+.hist-breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  padding: 8px 14px 12px; }
+@media (max-width: 700px) { .hist-breakdown { grid-template-columns: 1fr; } }
+.hist-list-title { font-size: 11px; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+.hist-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; }
+.hist-name { flex: 0 0 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-bar2 { flex: 1; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.hist-bar2 span { display: block; height: 100%; background: var(--brand); border-radius: 4px; }
+.hist-val { flex: 0 0 52px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+.hist-req { flex: 0 0 56px; text-align: right; color: var(--muted); font-size: 11px; }
 `;
 
 /**
@@ -792,13 +880,19 @@ function renderBody(script: string): string {
   <div class="stat-card"><div class="label">窗口内请求数</div><div class="value" id="statWindowReq">–</div></div>
 </section>
 <main class="main">
-  <div class="panel">
-    <h2>请求流向 · 边宽 = Token 量</h2>
-    <div id="flowWrap"></div>
-    <div class="legend">
-      <span><span class="sw" style="background:var(--brand)"></span>正常流量</span>
-      <span><span class="sw" style="background:var(--error)"></span>含失败请求（虚线）</span>
-      <span>列：API Key → 请求模型 →（改写后）上游模型 → Plan</span>
+  <div>
+    <div class="panel">
+      <h2>请求流向 · 边宽 = Token 量</h2>
+      <div id="flowWrap"></div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--brand)"></span>正常流量</span>
+        <span><span class="sw" style="background:var(--error)"></span>含失败请求（虚线）</span>
+        <span>列：API Key → 请求模型 →（改写后）上游模型 → Plan</span>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h2>历史 Token 统计 · 跨重启持久化</h2>
+      <div id="historyWrap"><div class="empty-sm">加载中…</div></div>
     </div>
   </div>
   <div>

@@ -8,6 +8,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import { dashboardMetrics } from '@/utils/dashboard-metrics';
+import { getActiveUsageStatsStore } from '@/services/usage-stats-store';
 import { renderDashboardPage } from './page';
 
 /** Maximum age (in minutes) a flow event may have and still be charted */
@@ -48,6 +49,12 @@ export function registerWebDashboardRoutes(app: FastifyInstance): void {
     }
   );
 
+  registerSummaryAndErrors(app);
+  registerStats(app);
+}
+
+/** Live counters + recent errors from the in-memory DashboardMetrics */
+function registerSummaryAndErrors(app: FastifyInstance): void {
   app.get('/api/dashboard/summary', () => {
     const snapshot = dashboardMetrics.getSnapshot();
     return {
@@ -69,4 +76,28 @@ export function registerWebDashboardRoutes(app: FastifyInstance): void {
       serverTime: new Date().toISOString(),
     };
   });
+}
+
+/**
+ * Historical, persisted token stats (per-day series + per-plan / per-model
+ * breakdowns) from the on-disk UsageStatsStore. Unlike /flows (in-memory,
+ * current run only), this survives restarts and covers the retention window.
+ */
+function registerStats(app: FastifyInstance): void {
+  app.get<{ Querystring: { from?: string; to?: string } }>(
+    '/api/dashboard/stats',
+    (request, reply) => {
+      const store = getActiveUsageStatsStore();
+      if (!store) {
+        return reply.status(503).send({
+          error: { message: 'Usage stats store not initialized', type: 'service_unavailable' },
+        });
+      }
+      const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+      const from =
+        request.query.from && dateRe.test(request.query.from) ? request.query.from : undefined;
+      const to = request.query.to && dateRe.test(request.query.to) ? request.query.to : undefined;
+      return store.query(from, to);
+    }
+  );
 }

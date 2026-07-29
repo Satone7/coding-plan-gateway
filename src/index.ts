@@ -14,6 +14,7 @@ import { loadConfig } from './config';
 import { createQuotaManager } from './services/quota-manager';
 import { createApiKeyManager } from './services/api-key-manager';
 import { createUsageTracker } from './services/usage-tracker';
+import { createUsageStatsStore, registerActiveUsageStatsStore } from './services/usage-stats-store';
 import { createPlanUsageTracker } from './services/plan-usage-tracker';
 import { createExpirationScheduler } from './services/expiration-scheduler';
 import { createPlanRepository } from './services/plan-repository';
@@ -112,6 +113,22 @@ async function main(): Promise<void> {
     await usageTracker.initialize();
     usageTracker.startPeriodicSync();
 
+    // Create and initialize the persisted usage-stats store (historical
+    // per-plan/model token stats for the dashboard) and persist it on an
+    // interval so records survive restarts.
+    const usageStatsStore = createUsageStatsStore({
+      statsPath: process.env.USAGE_STATS_PATH,
+    });
+    await usageStatsStore.initialize();
+    registerActiveUsageStatsStore(usageStatsStore);
+    const usageStatsTimer = setInterval(() => {
+      usageStatsStore.persist().catch((err) => {
+        logger.warn('Failed to persist usage stats', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }, 60_000);
+
     // Start IPC server
     try {
       await ipcServer.start();
@@ -203,6 +220,7 @@ async function main(): Promise<void> {
       providerRegistry,
       apiKeyManager,
       usageTracker,
+      usageStatsStore,
       planUsageTracker,
       enableAuth: process.env.ENABLE_AUTH !== 'false',
     });
@@ -228,6 +246,11 @@ async function main(): Promise<void> {
     // Add shutdown hook for usage-API refresh timer
     app.addHook('onClose', () => {
       if (usageRefreshTimer) clearInterval(usageRefreshTimer);
+    });
+
+    // Add shutdown hook for the usage-stats persistence timer
+    app.addHook('onClose', () => {
+      clearInterval(usageStatsTimer);
     });
 
     // Start server
