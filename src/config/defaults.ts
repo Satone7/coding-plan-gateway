@@ -127,10 +127,11 @@ export const BCRYPT_COST_FACTOR = 12;
 export const DEFAULT_AUTH_CONFIG = {
   apiKeysPath: './api-keys.json',
   usageDataPath: './usage-data.json',
-  // /dashboard serves the static monitoring shell (no data) so the browser can
-  // load it and prompt for a key; the data endpoints under /api/dashboard/*
-  // stay authenticated and are therefore NOT listed here.
-  authExemptPaths: '/health,/ready,/api/internal/reload,/api/admin/quota/*/sync,/api/v1/models,/api/v1/models/*,/dashboard',
+  // The dashboard is a fully read-only monitoring surface (page + data), so it
+  // is exempt from auth: /dashboard serves the shell and /api/dashboard/* serves
+  // only aggregated metrics (no secrets, no mutations). Operators can still lock
+  // it down by overriding AUTH_EXEMPT_PATHS.
+  authExemptPaths: '/health,/ready,/api/internal/reload,/api/admin/quota/*/sync,/api/v1/models,/api/v1/models/*,/dashboard,/api/dashboard/*',
   usageSyncIntervalMs: 60000, // 60 seconds
 };
 

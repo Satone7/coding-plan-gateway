@@ -870,7 +870,7 @@ function renderBody(script: string): string {
   <button class="time-btn" data-minutes="360">6小时</button>
   <button class="time-btn" data-minutes="1440">24小时</button>
   <button class="btn" id="refreshBtn">刷新</button>
-  <button class="btn" id="keyBtn">API Key</button>
+  <button class="btn" id="keyBtn">访问设置</button>
 </header>
 <div id="status">加载中…</div>
 <section class="stats">
@@ -909,9 +909,9 @@ function renderBody(script: string): string {
 <div id="tooltip"></div>
 <div id="keyPrompt">
   <div class="dialog">
-    <h3>访问令牌</h3>
-    <p>仪表盘为只读接口，但默认受网关鉴权保护。请输入任意有效 API Key（仅保存在当前浏览器会话）。</p>
-    <input id="keyInput" type="password" placeholder="cpg-…" autocomplete="off">
+    <h3>访问设置</h3>
+    <p>本仪表盘为只读监控，默认无需鉴权。若你的网关通过 <code>AUTH_EXEMPT_PATHS</code> 锁定了数据接口，请在此填入一个有效 API Key（仅保存在当前浏览器会话）。</p>
+    <input id="keyInput" type="password" placeholder="cpg-…（通常留空即可）" autocomplete="off">
     <div class="row">
       <button class="btn" id="keyClear">清除</button>
       <button class="btn" id="keySave">保存并刷新</button>

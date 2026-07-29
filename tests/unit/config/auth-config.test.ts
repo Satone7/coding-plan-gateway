@@ -76,6 +76,17 @@ describe('auth-config', () => {
       expect(paths).toContain('/api/internal/reload');
     });
 
+    it('the default exempt list must cover the read-only dashboard surface', () => {
+      const paths = parseExemptPaths(DEFAULT_AUTH_CONFIG.authExemptPaths);
+      expect(isExemptPath('/dashboard', paths)).toBe(true);
+      expect(isExemptPath('/api/dashboard/flows', paths)).toBe(true);
+      expect(isExemptPath('/api/dashboard/summary', paths)).toBe(true);
+      expect(isExemptPath('/api/dashboard/errors', paths)).toBe(true);
+      expect(isExemptPath('/api/dashboard/stats', paths)).toBe(true);
+      // but not unrelated /api paths
+      expect(isExemptPath('/api/admin/plans', paths)).toBe(false);
+    });
+
     it('should parse sync interval from environment', () => {
       process.env.USAGE_SYNC_INTERVAL_MS = '30000';
 

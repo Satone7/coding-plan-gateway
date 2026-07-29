@@ -22,8 +22,10 @@ const MAX_WINDOW_MINUTES = 24 * 60;
  * GET /api/dashboard/summary  → headline counters + per-plan/model usage
  * GET /api/dashboard/errors   → recent upstream/gateway errors
  *
- * Note: these paths are NOT in the default auth-exempt list, so when auth is
- * enabled the browser must supply a valid API key (the page prompts for one).
+ * Note: `/dashboard` and `/api/dashboard/*` are in the default auth-exempt
+ * list (read-only aggregated metrics only), so no key is required. Operators
+ * can lock them down by overriding AUTH_EXEMPT_PATHS; the page will then
+ * prompt for a key.
  */
 export function registerWebDashboardRoutes(app: FastifyInstance): void {
   app.get('/dashboard', (_request, reply) => {
