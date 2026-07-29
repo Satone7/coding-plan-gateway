@@ -8,6 +8,7 @@ import { logger } from '@/utils/logger';
 import { registerOpenAIRoutes } from './openai';
 import { registerAnthropicRoutes } from './anthropic';
 import { registerAdminRoutes } from './admin';
+import { registerWebDashboardRoutes } from './web-dashboard';
 import { createPlanRepository, type IPlanRepository } from '@/services/plan-repository';
 import { createPlanIdCounter } from '@/services/plan-id-counter';
 import { isMigrationNeeded, performMigration } from '@/migration/uuid-to-int';
@@ -160,6 +161,9 @@ export async function registerRoutes(
     apiKeyManager,
     prefix: '/api/admin',
   });
+
+  // Read-only web monitoring dashboard (HTML page + JSON metric endpoints)
+  registerWebDashboardRoutes(app);
 
   logger.info('All routes registered');
 
