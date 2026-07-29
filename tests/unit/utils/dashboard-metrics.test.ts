@@ -187,4 +187,189 @@ describe('DashboardMetrics', () => {
       });
     });
   });
+
+  describe('processEntry flow chains', () => {
+    function pushRequest(
+      metrics: DashboardMetrics,
+      overrides: {
+        requestId?: string;
+        url?: string;
+        keyName?: string;
+        completion?: Record<string, unknown>;
+      } = {}
+    ): void {
+      const requestId = overrides.requestId ?? 'req-1';
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: {
+          requestId,
+          method: 'POST',
+          url: overrides.url ?? '/api/v1/chat/completions',
+        },
+      });
+      if (overrides.keyName) {
+        metrics.processEntry({
+          level: 'info',
+          message: 'Request authenticated',
+          context: { requestId, keyName: overrides.keyName },
+        });
+      }
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request completed',
+        context: {
+          requestId,
+          statusCode: 200,
+          durationMs: 1234,
+          provider: { planId: 1, planName: 'Kimi-A', model: 'k3', statusCode: 200 },
+          tokens: { input: 100, output: 50, total: 150 },
+          ...overrides.completion,
+        },
+      });
+    }
+
+    it('should record a flow chain for proxy completions', () => {
+      const metrics = new DashboardMetrics();
+      pushRequest(metrics, { keyName: 'claude-code' });
+
+      const snapshot = metrics.getSnapshot();
+      expect(snapshot.flows).toHaveLength(1);
+      const flow = snapshot.flows[0]!;
+      expect(flow.apiKey).toBe('claude-code');
+      expect(flow.model).toBe('k3');
+      expect(flow.plan).toBe('Kimi-A');
+      expect(flow.format).toBe('openai');
+      expect(flow.totalTokens).toBe(150);
+      expect(flow.status).toBe(200);
+    });
+
+    it('should detect anthropic format from /v1/messages url', () => {
+      const metrics = new DashboardMetrics();
+      pushRequest(metrics, { url: '/api/v1/messages' });
+
+      const flow = metrics.getSnapshot().flows[0]!;
+      expect(flow.format).toBe('anthropic');
+    });
+
+    it('should keep canonicalModel on the flow chain for rewritten models', () => {
+      const metrics = new DashboardMetrics();
+      pushRequest(metrics, {
+        completion: {
+          provider: {
+            planId: 2,
+            planName: 'Kimi-B',
+            model: 'k3',
+            canonicalModel: 'k3-256k',
+            statusCode: 200,
+          },
+        },
+      });
+
+      const flow = metrics.getSnapshot().flows[0]!;
+      expect(flow.model).toBe('k3');
+      expect(flow.canonicalModel).toBe('k3-256k');
+    });
+
+    it('should record failed proxy requests with placeholder plan', () => {
+      const metrics = new DashboardMetrics();
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: { requestId: 'req-x', method: 'POST', url: '/api/v1/chat/completions' },
+      });
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request completed',
+        context: { requestId: 'req-x', statusCode: 500, durationMs: 12 },
+      });
+
+      const snapshot = metrics.getSnapshot();
+      expect(snapshot.flows).toHaveLength(1);
+      const flow = snapshot.flows[0]!;
+      expect(flow.status).toBe(500);
+      expect(flow.plan).toBe('—');
+      expect(flow.apiKey).toBe('anonymous');
+    });
+
+    it('should ignore completions for non-proxy endpoints', () => {
+      const metrics = new DashboardMetrics();
+      pushRequest(metrics, { url: '/api/v1/models' });
+
+      expect(metrics.getSnapshot().flows).toHaveLength(0);
+    });
+
+    it('should record the failure flow once on completion after the error log', () => {
+      const metrics = new DashboardMetrics();
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: { requestId: 'req-e1', method: 'POST', url: '/api/v1/messages' },
+      });
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request authenticated',
+        context: { requestId: 'req-e1', keyName: 'claude-code' },
+      });
+      // error path first (no flow recorded)…
+      metrics.processEntry({
+        level: 'error',
+        message: 'Request error',
+        error: { name: 'Error', message: 'upstream 429' },
+        context: {
+          requestId: 'req-e1',
+          method: 'POST',
+          url: '/api/v1/messages',
+          provider: { planId: 2, planName: 'Kimi K3', model: 'kimi-k3', statusCode: 0 },
+        },
+      });
+      // …then the completion log with the final status and chain
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request completed',
+        context: {
+          requestId: 'req-e1',
+          statusCode: 429,
+          durationMs: 41,
+          provider: { planId: 2, planName: 'Kimi K3', model: 'kimi-k3', statusCode: 0 },
+        },
+      });
+
+      const snapshot = metrics.getSnapshot();
+      expect(snapshot.failedRequests).toBe(1);
+      expect(snapshot.flows).toHaveLength(1);
+      const flow = snapshot.flows[0]!;
+      expect(flow.format).toBe('anthropic');
+      expect(flow.plan).toBe('Kimi K3');
+      expect(flow.model).toBe('kimi-k3');
+      expect(flow.apiKey).toBe('claude-code');
+      // upstream never responded (0) → falls back to gateway status
+      expect(flow.status).toBe(429);
+    });
+
+    it('should prefer the real upstream status over the gateway status', () => {
+      const metrics = new DashboardMetrics();
+      pushRequest(metrics, {
+        completion: {
+          statusCode: 502,
+          provider: { planId: 1, planName: 'Zhipu', model: 'glm', statusCode: 429 },
+        },
+      });
+
+      const flow = metrics.getSnapshot().flows[0]!;
+      expect(flow.status).toBe(429);
+    });
+
+    it('should cap the flow buffer at the max size', () => {
+      const metrics = new DashboardMetrics();
+      for (let i = 0; i < 510; i++) {
+        pushRequest(metrics, { requestId: `req-${i}` });
+      }
+
+      const flows = metrics.getSnapshot().flows;
+      expect(flows).toHaveLength(500);
+      // newest first
+      expect(flows[0]!.at >= flows[flows.length - 1]!.at).toBe(true);
+    });
+  });
 });

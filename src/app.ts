@@ -15,6 +15,7 @@ import { DEFAULT_SERVER_CONFIG } from '@/config/defaults';
 import type { QuotaManager } from '@/services/quota-manager';
 import type { ApiKeyManager } from '@/services/api-key-manager';
 import type { UsageTracker } from '@/services/usage-tracker';
+import type { UsageStatsStore } from '@/services/usage-stats-store';
 import type { ProviderRegistry } from '@/services/provider-registry';
 
 /**
@@ -35,6 +36,8 @@ export interface AppOptions extends Partial<FastifyServerOptions> {
   apiKeyManager?: ApiKeyManager;
   /** Usage tracker for recording API usage */
   usageTracker?: UsageTracker;
+  /** Usage stats store for persisted per-plan/model token statistics */
+  usageStatsStore?: UsageStatsStore;
   /** Plan usage tracker for tracking per-plan usage */
   planUsageTracker?: any; // any to avoid circular deps, passed to routes
   /** Enable authentication middleware */
@@ -81,7 +84,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
   });
 
   // Register middleware
-  registerRequestLogger(app, options.usageTracker);
+  registerRequestLogger(app, options.usageTracker, options.usageStatsStore);
   registerRequestTimer(app);
 
   // Register auth middleware if apiKeyManager is provided
@@ -141,6 +144,14 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     app.addHook('onClose', async () => {
       logger.info('Shutting down usage tracker...');
       await options.usageTracker!.shutdown();
+    });
+  }
+
+  // Register onClose hook for usage stats store shutdown
+  if (options.usageStatsStore) {
+    app.addHook('onClose', async () => {
+      logger.info('Shutting down usage stats store...');
+      await options.usageStatsStore!.persist();
     });
   }
 

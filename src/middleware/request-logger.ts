@@ -8,6 +8,7 @@
 import { FastifyRequest, FastifyReply, HookHandlerDoneFunction, FastifyInstance } from 'fastify';
 import { logger, createRequestLogger } from '@/utils/logger';
 import type { UsageTracker } from '@/services/usage-tracker';
+import type { UsageStatsStore } from '@/services/usage-stats-store';
 
 /**
  * Token usage information extracted from responses.
@@ -173,7 +174,8 @@ export function logStreamingResponse(
 export function responseLoggerMiddleware(
   request: FastifyRequest,
   reply: FastifyReply,
-  usageTracker?: UsageTracker
+  usageTracker?: UsageTracker,
+  usageStatsStore?: UsageStatsStore
 ): void {
   // Record token usage to UsageTracker if request was authenticated.
   // Done even for hijacked streaming responses (where the log line was
@@ -184,6 +186,21 @@ export function responseLoggerMiddleware(
       request.providerMetrics.tokenUsage.inputTokens,
       request.providerMetrics.tokenUsage.outputTokens
     );
+  }
+
+  // Persist per-plan/model token stats for the dashboard's historical view.
+  // Recorded for every completed proxy request that has provider metrics and
+  // token usage, regardless of auth, so the aggregates are complete.
+  const tokenUsage = request.providerMetrics?.tokenUsage;
+  if (usageStatsStore && request.providerMetrics && tokenUsage) {
+    const pm = request.providerMetrics;
+    usageStatsStore.record({
+      planId: pm.planId,
+      planName: pm.planName,
+      model: pm.canonicalModel ?? pm.model,
+      inputTokens: tokenUsage.inputTokens,
+      outputTokens: tokenUsage.outputTokens,
+    });
   }
 
   // Streaming responder already logged completion — skip duplicate log line.
@@ -225,7 +242,24 @@ export function errorLoggerMiddleware(
       planId: request.providerMetrics.planId,
       planName: request.providerMetrics.planName,
       model: request.providerMetrics.model,
+      canonicalModel: request.providerMetrics.canonicalModel,
+      durationMs: request.providerMetrics.durationMs,
+      statusCode: request.providerMetrics.statusCode,
     };
+
+    // Include token usage if available
+    if (request.providerMetrics.tokenUsage) {
+      logData.tokens = {
+        input: request.providerMetrics.tokenUsage.inputTokens,
+        output: request.providerMetrics.tokenUsage.outputTokens,
+        total: request.providerMetrics.tokenUsage.totalTokens,
+      };
+    }
+
+    // Include provider response time if available
+    if (request.providerMetrics.providerResponseTimeMs) {
+      logData.providerResponseTimeMs = request.providerMetrics.providerResponseTimeMs;
+    }
   }
 
   logger.error('Request failed', error, logData);
@@ -308,7 +342,8 @@ export function extractAnthropicTokenUsage(
  */
 export function registerRequestLogger(
   app: FastifyInstance,
-  usageTracker?: UsageTracker
+  usageTracker?: UsageTracker,
+  usageStatsStore?: UsageStatsStore
 ): void {
   // Log request start - using middleware style with done callback
   app.addHook('onRequest', (request: FastifyRequest, _reply: FastifyReply, done: HookHandlerDoneFunction) => {
@@ -318,7 +353,7 @@ export function registerRequestLogger(
 
   // Log response completion
   app.addHook('onResponse', (request: FastifyRequest, reply: FastifyReply, done: HookHandlerDoneFunction) => {
-    responseLoggerMiddleware(request, reply, usageTracker);
+    responseLoggerMiddleware(request, reply, usageTracker, usageStatsStore);
     done();
   });
 }
