@@ -21,11 +21,7 @@ import {
   extractAnthropicTokenUsage,
   logStreamingResponse,
 } from '@/middleware/request-logger';
-import {
-  startStage,
-  endStage,
-  getRequestTimer,
-} from '@/middleware/request-timer';
+import { startStage, endStage, getRequestTimer } from '@/middleware/request-timer';
 import {
   AnthropicMessageRequest,
   AnthropicMessageResponse,
@@ -40,9 +36,11 @@ import { TokenCounter } from '@/utils/token-counter';
 /**
  * Schema for system prompt content blocks.
  */
-const systemBlockSchema = z.object({
-  type: z.enum(['text', 'image', 'document']),
-}).passthrough();
+const systemBlockSchema = z
+  .object({
+    type: z.enum(['text', 'image', 'document']),
+  })
+  .passthrough();
 
 /**
  * Anthropic message request schema.
@@ -50,21 +48,20 @@ const systemBlockSchema = z.object({
  * This allows custom parameters to pass through to upstream providers without
  * being stripped by Zod validation, matching OpenAI endpoint behavior.
  */
-const messageRequestSchema = z.object({
-  model: z.string().min(1),
-  messages: z.array(z.any()).min(1),
-  max_tokens: z.number().int().positive(),
-  stream: z.boolean().optional().default(false),
-  system: z.union([
-    z.string(),
-    z.array(systemBlockSchema),
-  ]).optional(),
-  temperature: z.number().min(0).max(1).optional(),
-  top_p: z.number().min(0).max(1).optional(),
-  top_k: z.number().int().positive().optional(),
-  stop_sequences: z.array(z.string()).optional(),
-  metadata: z.object({ user_id: z.string().optional() }).optional(),
-}).passthrough();
+const messageRequestSchema = z
+  .object({
+    model: z.string().min(1),
+    messages: z.array(z.any()).min(1),
+    max_tokens: z.number().int().positive(),
+    stream: z.boolean().optional().default(false),
+    system: z.union([z.string(), z.array(systemBlockSchema)]).optional(),
+    temperature: z.number().min(0).max(1).optional(),
+    top_p: z.number().min(0).max(1).optional(),
+    top_k: z.number().int().positive().optional(),
+    stop_sequences: z.array(z.string()).optional(),
+    metadata: z.object({ user_id: z.string().optional() }).optional(),
+  })
+  .passthrough();
 
 /**
  * Normalize an Anthropic request body before forwarding to upstream providers.
@@ -75,11 +72,7 @@ const messageRequestSchema = z.object({
  */
 function normalizeRequest(body: AnthropicMessageRequest): void {
   const outputConfig = (body as Record<string, unknown>).output_config;
-  if (
-    outputConfig &&
-    typeof outputConfig === 'object' &&
-    outputConfig !== null
-  ) {
+  if (outputConfig && typeof outputConfig === 'object' && outputConfig !== null) {
     const oc = outputConfig as Record<string, unknown>;
     if (oc.effort === 'xhigh') {
       oc.effort = 'max';
@@ -96,14 +89,13 @@ function normalizeRequest(body: AnthropicMessageRequest): void {
  * Anthropic count tokens request schema.
  * Uses passthrough to preserve unknown fields.
  */
-const countTokensRequestSchema = z.object({
-  model: z.string().min(1),
-  messages: z.array(z.any()).min(1),
-  system: z.union([
-    z.string(),
-    z.array(systemBlockSchema),
-  ]).optional(),
-}).passthrough();
+const countTokensRequestSchema = z
+  .object({
+    model: z.string().min(1),
+    messages: z.array(z.any()).min(1),
+    system: z.union([z.string(), z.array(systemBlockSchema)]).optional(),
+  })
+  .passthrough();
 
 /**
  * Anthropic handlers interface.
@@ -132,7 +124,9 @@ interface HandlerServices {
 /**
  * Validate request and return parsed data as AnthropicMessageRequest.
  */
-function validateAndParse(request: FastifyRequest<{ Body: AnthropicMessageRequest }>): AnthropicMessageRequest {
+function validateAndParse(
+  request: FastifyRequest<{ Body: AnthropicMessageRequest }>
+): AnthropicMessageRequest {
   startStage(request, 'validation');
   const validation = messageRequestSchema.safeParse(request.body);
   if (!validation.success) {
@@ -148,7 +142,9 @@ function validateAndParse(request: FastifyRequest<{ Body: AnthropicMessageReques
 /**
  * Validate count tokens request and return parsed data.
  */
-function validateAndParseCountTokens(request: FastifyRequest<{ Body: AnthropicCountTokensRequest }>): AnthropicCountTokensRequest {
+function validateAndParseCountTokens(
+  request: FastifyRequest<{ Body: AnthropicCountTokensRequest }>
+): AnthropicCountTokensRequest {
   startStage(request, 'validation');
   const validation = countTokensRequestSchema.safeParse(request.body);
   if (!validation.success) {
@@ -228,9 +224,9 @@ function recordMetrics(
     content?: Array<{ type?: string; text?: string }>;
   };
   const responseData = response.data as AnthropicUsageData | undefined;
-  
+
   let tokenUsage = responseData ? extractAnthropicTokenUsage(responseData) : undefined;
-  
+
   let outputText: string | undefined;
   if (responseData?.content && Array.isArray(responseData.content)) {
     outputText = '';
@@ -308,7 +304,11 @@ async function attemptFailover(
     });
     endStage(request, 'upstreamRequest');
     services.router.markPlanSuccess(plan.id);
-    logger.info('Failover successful', { requestId, failoverPlanId: plan.id, durationMs: response.durationMs });
+    logger.info('Failover successful', {
+      requestId,
+      failoverPlanId: plan.id,
+      durationMs: response.durationMs,
+    });
     return response;
   } catch (err) {
     endStage(request, 'upstreamRequest');
@@ -352,8 +352,11 @@ export function createAnthropicHandlers(
       normalizeRequest(body);
 
       logger.info('Anthropic message request', {
-        requestId, model: requestedModel, stream: body.stream,
-        messageCount: body.messages.length, maxTokens: body.max_tokens,
+        requestId,
+        model: requestedModel,
+        stream: body.stream,
+        messageCount: body.messages.length,
+        maxTokens: body.max_tokens,
       });
 
       // Content-aware model routing: may rewrite the requested model (e.g. k3 →
@@ -361,265 +364,340 @@ export function createAnthropicHandlers(
       // plan-selection pipeline stays model-name-keyed and unchanged.
       let model = requestedModel;
       startStage(request, 'modelRouting');
-      const modelRoutingOutcome = modelRouter.resolve({ requestedModel, body, format: 'anthropic' });
+      const modelRoutingOutcome = modelRouter.resolve({
+        requestedModel,
+        body,
+        format: 'anthropic',
+      });
       endStage(request, 'modelRouting');
       if (modelRoutingOutcome.rewritten) {
         model = modelRoutingOutcome.model;
         body.model = model;
       }
 
-      startStage(request, 'routing');
-      const routingResult = await router.route(model, requestId);
-      endStage(request, 'routing');
-      if (!routingResult.selectedPlan) {
-        throw createGatewayError('MODEL_NOT_FOUND', `No coding plan supports model '${model}'`, { model, requestId });
-      }
+      // Reactive model fallback: try the (possibly rewritten) effective model
+      // first; if the request was a routing rewrite and the whole attempt fails
+      // (e.g. k3-256k rejected by upstream for exceeding 256K context), retry
+      // once on the original requested model (k3, the 1M-context superset). Only
+      // pre-header failures throw and reach the catch; mid-stream failures have
+      // already sent an SSE error and return without retry.
+      const tryModels =
+        modelRoutingOutcome.rewritten && model !== requestedModel
+          ? [model, requestedModel]
+          : [model];
 
-      const plan = routingResult.selectedPlan;
-
-      // Check if upstream URL is available for Anthropic-format requests
-      if (!plan.baseUrl) {
-        throw createGatewayError(
-          'SERVICE_UNAVAILABLE',
-          `Plan '${plan.name}' does not have a valid base_url for Anthropic-format requests.`,
-          { planId: plan.id, planName: plan.name, provider: plan.provider }
-        );
-      }
-
-      // Consume quota after selecting the plan
-      startStage(request, 'quotaCheck');
-      if (quotaManager) {
-        const consumed = quotaManager.consumeQuota(plan.id);
-        if (!consumed) {
-          endStage(request, 'quotaCheck');
-          throw createGatewayError(
-            'QUOTA_EXHAUSTED',
-            `Quota exhausted for plan '${plan.name}'`,
-            { planId: plan.id, requestId }
-          );
-        }
-      }
-      endStage(request, 'quotaCheck');
-
-      const apiKey = await fetchApiKey(repository, plan.id, request);
-
-      logger.debug('Selected plan for request', {
-        requestId, planId: plan.id, planName: plan.name,
-        alternatives: routingResult.alternativePlans.length,
-      });
-
-      // Update the request body to use the canonical name for upstream request
-      if (routingResult.canonicalName) {
-        body.model = routingResult.canonicalName;
-      }
-
-      // Attach provider metrics early so onResponse hook always has plan/model info
-      // (non-streaming will overwrite with full metrics via recordMetrics)
-      attachProviderMetrics(request, {
-        planId: plan.id,
-        planName: plan.name,
-        model,
-        canonicalModel: routingResult.canonicalName !== model ? routingResult.canonicalName : undefined,
-        durationMs: 0,
-        statusCode: 0,
-      });
-
-      // Handle streaming
-      if (body.stream) {
-        // Hijacked replies bypass Fastify's onResponse lifecycle, so we must
-        // manually log completion and the timing summary after the stream ends.
-        // Both helpers are idempotent: if the raw response's finish event
-        // later fires the onResponse hook, it will skip the duplicate output.
-        const logCompletion = (): void => {
-          startStage(request, 'responseSent');
-          endStage(request, 'responseSent');
-          if (reply.statusCode >= 400) {
-            getRequestTimer(request).markIncomplete();
-          }
-          getRequestTimer(request).logSummary();
-          logStreamingResponse(request, reply);
-        };
-
-        startStage(request, 'upstreamRequest');
+      for (let modelAttempt = 0; modelAttempt < tryModels.length; modelAttempt++) {
+        model = tryModels[modelAttempt]!;
+        body.model = model;
         try {
-          await proxy.forwardAnthropicStream(
-            body,
-            { baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId, ...passthroughOpts(request) },
-            (_chunk, done) => {
-              if (done) {
-                endStage(request, 'upstreamRequest');
-                router.markPlanSuccess(plan.id);
-                logger.debug('Stream completed', { requestId });
-              }
-            },
-            reply,
-            (tokenUsage, accumulatedText) => {
-              const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
-                tokenUsage,
-                body,
-                'anthropic',
-                accumulatedText,
-                requestId
-              );
-
-              attachProviderMetrics(request, {
-                planId: plan.id,
-                planName: plan.name,
-                model,
-                durationMs: Date.now() - (request.startTime || Date.now()),
-                statusCode: 200,
-                tokenUsage: finalTokenUsage,
-              });
-            }
-          );
-          logCompletion();
-          return; // primary plan succeeded
-        } catch (primaryError) {
-          endStage(request, 'upstreamRequest');
-          router.markPlanFailed(plan.id);
-          // Refund quota on stream failure
-          if (quotaManager) {
-            quotaManager.refundQuota(plan.id);
+          startStage(request, 'routing');
+          const routingResult = await router.route(model, requestId);
+          endStage(request, 'routing');
+          if (!routingResult.selectedPlan) {
+            throw createGatewayError(
+              'MODEL_NOT_FOUND',
+              `No coding plan supports model '${model}'`,
+              { model, requestId }
+            );
           }
 
-          // Failover: only when the upstream rejected before streaming started
-          // (client SSE headers not yet sent) AND the error is retryable (400/429).
-          if (isRetryableUpstreamError(primaryError) && !reply.raw.headersSent) {
+          const plan = routingResult.selectedPlan;
+
+          // Check if upstream URL is available for Anthropic-format requests
+          if (!plan.baseUrl) {
+            throw createGatewayError(
+              'SERVICE_UNAVAILABLE',
+              `Plan '${plan.name}' does not have a valid base_url for Anthropic-format requests.`,
+              { planId: plan.id, planName: plan.name, provider: plan.provider }
+            );
+          }
+
+          // Consume quota after selecting the plan
+          startStage(request, 'quotaCheck');
+          if (quotaManager) {
+            const consumed = quotaManager.consumeQuota(plan.id);
+            if (!consumed) {
+              endStage(request, 'quotaCheck');
+              throw createGatewayError(
+                'QUOTA_EXHAUSTED',
+                `Quota exhausted for plan '${plan.name}'`,
+                { planId: plan.id, requestId }
+              );
+            }
+          }
+          endStage(request, 'quotaCheck');
+
+          const apiKey = await fetchApiKey(repository, plan.id, request);
+
+          logger.debug('Selected plan for request', {
+            requestId,
+            planId: plan.id,
+            planName: plan.name,
+            alternatives: routingResult.alternativePlans.length,
+          });
+
+          // Update the request body to use the canonical name for upstream request
+          if (routingResult.canonicalName) {
+            body.model = routingResult.canonicalName;
+          }
+
+          // Attach provider metrics early so onResponse hook always has plan/model info
+          // (non-streaming will overwrite with full metrics via recordMetrics)
+          attachProviderMetrics(request, {
+            planId: plan.id,
+            planName: plan.name,
+            model,
+            canonicalModel:
+              routingResult.canonicalName !== model ? routingResult.canonicalName : undefined,
+            durationMs: 0,
+            statusCode: 0,
+          });
+
+          // Handle streaming
+          if (body.stream) {
+            // Hijacked replies bypass Fastify's onResponse lifecycle, so we must
+            // manually log completion and the timing summary after the stream ends.
+            // Both helpers are idempotent: if the raw response's finish event
+            // later fires the onResponse hook, it will skip the duplicate output.
+            const logCompletion = (): void => {
+              startStage(request, 'responseSent');
+              endStage(request, 'responseSent');
+              if (reply.statusCode >= 400) {
+                getRequestTimer(request).markIncomplete();
+              }
+              getRequestTimer(request).logSummary();
+              logStreamingResponse(request, reply);
+            };
+
+            startStage(request, 'upstreamRequest');
+            try {
+              await proxy.forwardAnthropicStream(
+                body,
+                {
+                  baseUrl: plan.baseUrl,
+                  apiKey,
+                  timeout: plan.timeout,
+                  requestId,
+                  ...passthroughOpts(request),
+                },
+                (_chunk, done) => {
+                  if (done) {
+                    endStage(request, 'upstreamRequest');
+                    router.markPlanSuccess(plan.id);
+                    logger.debug('Stream completed', { requestId });
+                  }
+                },
+                reply,
+                (tokenUsage, accumulatedText) => {
+                  const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
+                    tokenUsage,
+                    body,
+                    'anthropic',
+                    accumulatedText,
+                    requestId
+                  );
+
+                  attachProviderMetrics(request, {
+                    planId: plan.id,
+                    planName: plan.name,
+                    model,
+                    durationMs: Date.now() - (request.startTime || Date.now()),
+                    statusCode: 200,
+                    tokenUsage: finalTokenUsage,
+                  });
+                }
+              );
+              logCompletion();
+              return; // primary plan succeeded
+            } catch (primaryError) {
+              endStage(request, 'upstreamRequest');
+              router.markPlanFailed(plan.id);
+              // Refund quota on stream failure
+              if (quotaManager) {
+                quotaManager.refundQuota(plan.id);
+              }
+
+              // Failover: only when the upstream rejected before streaming started
+              // (client SSE headers not yet sent) AND the error is retryable (400/429).
+              if (isRetryableUpstreamError(primaryError) && !reply.raw.headersSent) {
+                for (const altPlan of routingResult.alternativePlans) {
+                  if (!router.getCircuitBreaker().canExecute(altPlan.id) || !altPlan.baseUrl) {
+                    continue;
+                  }
+                  // Charge the alternative plan for the request it is about to serve.
+                  // The matching refund on failure below makes this net-zero if the
+                  // attempt fails, so the serving plan is the only one charged.
+                  if (quotaManager && !quotaManager.consumeQuota(altPlan.id)) {
+                    continue; // alternative exhausted — try the next one
+                  }
+                  logger.info('Attempting streaming failover', {
+                    requestId,
+                    failedPlanId: plan.id,
+                    failoverPlanId: altPlan.id,
+                  });
+                  // Use the canonical model name for the upstream request
+                  if (routingResult.canonicalName) {
+                    body.model = routingResult.canonicalName;
+                  }
+                  try {
+                    const altApiKey = await fetchApiKey(repository, altPlan.id, request);
+                    startStage(request, 'upstreamRequest');
+                    await proxy.forwardAnthropicStream(
+                      body,
+                      {
+                        baseUrl: altPlan.baseUrl,
+                        apiKey: altApiKey,
+                        timeout: altPlan.timeout,
+                        requestId,
+                        ...passthroughOpts(request),
+                      },
+                      (_chunk, done) => {
+                        if (done) {
+                          endStage(request, 'upstreamRequest');
+                          router.markPlanSuccess(altPlan.id);
+                        }
+                      },
+                      reply,
+                      (tokenUsage, accumulatedText) => {
+                        const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
+                          tokenUsage,
+                          body,
+                          'anthropic',
+                          accumulatedText,
+                          requestId
+                        );
+                        attachProviderMetrics(request, {
+                          planId: altPlan.id,
+                          planName: altPlan.name,
+                          model,
+                          durationMs: Date.now() - (request.startTime || Date.now()),
+                          statusCode: 200,
+                          tokenUsage: finalTokenUsage,
+                        });
+                      }
+                    );
+                    logCompletion();
+                    return; // failover succeeded
+                  } catch (altError) {
+                    endStage(request, 'upstreamRequest');
+                    router.markPlanFailed(altPlan.id);
+                    if (quotaManager) {
+                      quotaManager.refundQuota(altPlan.id);
+                    }
+                    // If the alt plan started streaming then failed, the SSE error
+                    // event was already delivered to the client — cannot try further.
+                    if (reply.raw.headersSent) {
+                      logCompletion();
+                      return;
+                    }
+                    // otherwise continue to the next alternative plan
+                  }
+                }
+                // All alternatives exhausted and client headers still not sent:
+                // surface the primary plan's original error (per fallback policy,
+                // preserves the upstream statusCode/JSON, e.g. 429 AccountQuotaExceeded).
+                throw primaryError;
+              }
+
+              // Non-retryable error, or headers already sent mid-stream.
+              if (!reply.raw.headersSent) {
+                throw primaryError;
+              }
+              // headers already sent — handleStreamError already wrote an SSE error event.
+              logCompletion();
+            }
+            return;
+          }
+
+          // Non-streaming request with failover
+          startStage(request, 'upstreamRequest');
+          try {
+            const response = await proxy.forwardAnthropicRequest(body, {
+              baseUrl: plan.baseUrl,
+              apiKey,
+              timeout: plan.timeout,
+              requestId,
+              ...passthroughOpts(request),
+            });
+            endStage(request, 'upstreamRequest');
+            router.markPlanSuccess(plan.id);
+            recordMetrics(request, plan, model, response);
+            rewriteModelField(response.data, model, routingResult.canonicalName);
+            return response.data as AnthropicMessageResponse;
+          } catch (error) {
+            endStage(request, 'upstreamRequest');
+            logger.warn('Primary plan request failed', {
+              requestId,
+              planId: plan.id,
+              planName: plan.name,
+              model,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            router.markPlanFailed(plan.id);
+
+            // Refund quota on failure
+            if (quotaManager) {
+              quotaManager.refundQuota(plan.id);
+            }
+
             for (const altPlan of routingResult.alternativePlans) {
-              if (!router.getCircuitBreaker().canExecute(altPlan.id) || !altPlan.baseUrl) {
+              if (!router.getCircuitBreaker().canExecute(altPlan.id)) {
                 continue;
               }
-              // Charge the alternative plan for the request it is about to serve.
-              // The matching refund on failure below makes this net-zero if the
-              // attempt fails, so the serving plan is the only one charged.
+              // Charge the alternative plan for the request it is about to serve;
+              // refund below if the attempt fails (net-zero for a failed attempt).
               if (quotaManager && !quotaManager.consumeQuota(altPlan.id)) {
                 continue; // alternative exhausted — try the next one
               }
-              logger.info('Attempting streaming failover', {
-                requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id,
+
+              logger.info('Attempting failover', {
+                requestId,
+                failedPlanId: plan.id,
+                failoverPlanId: altPlan.id,
               });
-              // Use the canonical model name for the upstream request
-              if (routingResult.canonicalName) {
-                body.model = routingResult.canonicalName;
+              const result = await attemptFailover(
+                services,
+                body,
+                requestId,
+                altPlan,
+                request,
+                routingResult.canonicalName
+              );
+              if (result) {
+                recordMetrics(request, altPlan, model, result);
+                rewriteModelField(result.data, model, routingResult.canonicalName);
+                return result.data as AnthropicMessageResponse;
               }
-              try {
-                const altApiKey = await fetchApiKey(repository, altPlan.id, request);
-                startStage(request, 'upstreamRequest');
-                await proxy.forwardAnthropicStream(
-                  body,
-                  { baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId, ...passthroughOpts(request) },
-                  (_chunk, done) => {
-                    if (done) {
-                      endStage(request, 'upstreamRequest');
-                      router.markPlanSuccess(altPlan.id);
-                    }
-                  },
-                  reply,
-                  (tokenUsage, accumulatedText) => {
-                    const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
-                      tokenUsage,
-                      body,
-                      'anthropic',
-                      accumulatedText,
-                      requestId
-                    );
-                    attachProviderMetrics(request, {
-                      planId: altPlan.id,
-                      planName: altPlan.name,
-                      model,
-                      durationMs: Date.now() - (request.startTime || Date.now()),
-                      statusCode: 200,
-                      tokenUsage: finalTokenUsage,
-                    });
-                  }
-                );
-                logCompletion();
-                return; // failover succeeded
-              } catch (altError) {
-                endStage(request, 'upstreamRequest');
-                router.markPlanFailed(altPlan.id);
-                if (quotaManager) {
-                  quotaManager.refundQuota(altPlan.id);
-                }
-                // If the alt plan started streaming then failed, the SSE error
-                // event was already delivered to the client — cannot try further.
-                if (reply.raw.headersSent) {
-                  logCompletion();
-                  return;
-                }
-                // otherwise continue to the next alternative plan
+              // attemptFailover returned null (failed) — refund the quota we charged.
+              if (quotaManager) {
+                quotaManager.refundQuota(altPlan.id);
               }
             }
-            // All alternatives exhausted and client headers still not sent:
-            // surface the primary plan's original error (per fallback policy,
-            // preserves the upstream statusCode/JSON, e.g. 429 AccountQuotaExceeded).
-            throw primaryError;
+
+            // All alternatives exhausted — surface the primary plan's original error
+            // (preserves upstream statusCode/JSON, e.g. 429 AccountQuotaExceeded)
+            // instead of a generic UPSTREAM_ERROR, per the "pass through primary" policy.
+            throw error;
           }
-
-          // Non-retryable error, or headers already sent mid-stream.
-          if (!reply.raw.headersSent) {
-            throw primaryError;
-          }
-          // headers already sent — handleStreamError already wrote an SSE error event.
-          logCompletion();
-        }
-        return;
-      }
-
-      // Non-streaming request with failover
-      startStage(request, 'upstreamRequest');
-      try {
-        const response = await proxy.forwardAnthropicRequest(body, {
-          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId, ...passthroughOpts(request),
-        });
-        endStage(request, 'upstreamRequest');
-        router.markPlanSuccess(plan.id);
-        recordMetrics(request, plan, model, response);
-        rewriteModelField(response.data, model, routingResult.canonicalName);
-        return response.data as AnthropicMessageResponse;
-      } catch (error) {
-        endStage(request, 'upstreamRequest');
-        logger.warn('Primary plan request failed', {
-          requestId,
-          planId: plan.id,
-          planName: plan.name,
-          model,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        router.markPlanFailed(plan.id);
-
-        // Refund quota on failure
-        if (quotaManager) {
-          quotaManager.refundQuota(plan.id);
-        }
-
-        for (const altPlan of routingResult.alternativePlans) {
-          if (!router.getCircuitBreaker().canExecute(altPlan.id)) {
+        } catch (modelFallbackErr) {
+          if (modelAttempt < tryModels.length - 1) {
+            logger.info(
+              'Model routing fallback: rewritten model failed, retrying on original model',
+              {
+                requestId,
+                requestedModel,
+                failedModel: tryModels[modelAttempt],
+                retryModel: tryModels[modelAttempt + 1],
+                error:
+                  modelFallbackErr instanceof Error
+                    ? modelFallbackErr.message
+                    : String(modelFallbackErr),
+              }
+            );
             continue;
           }
-          // Charge the alternative plan for the request it is about to serve;
-          // refund below if the attempt fails (net-zero for a failed attempt).
-          if (quotaManager && !quotaManager.consumeQuota(altPlan.id)) {
-            continue; // alternative exhausted — try the next one
-          }
-
-          logger.info('Attempting failover', { requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id });
-          const result = await attemptFailover(services, body, requestId, altPlan, request, routingResult.canonicalName);
-          if (result) {
-            recordMetrics(request, altPlan, model, result);
-            rewriteModelField(result.data, model, routingResult.canonicalName);
-            return result.data as AnthropicMessageResponse;
-          }
-          // attemptFailover returned null (failed) — refund the quota we charged.
-          if (quotaManager) {
-            quotaManager.refundQuota(altPlan.id);
-          }
+          throw modelFallbackErr;
         }
-
-        // All alternatives exhausted — surface the primary plan's original error
-        // (preserves upstream statusCode/JSON, e.g. 429 AccountQuotaExceeded)
-        // instead of a generic UPSTREAM_ERROR, per the "pass through primary" policy.
-        throw error;
       }
     },
 
@@ -632,14 +710,19 @@ export function createAnthropicHandlers(
       const model = body.model;
 
       logger.info('Anthropic count tokens request', {
-        requestId, model, messageCount: body.messages.length
+        requestId,
+        model,
+        messageCount: body.messages.length,
       });
 
       startStage(request, 'routing');
       const routingResult = await router.route(model, requestId);
       endStage(request, 'routing');
       if (!routingResult.selectedPlan) {
-        throw createGatewayError('MODEL_NOT_FOUND', `No coding plan supports model '${model}'`, { model, requestId });
+        throw createGatewayError('MODEL_NOT_FOUND', `No coding plan supports model '${model}'`, {
+          model,
+          requestId,
+        });
       }
 
       const plan = routingResult.selectedPlan;
@@ -658,7 +741,9 @@ export function createAnthropicHandlers(
       const apiKey = await fetchApiKey(repository, plan.id, request);
 
       logger.debug('Selected plan for count tokens request', {
-        requestId, planId: plan.id, planName: plan.name,
+        requestId,
+        planId: plan.id,
+        planName: plan.name,
       });
 
       if (routingResult.canonicalName) {
@@ -668,26 +753,31 @@ export function createAnthropicHandlers(
       startStage(request, 'upstreamRequest');
       try {
         const response = await proxy.forwardAnthropicCountTokensRequest(body, {
-          baseUrl: plan.baseUrl, apiKey, timeout: plan.timeout, requestId, ...passthroughOpts(request),
+          baseUrl: plan.baseUrl,
+          apiKey,
+          timeout: plan.timeout,
+          requestId,
+          ...passthroughOpts(request),
         });
         endStage(request, 'upstreamRequest');
         // Do not mark circuit breaker success/failure for count_tokens to avoid skewing stats
-        
+
         attachProviderMetrics(request, {
           planId: plan.id,
           planName: plan.name,
           model,
-          canonicalModel: routingResult.canonicalName !== model ? routingResult.canonicalName : undefined,
+          canonicalModel:
+            routingResult.canonicalName !== model ? routingResult.canonicalName : undefined,
           durationMs: response.durationMs,
           statusCode: response.statusCode,
           providerResponseTimeMs: response.durationMs,
         });
-        
+
         return response.data as AnthropicCountTokensResponse;
       } catch (error) {
         endStage(request, 'upstreamRequest');
         const errStatusCode = (error as { statusCode?: number }).statusCode || 500;
-        
+
         attachProviderMetrics(request, {
           planId: plan.id,
           planName: plan.name,
@@ -710,7 +800,11 @@ export function createAnthropicHandlers(
             continue;
           }
 
-          logger.info('Attempting failover for count tokens', { requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id });
+          logger.info('Attempting failover for count tokens', {
+            requestId,
+            failedPlanId: plan.id,
+            failoverPlanId: altPlan.id,
+          });
           const altApiKey = await fetchApiKey(services.repository, altPlan.id, request);
           if (!altApiKey) {
             continue;
@@ -733,10 +827,14 @@ export function createAnthropicHandlers(
           startStage(request, 'upstreamRequest');
           try {
             const result = await proxy.forwardAnthropicCountTokensRequest(body, {
-              baseUrl: altPlan.baseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId, ...passthroughOpts(request),
+              baseUrl: altPlan.baseUrl,
+              apiKey: altApiKey,
+              timeout: altPlan.timeout,
+              requestId,
+              ...passthroughOpts(request),
             });
             endStage(request, 'upstreamRequest');
-            
+
             attachProviderMetrics(request, {
               planId: altPlan.id,
               planName: altPlan.name,
@@ -745,12 +843,12 @@ export function createAnthropicHandlers(
               statusCode: result.statusCode,
               providerResponseTimeMs: result.durationMs,
             });
-            
+
             return result.data as AnthropicCountTokensResponse;
           } catch (altError) {
             endStage(request, 'upstreamRequest');
             const altErrStatusCode = (altError as { statusCode?: number }).statusCode || 500;
-            
+
             attachProviderMetrics(request, {
               planId: altPlan.id,
               planName: altPlan.name,
@@ -770,9 +868,9 @@ export function createAnthropicHandlers(
         logger.warn('All plans failed for count tokens, falling back to local estimation', {
           requestId,
         });
-        
+
         const estimatedTokens = TokenCounter.estimateAnthropicInputTokens(body);
-        
+
         // Attach success metrics for the local fallback to prevent error logging
         attachProviderMetrics(request, {
           planId: plan.id,

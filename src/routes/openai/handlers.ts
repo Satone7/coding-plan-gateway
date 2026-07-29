@@ -21,12 +21,13 @@ import {
   extractOpenAITokenUsage,
   logStreamingResponse,
 } from '@/middleware/request-logger';
-import {
-  startStage,
-  endStage,
-  getRequestTimer,
-} from '@/middleware/request-timer';
-import type { ChatCompletionRequest, ChatCompletionResponse, ModelsResponse, Model } from '@/types/openai';
+import { startStage, endStage, getRequestTimer } from '@/middleware/request-timer';
+import type {
+  ChatCompletionRequest,
+  ChatCompletionResponse,
+  ModelsResponse,
+  Model,
+} from '@/types/openai';
 import type { CodingPlan } from '@/types';
 import type { LoadBalanceConfig } from '@/types/load-balancing';
 import type { ModelRoutingConfig } from '@/types/model-routing';
@@ -56,57 +57,81 @@ const toolCallSchema = z.object({
  * - tool_calls for assistant messages with function calls
  * - content can be null when tool_calls are present
  */
-const chatCompletionSchema = z.object({
-  model: z.string().min(1),
-  messages: z.array(z.object({
-    role: z.enum(['system', 'user', 'assistant', 'tool', 'function']),
-    content: z.union([
-      z.string(),
-      z.null(),  // Allow null for assistant messages with tool_calls
-      z.array(z.discriminatedUnion('type', [
-        z.object({
-          type: z.literal('text'),
-          text: z.string(),
-        }),
-        z.object({
-          type: z.literal('image_url'),
-          image_url: z.object({
-            url: z.string(),
-            detail: z.enum(['auto', 'low', 'high']).optional(),
-          }).optional(),
-        }),
-      ]))
-    ]).optional(),  // Content is optional when tool_calls present
-    name: z.string().optional(),
-    tool_call_id: z.string().optional(),  // Required for tool role
-    tool_calls: z.array(toolCallSchema).optional(),  // For assistant messages
-  }).passthrough()).min(1),  // Allow additional fields per message
-  stream: z.boolean().optional().default(false),
-  max_tokens: z.number().int().positive().optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  top_p: z.number().min(0).max(1).optional(),
-  stop: z.union([z.string(), z.array(z.string())]).optional(),
-  presence_penalty: z.number().min(-2).max(2).optional(),
-  frequency_penalty: z.number().min(-2).max(2).optional(),
-  user: z.string().optional(),
-  // Tool/function calling configuration
-  tools: z.array(z.object({
-    type: z.literal('function'),
-    function: z.object({
-      name: z.string(),
-      description: z.string().optional(),
-      parameters: z.record(z.unknown()).optional(),
-    }).passthrough(),
-  }).passthrough()).optional(),
-  tool_choice: z.union([
-    z.literal('none'),
-    z.literal('auto'),
-    z.literal('required'),
-    z.object({ type: z.literal('function'), function: z.object({ name: z.string() }) }),
-  ]).optional(),
-  // Parallel tool calls (OpenAI feature)
-  parallel_tool_calls: z.boolean().optional(),
-}).passthrough();
+const chatCompletionSchema = z
+  .object({
+    model: z.string().min(1),
+    messages: z
+      .array(
+        z
+          .object({
+            role: z.enum(['system', 'user', 'assistant', 'tool', 'function']),
+            content: z
+              .union([
+                z.string(),
+                z.null(), // Allow null for assistant messages with tool_calls
+                z.array(
+                  z.discriminatedUnion('type', [
+                    z.object({
+                      type: z.literal('text'),
+                      text: z.string(),
+                    }),
+                    z.object({
+                      type: z.literal('image_url'),
+                      image_url: z
+                        .object({
+                          url: z.string(),
+                          detail: z.enum(['auto', 'low', 'high']).optional(),
+                        })
+                        .optional(),
+                    }),
+                  ])
+                ),
+              ])
+              .optional(), // Content is optional when tool_calls present
+            name: z.string().optional(),
+            tool_call_id: z.string().optional(), // Required for tool role
+            tool_calls: z.array(toolCallSchema).optional(), // For assistant messages
+          })
+          .passthrough()
+      )
+      .min(1), // Allow additional fields per message
+    stream: z.boolean().optional().default(false),
+    max_tokens: z.number().int().positive().optional(),
+    temperature: z.number().min(0).max(2).optional(),
+    top_p: z.number().min(0).max(1).optional(),
+    stop: z.union([z.string(), z.array(z.string())]).optional(),
+    presence_penalty: z.number().min(-2).max(2).optional(),
+    frequency_penalty: z.number().min(-2).max(2).optional(),
+    user: z.string().optional(),
+    // Tool/function calling configuration
+    tools: z
+      .array(
+        z
+          .object({
+            type: z.literal('function'),
+            function: z
+              .object({
+                name: z.string(),
+                description: z.string().optional(),
+                parameters: z.record(z.unknown()).optional(),
+              })
+              .passthrough(),
+          })
+          .passthrough()
+      )
+      .optional(),
+    tool_choice: z
+      .union([
+        z.literal('none'),
+        z.literal('auto'),
+        z.literal('required'),
+        z.object({ type: z.literal('function'), function: z.object({ name: z.string() }) }),
+      ])
+      .optional(),
+    // Parallel tool calls (OpenAI feature)
+    parallel_tool_calls: z.boolean().optional(),
+  })
+  .passthrough();
 
 type ValidatedChatCompletion = z.infer<typeof chatCompletionSchema>;
 
@@ -138,7 +163,9 @@ interface HandlerServices {
 /**
  * Validate request and return parsed data.
  */
-function validateAndParse(request: FastifyRequest<{ Body: ChatCompletionRequest }>): ValidatedChatCompletion {
+function validateAndParse(
+  request: FastifyRequest<{ Body: ChatCompletionRequest }>
+): ValidatedChatCompletion {
   startStage(request, 'validation');
   const validation = chatCompletionSchema.safeParse(request.body);
   if (!validation.success) {
@@ -181,9 +208,9 @@ function recordMetrics(
     choices?: Array<{ message?: { content?: string } }>;
   };
   const responseData = response.data as OpenAIUsageData | undefined;
-  
+
   let tokenUsage = responseData ? extractOpenAITokenUsage(responseData) : undefined;
-  
+
   let outputText: string | undefined;
   if (responseData?.choices && Array.isArray(responseData.choices)) {
     outputText = '';
@@ -265,7 +292,11 @@ async function attemptFailover(
     });
     endStage(request, 'upstreamRequest');
     services.router.markPlanSuccess(plan.id);
-    logger.info('Failover successful', { requestId, failoverPlanId: plan.id, durationMs: response.durationMs });
+    logger.info('Failover successful', {
+      requestId,
+      failoverPlanId: plan.id,
+      durationMs: response.durationMs,
+    });
     return response;
   } catch (err) {
     endStage(request, 'upstreamRequest');
@@ -306,7 +337,10 @@ export function createOpenAIHandlers(
       const requestedModel = body.model;
 
       logger.info('Chat completion request', {
-        requestId, model: requestedModel, stream: body.stream, messageCount: body.messages.length,
+        requestId,
+        model: requestedModel,
+        stream: body.stream,
+        messageCount: body.messages.length,
       });
 
       // Content-aware model routing: may rewrite the requested model (e.g. k3 →
@@ -321,240 +355,306 @@ export function createOpenAIHandlers(
         body.model = model;
       }
 
-      // Route to plan with OpenAI support (must have openaiBaseUrl)
-      startStage(request, 'routing');
-      const routingResult = await router.routeForOpenAI(model, requestId);
-      endStage(request, 'routing');
-      if (!routingResult.selectedPlan) {
-        throw createGatewayError('MODEL_NOT_FOUND', `No coding plan with OpenAI-format support for model '${model}'`, { model, requestId });
-      }
+      // Reactive model fallback: try the (possibly rewritten) effective model
+      // first; if the request was a routing rewrite and the whole attempt fails
+      // (e.g. k3-256k rejected by upstream for exceeding 256K context), retry
+      // once on the original requested model (k3, the 1M-context superset). Only
+      // pre-header failures throw and reach the catch; mid-stream failures have
+      // already sent an SSE error and return without retry.
+      const tryModels =
+        modelRoutingOutcome.rewritten && model !== requestedModel
+          ? [model, requestedModel]
+          : [model];
 
-      const plan = routingResult.selectedPlan;
-
-      // Consume quota after selecting the plan
-      startStage(request, 'quotaCheck');
-      if (quotaManager) {
-        const consumed = quotaManager.consumeQuota(plan.id);
-        if (!consumed) {
-          endStage(request, 'quotaCheck');
-          throw createGatewayError(
-            'QUOTA_EXHAUSTED',
-            `Quota exhausted for plan '${plan.name}'`,
-            { planId: plan.id, requestId }
-          );
-        }
-      }
-      endStage(request, 'quotaCheck');
-
-      const apiKey = await fetchApiKey(repository, plan.id, request);
-
-      logger.debug('Selected plan for request', {
-        requestId, planId: plan.id, planName: plan.name,
-        alternatives: routingResult.alternativePlans.length,
-      });
-
-      // Update the request body to use the canonical name for upstream request
-      if (routingResult.canonicalName) {
-        body.model = routingResult.canonicalName;
-      }
-
-      // Attach provider metrics early so onResponse hook always has plan/model info
-      // (non-streaming will overwrite with full metrics via recordMetrics)
-      attachProviderMetrics(request, {
-        planId: plan.id,
-        planName: plan.name,
-        model,
-        canonicalModel: routingResult.canonicalName !== model ? routingResult.canonicalName : undefined,
-        durationMs: 0,
-        statusCode: 0,
-      });
-
-      // Handle streaming - forward OpenAI request to OpenAI endpoint directly
-      if (body.stream) {
-        // Hijacked replies bypass Fastify's onResponse lifecycle, so we must
-        // manually log completion and the timing summary after the stream ends.
-        // Both helpers are idempotent: if the raw response's finish event
-        // later fires the onResponse hook, it will skip the duplicate output.
-        const logCompletion = (): void => {
-          startStage(request, 'responseSent');
-          endStage(request, 'responseSent');
-          if (reply.statusCode >= 400) {
-            getRequestTimer(request).markIncomplete();
-          }
-          getRequestTimer(request).logSummary();
-          logStreamingResponse(request, reply);
-        };
-
-        startStage(request, 'upstreamRequest');
+      for (let modelAttempt = 0; modelAttempt < tryModels.length; modelAttempt++) {
+        model = tryModels[modelAttempt]!;
+        body.model = model;
         try {
-          await proxy.forwardOpenAIStream(
-            body,
-            { baseUrl: plan.openaiBaseUrl!, apiKey, timeout: plan.timeout, requestId },
-            (_chunk, done) => {
-              if (done) {
-                endStage(request, 'upstreamRequest');
-                router.markPlanSuccess(plan.id);
-                logger.debug('Stream completed', { requestId });
-              }
-            },
-            reply,
-            (tokenUsage, accumulatedText) => {
-              const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
-                tokenUsage,
-                body,
-                'openai',
-                accumulatedText,
-                requestId
-              );
-
-              attachProviderMetrics(request, {
-                planId: plan.id,
-                planName: plan.name,
-                model,
-                durationMs: Date.now() - (request.startTime || Date.now()),
-                statusCode: 200,
-                tokenUsage: finalTokenUsage,
-              });
-            }
-          );
-          logCompletion();
-          return; // primary plan succeeded
-        } catch (primaryError) {
-          endStage(request, 'upstreamRequest');
-          router.markPlanFailed(plan.id);
-          // Refund quota on stream failure
-          if (quotaManager) {
-            quotaManager.refundQuota(plan.id);
+          // Route to plan with OpenAI support (must have openaiBaseUrl)
+          startStage(request, 'routing');
+          const routingResult = await router.routeForOpenAI(model, requestId);
+          endStage(request, 'routing');
+          if (!routingResult.selectedPlan) {
+            throw createGatewayError(
+              'MODEL_NOT_FOUND',
+              `No coding plan with OpenAI-format support for model '${model}'`,
+              { model, requestId }
+            );
           }
 
-          // Failover: only when the upstream rejected before streaming started
-          // (client SSE headers not yet sent) AND the error is retryable (400/429).
-          if (isRetryableUpstreamError(primaryError) && !reply.raw.headersSent) {
+          const plan = routingResult.selectedPlan;
+
+          // Consume quota after selecting the plan
+          startStage(request, 'quotaCheck');
+          if (quotaManager) {
+            const consumed = quotaManager.consumeQuota(plan.id);
+            if (!consumed) {
+              endStage(request, 'quotaCheck');
+              throw createGatewayError(
+                'QUOTA_EXHAUSTED',
+                `Quota exhausted for plan '${plan.name}'`,
+                { planId: plan.id, requestId }
+              );
+            }
+          }
+          endStage(request, 'quotaCheck');
+
+          const apiKey = await fetchApiKey(repository, plan.id, request);
+
+          logger.debug('Selected plan for request', {
+            requestId,
+            planId: plan.id,
+            planName: plan.name,
+            alternatives: routingResult.alternativePlans.length,
+          });
+
+          // Update the request body to use the canonical name for upstream request
+          if (routingResult.canonicalName) {
+            body.model = routingResult.canonicalName;
+          }
+
+          // Attach provider metrics early so onResponse hook always has plan/model info
+          // (non-streaming will overwrite with full metrics via recordMetrics)
+          attachProviderMetrics(request, {
+            planId: plan.id,
+            planName: plan.name,
+            model,
+            canonicalModel:
+              routingResult.canonicalName !== model ? routingResult.canonicalName : undefined,
+            durationMs: 0,
+            statusCode: 0,
+          });
+
+          // Handle streaming - forward OpenAI request to OpenAI endpoint directly
+          if (body.stream) {
+            // Hijacked replies bypass Fastify's onResponse lifecycle, so we must
+            // manually log completion and the timing summary after the stream ends.
+            // Both helpers are idempotent: if the raw response's finish event
+            // later fires the onResponse hook, it will skip the duplicate output.
+            const logCompletion = (): void => {
+              startStage(request, 'responseSent');
+              endStage(request, 'responseSent');
+              if (reply.statusCode >= 400) {
+                getRequestTimer(request).markIncomplete();
+              }
+              getRequestTimer(request).logSummary();
+              logStreamingResponse(request, reply);
+            };
+
+            startStage(request, 'upstreamRequest');
+            try {
+              await proxy.forwardOpenAIStream(
+                body,
+                { baseUrl: plan.openaiBaseUrl!, apiKey, timeout: plan.timeout, requestId },
+                (_chunk, done) => {
+                  if (done) {
+                    endStage(request, 'upstreamRequest');
+                    router.markPlanSuccess(plan.id);
+                    logger.debug('Stream completed', { requestId });
+                  }
+                },
+                reply,
+                (tokenUsage, accumulatedText) => {
+                  const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
+                    tokenUsage,
+                    body,
+                    'openai',
+                    accumulatedText,
+                    requestId
+                  );
+
+                  attachProviderMetrics(request, {
+                    planId: plan.id,
+                    planName: plan.name,
+                    model,
+                    durationMs: Date.now() - (request.startTime || Date.now()),
+                    statusCode: 200,
+                    tokenUsage: finalTokenUsage,
+                  });
+                }
+              );
+              logCompletion();
+              return; // primary plan succeeded
+            } catch (primaryError) {
+              endStage(request, 'upstreamRequest');
+              router.markPlanFailed(plan.id);
+              // Refund quota on stream failure
+              if (quotaManager) {
+                quotaManager.refundQuota(plan.id);
+              }
+
+              // Failover: only when the upstream rejected before streaming started
+              // (client SSE headers not yet sent) AND the error is retryable (400/429).
+              if (isRetryableUpstreamError(primaryError) && !reply.raw.headersSent) {
+                for (const altPlan of routingResult.alternativePlans) {
+                  if (
+                    !router.getCircuitBreaker().canExecute(altPlan.id) ||
+                    !altPlan.openaiBaseUrl
+                  ) {
+                    continue;
+                  }
+                  // Charge the alternative plan for the request it is about to serve.
+                  // The matching refund on failure below makes this net-zero if the
+                  // attempt fails, so the serving plan is the only one charged.
+                  if (quotaManager && !quotaManager.consumeQuota(altPlan.id)) {
+                    continue; // alternative exhausted — try the next one
+                  }
+                  logger.info('Attempting streaming failover', {
+                    requestId,
+                    failedPlanId: plan.id,
+                    failoverPlanId: altPlan.id,
+                  });
+                  // Use the canonical model name for the upstream request
+                  if (routingResult.canonicalName) {
+                    body.model = routingResult.canonicalName;
+                  }
+                  try {
+                    const altApiKey = await fetchApiKey(repository, altPlan.id, request);
+                    startStage(request, 'upstreamRequest');
+                    await proxy.forwardOpenAIStream(
+                      body,
+                      {
+                        baseUrl: altPlan.openaiBaseUrl,
+                        apiKey: altApiKey,
+                        timeout: altPlan.timeout,
+                        requestId,
+                      },
+                      (_chunk, done) => {
+                        if (done) {
+                          endStage(request, 'upstreamRequest');
+                          router.markPlanSuccess(altPlan.id);
+                        }
+                      },
+                      reply,
+                      (tokenUsage, accumulatedText) => {
+                        const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
+                          tokenUsage,
+                          body,
+                          'openai',
+                          accumulatedText,
+                          requestId
+                        );
+                        attachProviderMetrics(request, {
+                          planId: altPlan.id,
+                          planName: altPlan.name,
+                          model,
+                          durationMs: Date.now() - (request.startTime || Date.now()),
+                          statusCode: 200,
+                          tokenUsage: finalTokenUsage,
+                        });
+                      }
+                    );
+                    logCompletion();
+                    return; // failover succeeded
+                  } catch (altError) {
+                    endStage(request, 'upstreamRequest');
+                    router.markPlanFailed(altPlan.id);
+                    if (quotaManager) {
+                      quotaManager.refundQuota(altPlan.id);
+                    }
+                    // If the alt plan started streaming then failed, the SSE error
+                    // event was already delivered to the client — cannot try further.
+                    if (reply.raw.headersSent) {
+                      logCompletion();
+                      return;
+                    }
+                    // otherwise continue to the next alternative plan
+                  }
+                }
+                // All alternatives exhausted and client headers still not sent:
+                // surface the primary plan's original error (per fallback policy).
+                throw primaryError;
+              }
+
+              // Non-retryable error, or headers already sent mid-stream.
+              if (!reply.raw.headersSent) {
+                throw primaryError;
+              }
+              // headers already sent — handleStreamError already wrote an SSE error event.
+              logCompletion();
+            }
+            return;
+          }
+
+          // Non-streaming request with failover
+          startStage(request, 'upstreamRequest');
+          try {
+            const response = await proxy.forwardOpenAIRequest(body, {
+              baseUrl: plan.openaiBaseUrl!,
+              apiKey,
+              timeout: plan.timeout,
+              requestId,
+            });
+            endStage(request, 'upstreamRequest');
+            router.markPlanSuccess(plan.id);
+            recordMetrics(request, plan, model, response);
+            return response.data as ChatCompletionResponse;
+          } catch (error) {
+            endStage(request, 'upstreamRequest');
+            router.markPlanFailed(plan.id);
+
+            // Refund quota on failure
+            if (quotaManager) {
+              quotaManager.refundQuota(plan.id);
+            }
+
             for (const altPlan of routingResult.alternativePlans) {
-              if (!router.getCircuitBreaker().canExecute(altPlan.id) || !altPlan.openaiBaseUrl) {
+              if (!router.getCircuitBreaker().canExecute(altPlan.id)) {
                 continue;
               }
-              // Charge the alternative plan for the request it is about to serve.
-              // The matching refund on failure below makes this net-zero if the
-              // attempt fails, so the serving plan is the only one charged.
+              // Charge the alternative plan for the request it is about to serve;
+              // refund below if the attempt fails (net-zero for a failed attempt).
               if (quotaManager && !quotaManager.consumeQuota(altPlan.id)) {
                 continue; // alternative exhausted — try the next one
               }
-              logger.info('Attempting streaming failover', {
-                requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id,
+
+              logger.info('Attempting failover', {
+                requestId,
+                failedPlanId: plan.id,
+                failoverPlanId: altPlan.id,
               });
-              // Use the canonical model name for the upstream request
-              if (routingResult.canonicalName) {
-                body.model = routingResult.canonicalName;
+              const result = await attemptFailover(
+                services,
+                body,
+                requestId,
+                altPlan,
+                request,
+                routingResult.canonicalName
+              );
+              if (result) {
+                recordMetrics(request, altPlan, model, result);
+                return result.data as ChatCompletionResponse;
               }
-              try {
-                const altApiKey = await fetchApiKey(repository, altPlan.id, request);
-                startStage(request, 'upstreamRequest');
-                await proxy.forwardOpenAIStream(
-                  body,
-                  { baseUrl: altPlan.openaiBaseUrl, apiKey: altApiKey, timeout: altPlan.timeout, requestId },
-                  (_chunk, done) => {
-                    if (done) {
-                      endStage(request, 'upstreamRequest');
-                      router.markPlanSuccess(altPlan.id);
-                    }
-                  },
-                  reply,
-                  (tokenUsage, accumulatedText) => {
-                    const finalTokenUsage = TokenCounter.buildTokenUsageWithFallback(
-                      tokenUsage,
-                      body,
-                      'openai',
-                      accumulatedText,
-                      requestId
-                    );
-                    attachProviderMetrics(request, {
-                      planId: altPlan.id,
-                      planName: altPlan.name,
-                      model,
-                      durationMs: Date.now() - (request.startTime || Date.now()),
-                      statusCode: 200,
-                      tokenUsage: finalTokenUsage,
-                    });
-                  }
-                );
-                logCompletion();
-                return; // failover succeeded
-              } catch (altError) {
-                endStage(request, 'upstreamRequest');
-                router.markPlanFailed(altPlan.id);
-                if (quotaManager) {
-                  quotaManager.refundQuota(altPlan.id);
-                }
-                // If the alt plan started streaming then failed, the SSE error
-                // event was already delivered to the client — cannot try further.
-                if (reply.raw.headersSent) {
-                  logCompletion();
-                  return;
-                }
-                // otherwise continue to the next alternative plan
+              // attemptFailover returned null (failed) — refund the quota we charged.
+              if (quotaManager) {
+                quotaManager.refundQuota(altPlan.id);
               }
             }
-            // All alternatives exhausted and client headers still not sent:
-            // surface the primary plan's original error (per fallback policy).
-            throw primaryError;
+
+            // All alternatives exhausted — surface the primary plan's original error
+            // (preserves upstream statusCode/JSON, e.g. 429 AccountQuotaExceeded)
+            // instead of a generic UPSTREAM_ERROR, per the "pass through primary" policy.
+            throw error;
           }
-
-          // Non-retryable error, or headers already sent mid-stream.
-          if (!reply.raw.headersSent) {
-            throw primaryError;
-          }
-          // headers already sent — handleStreamError already wrote an SSE error event.
-          logCompletion();
-        }
-        return;
-      }
-
-      // Non-streaming request with failover
-      startStage(request, 'upstreamRequest');
-      try {
-        const response = await proxy.forwardOpenAIRequest(body, {
-          baseUrl: plan.openaiBaseUrl!, apiKey, timeout: plan.timeout, requestId,
-        });
-        endStage(request, 'upstreamRequest');
-        router.markPlanSuccess(plan.id);
-        recordMetrics(request, plan, model, response);
-        return response.data as ChatCompletionResponse;
-      } catch (error) {
-        endStage(request, 'upstreamRequest');
-        router.markPlanFailed(plan.id);
-
-        // Refund quota on failure
-        if (quotaManager) {
-          quotaManager.refundQuota(plan.id);
-        }
-
-        for (const altPlan of routingResult.alternativePlans) {
-          if (!router.getCircuitBreaker().canExecute(altPlan.id)) {
+        } catch (modelFallbackErr) {
+          if (modelAttempt < tryModels.length - 1) {
+            logger.info(
+              'Model routing fallback: rewritten model failed, retrying on original model',
+              {
+                requestId,
+                requestedModel,
+                failedModel: tryModels[modelAttempt],
+                retryModel: tryModels[modelAttempt + 1],
+                error:
+                  modelFallbackErr instanceof Error
+                    ? modelFallbackErr.message
+                    : String(modelFallbackErr),
+              }
+            );
             continue;
           }
-          // Charge the alternative plan for the request it is about to serve;
-          // refund below if the attempt fails (net-zero for a failed attempt).
-          if (quotaManager && !quotaManager.consumeQuota(altPlan.id)) {
-            continue; // alternative exhausted — try the next one
-          }
-
-          logger.info('Attempting failover', { requestId, failedPlanId: plan.id, failoverPlanId: altPlan.id });
-          const result = await attemptFailover(services, body, requestId, altPlan, request, routingResult.canonicalName);
-          if (result) {
-            recordMetrics(request, altPlan, model, result);
-            return result.data as ChatCompletionResponse;
-          }
-          // attemptFailover returned null (failed) — refund the quota we charged.
-          if (quotaManager) {
-            quotaManager.refundQuota(altPlan.id);
-          }
+          throw modelFallbackErr;
         }
-
-        // All alternatives exhausted — surface the primary plan's original error
-        // (preserves upstream statusCode/JSON, e.g. 429 AccountQuotaExceeded)
-        // instead of a generic UPSTREAM_ERROR, per the "pass through primary" policy.
-        throw error;
       }
     },
 
@@ -623,7 +723,9 @@ export function createOpenAIHandlers(
       }
 
       if (!found) {
-        throw createGatewayError('MODEL_NOT_FOUND', `Model '${modelId}' not found`, { model: modelId });
+        throw createGatewayError('MODEL_NOT_FOUND', `Model '${modelId}' not found`, {
+          model: modelId,
+        });
       }
 
       const modelInfo = findModelInfo(modelId);
