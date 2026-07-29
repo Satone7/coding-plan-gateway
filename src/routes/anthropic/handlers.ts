@@ -9,6 +9,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { IPlanRepository } from '@/services/plan-repository';
 import { RequestRouter, createRequestRouter } from '@/services/request-router';
+import { createModelRoutingService } from '@/services/model-router';
 import { RequestProxy } from '@/services/request-proxy';
 import { QuotaManager } from '@/services/quota-manager';
 import type { ProviderRegistry } from '@/services/provider-registry';
@@ -33,6 +34,7 @@ import {
 } from '@/types/anthropic';
 import type { CodingPlan } from '@/types';
 import type { LoadBalanceConfig } from '@/types/load-balancing';
+import type { ModelRoutingConfig } from '@/types/model-routing';
 import { TokenCounter } from '@/utils/token-counter';
 
 /**
@@ -329,9 +331,11 @@ export function createAnthropicHandlers(
   proxy: RequestProxy,
   quotaManager?: QuotaManager,
   providerRegistry?: ProviderRegistry,
-  loadBalanceConfig?: LoadBalanceConfig
+  loadBalanceConfig?: LoadBalanceConfig,
+  modelRoutingConfig?: ModelRoutingConfig
 ): AnthropicHandlers {
   const router = createRequestRouter(repository, quotaManager, loadBalanceConfig, providerRegistry);
+  const modelRouter = createModelRoutingService(modelRoutingConfig);
   const services: HandlerServices = { repository, proxy, router };
 
   return {
@@ -342,15 +346,27 @@ export function createAnthropicHandlers(
     ): Promise<AnthropicMessageResponse | void> {
       const requestId = request.id;
       const body = validateAndParse(request);
-      const model = body.model;
+      const requestedModel = body.model;
 
       // Normalize non-standard field values before forwarding (e.g., output_config.effort xhigh → max)
       normalizeRequest(body);
 
       logger.info('Anthropic message request', {
-        requestId, model, stream: body.stream,
+        requestId, model: requestedModel, stream: body.stream,
         messageCount: body.messages.length, maxTokens: body.max_tokens,
       });
+
+      // Content-aware model routing: may rewrite the requested model (e.g. k3 →
+      // k3-256k when the input fits in 256k). Runs before plan selection; the
+      // plan-selection pipeline stays model-name-keyed and unchanged.
+      let model = requestedModel;
+      startStage(request, 'modelRouting');
+      const modelRoutingOutcome = modelRouter.resolve({ requestedModel, body, format: 'anthropic' });
+      endStage(request, 'modelRouting');
+      if (modelRoutingOutcome.rewritten) {
+        model = modelRoutingOutcome.model;
+        body.model = model;
+      }
 
       startStage(request, 'routing');
       const routingResult = await router.route(model, requestId);

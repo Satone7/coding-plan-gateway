@@ -88,3 +88,25 @@ plans:
     timeout: 300
     status: active
     enable: true
+
+# Content-aware model routing (optional, top-level).
+# Rewrite the requested model based on request content BEFORE plan selection.
+# Strategies are pluggable and iterated in config order; the first to rewrite
+# wins. Disabled by default (pure passthrough). Additive field — no config
+# version bump or migration needed.
+#
+# modelRouting:
+#   enabled: true
+#   strategies:
+#     # context-downgrade: use a smaller-context variant when the input fits.
+#     # inputTokensLte is an input-token budget — set it BELOW the target's
+#     # context window to leave headroom for output tokens and estimation
+#     # variance (the local tokenizer is an approximation). Token estimation
+#     # runs only when a rule's `from` matches, so unrelated models pay nothing.
+#     - id: context-downgrade
+#       enabled: true
+#       rules:
+#         - from: k3
+#           to: k3-256k
+#           when:
+#             inputTokensLte: 240000

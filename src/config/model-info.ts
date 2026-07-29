@@ -237,6 +237,13 @@ export const MODEL_INFO: Record<string, Record<string, ModelInfo>> = {
       supportsTools: true,
       supportsStreaming: true,
     },
+    'k3-256k': {
+      contextWindow: 262144,
+      notes: 'K3 256k context — no video input, otherwise same as k3',
+      supportsVision: true,
+      supportsTools: true,
+      supportsStreaming: true,
+    },
   },
 };
 

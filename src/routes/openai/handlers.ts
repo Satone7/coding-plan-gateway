@@ -9,6 +9,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { IPlanRepository } from '@/services/plan-repository';
 import { RequestRouter, createRequestRouter } from '@/services/request-router';
+import { createModelRoutingService } from '@/services/model-router';
 import { RequestProxy } from '@/services/request-proxy';
 import { QuotaManager } from '@/services/quota-manager';
 import type { ProviderRegistry } from '@/services/provider-registry';
@@ -28,6 +29,7 @@ import {
 import type { ChatCompletionRequest, ChatCompletionResponse, ModelsResponse, Model } from '@/types/openai';
 import type { CodingPlan } from '@/types';
 import type { LoadBalanceConfig } from '@/types/load-balancing';
+import type { ModelRoutingConfig } from '@/types/model-routing';
 import { TokenCounter } from '@/utils/token-counter';
 import { findModelInfo } from '@/config/model-info';
 
@@ -286,9 +288,11 @@ export function createOpenAIHandlers(
   proxy: RequestProxy,
   quotaManager?: QuotaManager,
   providerRegistry?: ProviderRegistry,
-  loadBalanceConfig?: LoadBalanceConfig
+  loadBalanceConfig?: LoadBalanceConfig,
+  modelRoutingConfig?: ModelRoutingConfig
 ): OpenAIHandlers {
   const router = createRequestRouter(repository, quotaManager, loadBalanceConfig, providerRegistry);
+  const modelRouter = createModelRoutingService(modelRoutingConfig);
   const services: HandlerServices = { repository, proxy, router };
 
   return {
@@ -299,11 +303,23 @@ export function createOpenAIHandlers(
     ): Promise<ChatCompletionResponse | void> {
       const requestId = request.id;
       const body = validateAndParse(request);
-      const model = body.model;
+      const requestedModel = body.model;
 
       logger.info('Chat completion request', {
-        requestId, model, stream: body.stream, messageCount: body.messages.length,
+        requestId, model: requestedModel, stream: body.stream, messageCount: body.messages.length,
       });
+
+      // Content-aware model routing: may rewrite the requested model (e.g. k3 →
+      // k3-256k when the input fits in 256k). Runs before plan selection; the
+      // plan-selection pipeline stays model-name-keyed and unchanged.
+      let model = requestedModel;
+      startStage(request, 'modelRouting');
+      const modelRoutingOutcome = modelRouter.resolve({ requestedModel, body, format: 'openai' });
+      endStage(request, 'modelRouting');
+      if (modelRoutingOutcome.rewritten) {
+        model = modelRoutingOutcome.model;
+        body.model = model;
+      }
 
       // Route to plan with OpenAI support (must have openaiBaseUrl)
       startStage(request, 'routing');
