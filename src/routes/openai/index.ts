@@ -10,6 +10,7 @@ import { RequestProxy } from '@/services/request-proxy';
 import { QuotaManager } from '@/services/quota-manager';
 import type { ProviderRegistry } from '@/services/provider-registry';
 import type { LoadBalanceConfig } from '@/types/load-balancing';
+import type { ModelRoutingConfig } from '@/types/model-routing';
 
 /**
  * Options for OpenAI routes.
@@ -25,6 +26,8 @@ export interface OpenAIRoutesOptions {
   providerRegistry?: ProviderRegistry;
   /** Load balancing configuration */
   loadBalanceConfig?: LoadBalanceConfig;
+  /** Content-aware model routing configuration */
+  modelRoutingConfig?: ModelRoutingConfig;
   /** API prefix (default: '/v1') */
   prefix?: string;
 }
@@ -39,8 +42,8 @@ export async function registerOpenAIRoutes(
   app: FastifyInstance,
   options: OpenAIRoutesOptions
 ): Promise<void> {
-  const { repository, proxy, quotaManager, providerRegistry, loadBalanceConfig, prefix = '/v1' } = options;
-  const handlers = createOpenAIHandlers(repository, proxy, quotaManager, providerRegistry, loadBalanceConfig);
+  const { repository, proxy, quotaManager, providerRegistry, loadBalanceConfig, modelRoutingConfig, prefix = '/v1' } = options;
+  const handlers = createOpenAIHandlers(repository, proxy, quotaManager, providerRegistry, loadBalanceConfig, modelRoutingConfig);
 
   await app.register(
     (fastify, _options, done) => {

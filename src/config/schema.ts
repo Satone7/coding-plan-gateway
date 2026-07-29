@@ -48,6 +48,31 @@ export const loadBalanceConfigSchema = z.object({
 });
 
 /**
+ * Model routing strategy entry schema (generic, passthrough).
+ *
+ * `id` selects the strategy implementation; the remaining fields are that
+ * strategy's own params (e.g. `rules` for context-downgrade). Each strategy
+ * validates its own params, so adding a new strategy requires no schema change
+ * — only a new class registered in ModelRoutingService.
+ */
+export const modelRoutingStrategySchema = z
+  .object({
+    id: z.string().min(1),
+    enabled: z.boolean().optional().default(true),
+  })
+  .passthrough();
+
+/**
+ * Model routing configuration schema.
+ * Controls content-aware model rewriting that runs before plan selection.
+ * Additive optional field → no config version bump or migration needed.
+ */
+export const modelRoutingConfigSchema = z.object({
+  enabled: z.boolean().optional().default(false),
+  strategies: z.array(modelRoutingStrategySchema).default([]),
+});
+
+/**
  * Quota period schemas (discriminated union).
  */
 const fiveHourPeriodSchema = z.object({
@@ -175,6 +200,7 @@ export const configSchema = z.object({
   plans: z.array(planConfigSchema).default([]),
   providers: z.record(z.string().min(1), providerOverrideSchema).optional(),
   loadBalancing: loadBalanceConfigSchema.optional(),
+  modelRouting: modelRoutingConfigSchema.optional(),
 });
 
 /**
@@ -243,3 +269,4 @@ export type AuthConfig = z.infer<typeof authConfigSchema>;
 export type AppConfig = z.infer<typeof appConfigSchema>;
 export type LoadBalanceConfigInput = z.infer<typeof loadBalanceConfigSchema>;
 export type FactorWeightsInput = z.infer<typeof factorWeightsSchema>;
+export type ModelRoutingConfigInput = z.infer<typeof modelRoutingConfigSchema>;

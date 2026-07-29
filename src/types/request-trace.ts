@@ -12,6 +12,7 @@
 export type StageName =
   | 'requestReceived'
   | 'validation'
+  | 'modelRouting'
   | 'routing'
   | 'quotaCheck'
   | 'apiKeyDecryption'
