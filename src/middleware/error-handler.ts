@@ -78,11 +78,22 @@ export function errorHandler(
   const requestId = request.id;
   const timestamp = new Date().toISOString();
 
-  // Log the error
+  // Log the error, including any provider metrics attached by handlers so
+  // downstream consumers (e.g. the dashboard metrics aggregator) can still
+  // attribute the failure to its plan/model chain.
   logger.error('Request error', error, {
     requestId,
     method: request.method,
     url: request.url,
+    provider: request.providerMetrics
+      ? {
+          planId: request.providerMetrics.planId,
+          planName: request.providerMetrics.planName,
+          model: request.providerMetrics.model,
+          canonicalModel: request.providerMetrics.canonicalModel,
+          statusCode: request.providerMetrics.statusCode,
+        }
+      : undefined,
   });
 
   // Handle Zod validation errors

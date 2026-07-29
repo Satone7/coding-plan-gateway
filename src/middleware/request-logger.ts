@@ -225,7 +225,24 @@ export function errorLoggerMiddleware(
       planId: request.providerMetrics.planId,
       planName: request.providerMetrics.planName,
       model: request.providerMetrics.model,
+      canonicalModel: request.providerMetrics.canonicalModel,
+      durationMs: request.providerMetrics.durationMs,
+      statusCode: request.providerMetrics.statusCode,
     };
+
+    // Include token usage if available
+    if (request.providerMetrics.tokenUsage) {
+      logData.tokens = {
+        input: request.providerMetrics.tokenUsage.inputTokens,
+        output: request.providerMetrics.tokenUsage.outputTokens,
+        total: request.providerMetrics.tokenUsage.totalTokens,
+      };
+    }
+
+    // Include provider response time if available
+    if (request.providerMetrics.providerResponseTimeMs) {
+      logData.providerResponseTimeMs = request.providerMetrics.providerResponseTimeMs;
+    }
   }
 
   logger.error('Request failed', error, logData);

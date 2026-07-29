@@ -205,7 +205,9 @@ function createAuthHook(options: AuthMiddlewareOptions) {
       },
     };
 
-    logger.debug('Request authenticated', {
+    // Info-level so the dashboard metrics aggregator (fed by the log listener)
+    // can attribute requests to API keys even at the default log level.
+    logger.info('Request authenticated', {
       requestId,
       path,
       keyId: apiKey.id,
