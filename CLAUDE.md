@@ -26,6 +26,23 @@
 - Read-only web monitoring dashboard at `GET /dashboard` (zero-build single-page HTML, no external assets) backed by JSON endpoints under `/api/dashboard/*`. The `DashboardMetrics` singleton (fed by the log listener) aggregates request chains (`apiKey → model → plan`) into a bounded in-memory flow buffer; the page renders a sankey-style flow diagram whose edge widths encode token volume, plus quota bars and a recent-errors panel. The whole dashboard surface (page + `/api/dashboard/*` data endpoints) is **auth-exempt by default** — it is read-only and exposes only aggregated metrics (no secrets, no mutations); operators can lock it back down via `AUTH_EXEMPT_PATHS`. Historical token statistics are **persisted** by `UsageStatsStore` (`src/services/usage-stats-store.ts`), which aggregates per `(date, planId, model)` counters to `./data/usage-stats.json` (override via `USAGE_STATS_PATH`, 90-day retention, recorded in the onResponse hook and persisted every 60s + on shutdown); the dashboard surfaces them via `/api/dashboard/stats` and a history panel (daily bars + per-plan/model totals), so token stats survive restarts unlike the in-memory flow buffer.
 - Two orthogonal routing layers: (1) **load balancing** picks WHICH plan serves a given model (plan-level, `loadBalancing` config); (2) **model routing** rewrites WHICH model a request uses based on request content, running as a pre-routing step inside the handlers BEFORE `RequestRouter.route` (`modelRouting` config). Model routing is a pluggable strategy framework (`ModelRoutingService` + `ModelRoutingStrategy`); the built-in `context-downgrade` strategy rewrites a model to a smaller-context variant when the estimated input fits (e.g. `k3` → `k3-256k`). The plan-selection pipeline stays model-name-keyed and unchanged; only the model name fed into it may be rewritten. Response `model` echoes the effective (served) model.
 
+## Production Environment
+
+The production gateway runs on the home router, reachable via SSH as **`root@192.168.100.1`** (BusyBox `ash` shell — no GNU coreutils like `timeout`).
+
+| Item | Value |
+|------|-------|
+| SSH host | `root@192.168.100.1` |
+| Container | `docker ps --filter name=coding-plan-gateway` (`0.0.0.0:8087->8087`) |
+| Repo / deploy | `/mnt/data_nvme0n1p4/coding-plan-gateway`, deploy via its `deploy.sh` |
+| Live config (host) | `/root/data_nvme0n1p4/coding-plan-gateway/config.yaml` (bind-mounted to `/app/config.yaml`, root-owned → CLI/API can't persist; edit host file + `docker restart`) |
+| HTTP routes | Mounted under `/api/v1` prefix (e.g. `/api/v1/messages`, `/api/v1/chat/completions`) |
+| Public URL | `https://cpg.lergo.cc` → Cloudflare tunnel → `192.168.100.1:8087` |
+| Egress | Proxy env `HTTPS_PROXY=…172.17.0.1:7890` (Mihomo on the router) |
+| Auth for probes | `api-keys.json` stores only bcrypt hashes — probe via the auth-exempt dashboard endpoints (`/api/dashboard/summary`, `/api/dashboard/errors`) or container logs |
+
+Deploy gotchas: `deploy.sh` uses a possibly stale `origin/master` ref (run `git update-ref refs/remotes/origin/master $(git ls-remote origin master | awk '{print $1}')` first); its `wait_for_health` always times out on BusyBox and prints a rollback message, but the deploy actually succeeds — verify the running image + endpoints directly.
+
 ## Config Version Management
 
 Config files are **automatically migrated** on startup. When a config file with an older version is loaded, the system creates a backup (`config.yaml.v{N}.bak`) and applies all pending migrations sequentially before proceeding.
