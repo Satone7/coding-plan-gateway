@@ -139,6 +139,9 @@ async function main(): Promise<void> {
       ipcServer.onConnect((socket) => {
         ipcServer.sendToClient(socket, { type: 'snapshot', data: dashboardMetrics.getSnapshot() });
       });
+      // Sweep stale in-flight entries even when nobody is watching the
+      // dashboard, so lost completions can't accumulate in the pending map.
+      dashboardMetrics.startStaleSweep();
     } catch (err) {
       logger.error('Failed to start IPC server', err as Error);
     }
@@ -193,6 +196,9 @@ async function main(): Promise<void> {
           dashboardMetrics.setLocalQuota(plan.name, {
             percentage,
             resetAt: quotaState.resetAt?.toISOString() ?? null,
+            periodType: quotaState.period?.type,
+            windowHours:
+              quotaState.period?.type === '5h' ? quotaState.period.windowHours : undefined,
             limit: quotaState.limit,
             used: quotaState.used,
           }, plan.provider);
@@ -240,6 +246,7 @@ async function main(): Promise<void> {
     // Add shutdown hook for IPC server
     app.addHook('onClose', async () => {
       logger.info('Shutting down IPC server...');
+      dashboardMetrics.stopStaleSweep();
       await ipcServer.stop();
     });
 

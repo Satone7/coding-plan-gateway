@@ -21,6 +21,10 @@ export interface ProviderUsageSnapshot {
 export interface LocalQuotaSnapshot {
   percentage: number;
   resetAt: string | null;
+  /** Quota period type (weekly/monthly/5h/total) for cycle-progress display */
+  periodType?: string;
+  /** Sliding-window length in hours, present when periodType is '5h' */
+  windowHours?: number;
   limit: number;
   used: number;
 }
@@ -37,6 +41,8 @@ export interface ActiveRequest {
   method: string;
   url: string;
   format: 'openai' | 'anthropic' | 'unknown';
+  /** Model requested by the client, once the routing handler has logged it */
+  model?: string;
   /** ISO timestamp of request start */
   startedAt: string;
   /** Milliseconds since the request started (computed at snapshot time) */
@@ -77,11 +83,27 @@ export interface PlanQuotaRow {
   kind: 'usage-api' | 'balance' | 'local-quota';
   /** Usage percentage 0-100 for 'usage-api' rows */
   percentage?: number;
-  windows?: Array<{ type: string; percentage: number; windowLabel: string; nextResetTime?: number }>;
+  windows?: Array<{
+    type: string;
+    percentage: number;
+    windowLabel: string;
+    /** Unix-ms timestamp when this window resets (drives the time axis) */
+    nextResetTime?: number;
+    /**
+     * Approximate window length in ms, derived from the window label
+     * ('5h' → 5 hours, '1w'/'7d' → 7 days). Lets the UI render how far
+     * through the cycle we are; undefined when the label is unknown.
+     */
+    durationMs?: number;
+  }>;
   /** Human-readable balance string for 'balance' kind rows (e.g. '¥12.34') */
   balance?: string;
   /** Quota reset time for 'local-quota' rows (null when not scheduled) */
   resetAt?: string | null;
+  /** Configured period type for 'local-quota' rows (weekly/monthly/5h/…) */
+  periodType?: string;
+  /** Sliding-window hours when periodType is '5h' */
+  windowHours?: number;
   lastUpdated: string;
 }
 
@@ -119,6 +141,8 @@ interface PendingRequest {
   apiKey?: string;
   method?: string;
   url?: string;
+  /** Model name requested by the client (from the routing handler's log) */
+  model?: string;
   startedAt?: string;
 }
 
@@ -139,6 +163,34 @@ function sortPlanQuotaRows(rows: PlanQuotaRow[]): PlanQuotaRow[] {
   });
 }
 
+/**
+ * Approximate a quota window's length in ms from its short label, so the
+ * dashboard can draw how far through the cycle we are (axis fill → 100%
+ * means the reset is imminent). Returns undefined for unknown labels —
+ * the UI then shows the reset timestamp without a progress axis.
+ */
+export function windowDurationMs(windowLabel: string | undefined): number | undefined {
+  if (!windowLabel) {
+    return undefined;
+  }
+  const m = /^(\d+(?:\.\d+)?)\s*([hdwmy])$/i.exec(windowLabel.trim());
+  if (!m || m[1] === undefined || m[2] === undefined) {
+    return undefined;
+  }
+  const n = parseFloat(m[1]);
+  const unit = m[2].toLowerCase();
+  const HOUR = 3_600_000;
+  const DAY = 24 * HOUR;
+  switch (unit) {
+    case 'h': return n * HOUR;
+    case 'd': return n * DAY;
+    case 'w': return n * 7 * DAY;
+    case 'm': return n * 30 * DAY;
+    case 'y': return n * 365 * DAY;
+    default: return undefined;
+  }
+}
+
 export class DashboardMetrics {
   private completedRequests = 0;
   private failedRequests = 0;
@@ -151,6 +203,7 @@ export class DashboardMetrics {
   private planProviders: Record<string, string> = {}; // planName -> providerId
   private recentErrors: MetricsSnapshot['recentErrors'] = [];
   private pendingRequests: Record<string, PendingRequest> = {};
+  private staleSweepTimer: NodeJS.Timeout | null = null;
   /** Diagnostic counters for tracing the in-flight pipeline via getSnapshot() */
   private diagStarts = 0;
   private diagAuths = 0;
@@ -160,31 +213,54 @@ export class DashboardMetrics {
   private static readonly MAX_RECENT = 200;
   private static readonly MAX_PENDING = 500;
   /**
-   * Pending entries older than this are dropped at snapshot time. In-flight
-   * tracking depends on log-event pairs; any lost completion (client
-   * disconnect mid-stream, missed log line) would otherwise leave a request
-   * stuck in the "active" list forever. 30min comfortably covers the longest
-   * legitimate streaming response while guaranteeing eventual self-healing.
+   * Pending entries older than this are dropped on a timer (and at snapshot
+   * time). In-flight tracking depends on log-event pairs; any lost completion
+   * (client disconnect mid-stream, missed log line) would otherwise leave a
+   * request stuck in the "active" list forever. 30min comfortably covers the
+   * longest legitimate streaming response while guaranteeing eventual
+   * self-healing.
    */
   private static readonly STALE_PENDING_MS = 30 * 60 * 1000;
+  /** How often the timer-based stale sweep runs */
+  private static readonly STALE_SWEEP_INTERVAL_MS = 60 * 1000;
 
   /** Map a request URL to the API format it belongs to */
   private detectFormat(url: string | undefined): ActiveRequest['format'] {
-    if (!url) {
+    const path = this.stripQuery(url);
+    if (!path) {
       return 'unknown';
     }
-    if (url.includes('/chat/completions')) {
+    if (path.endsWith('/chat/completions')) {
       return 'openai';
     }
-    if (url.includes('/messages') || url.includes('/count_tokens')) {
+    if (path.endsWith('/messages') || path.endsWith('/messages/count_tokens')) {
       return 'anthropic';
     }
     return 'unknown';
   }
 
-  /** Whether a completed request is one of the two proxy endpoints we chart */
+  /**
+   * Whether a completed request is one of the two proxy endpoints we chart.
+   * Matches by path suffix so prefixed mounts (`/api/v1/messages`) and query
+   * strings (`/v1/messages?beta=true`) both count; `/messages/count_tokens`
+   * is a metering helper, not a served request, and stays excluded.
+   */
   private isProxyCompletion(url: string | undefined): boolean {
-    return !!url && (url.includes('/chat/completions') || url.endsWith('/messages'));
+    const path = this.stripQuery(url);
+    return !!path && (path.endsWith('/chat/completions') || path.endsWith('/messages'));
+  }
+
+  /** Drop the query string from a request URL (undefined-safe) */
+  private stripQuery(url: string | undefined): string | undefined {
+    return url?.split('?')[0];
+  }
+
+  /** Test-only hook: age a pending entry's start time (stale-sweep tests) */
+  agePendingForTest(requestId: string, startedAt: string): void {
+    const pending = this.pendingRequests[requestId];
+    if (pending) {
+      pending.startedAt = startedAt;
+    }
   }
 
   processEntry(log: LogLike): void {
@@ -225,6 +301,14 @@ export class DashboardMetrics {
       this.diagCompletions++;
       this.recordCompletion(requestId, ctx);
       delete this.pendingRequests[requestId];
+    } else if (msg === 'Chat completion request' || msg === 'Anthropic message request') {
+      // Emitted by the proxy handlers right after body validation, with the
+      // requested model — attach it to the pending entry so the in-flight
+      // table can show which model each active request is for.
+      const pending = this.pendingRequests[requestId];
+      if (pending) {
+        pending.model = ctx.model as string | undefined;
+      }
     } else if (msg === 'Request failed' || msg === 'Request error') {
       this.failedRequests++;
       // Do NOT drop the pending entry here: the completion log fires right
@@ -352,15 +436,11 @@ export class DashboardMetrics {
   /** In-flight proxy requests, longest-running first; stale entries pruned */
   private buildActiveRequests(): ActiveRequest[] {
     const now = Date.now();
+    this.pruneStalePending(now);
     const active: ActiveRequest[] = [];
     for (const [requestId, p] of Object.entries(this.pendingRequests)) {
       const startedAt = p.startedAt ?? new Date(now).toISOString();
       const startMs = new Date(startedAt).getTime();
-      if (Number.isFinite(startMs) && now - startMs > DashboardMetrics.STALE_PENDING_MS) {
-        // Drop inline so a lost completion cannot leave a ghost entry behind
-        delete this.pendingRequests[requestId];
-        continue;
-      }
       if (!this.isProxyCompletion(p.url)) {
         continue;
       }
@@ -370,12 +450,48 @@ export class DashboardMetrics {
         method: p.method ?? '—',
         url: p.url ?? '',
         format: this.detectFormat(p.url),
+        model: p.model,
         startedAt,
         elapsedMs: Number.isFinite(startMs) ? Math.max(0, now - startMs) : 0,
       });
     }
     active.sort((a, b) => b.elapsedMs - a.elapsedMs);
     return active;
+  }
+
+  /** Delete pending entries older than the stale threshold (lost completions) */
+  private pruneStalePending(now: number): void {
+    for (const [requestId, p] of Object.entries(this.pendingRequests)) {
+      const startMs = p.startedAt ? new Date(p.startedAt).getTime() : NaN;
+      if (Number.isFinite(startMs) && now - startMs > DashboardMetrics.STALE_PENDING_MS) {
+        delete this.pendingRequests[requestId];
+      }
+    }
+  }
+
+  /**
+   * Start the periodic stale-pending sweep. Snapshot-time pruning hides stale
+   * entries from the UI, but without a timer the map itself would still grow
+   * whenever completions are lost (e.g. client disconnects) and nobody is
+   * watching the dashboard. Idempotent; the timer is unref'd so it never
+   * keeps a process (or test) alive.
+   */
+  startStaleSweep(): void {
+    if (this.staleSweepTimer) {
+      return;
+    }
+    this.staleSweepTimer = setInterval(() => {
+      this.pruneStalePending(Date.now());
+    }, DashboardMetrics.STALE_SWEEP_INTERVAL_MS);
+    this.staleSweepTimer.unref();
+  }
+
+  /** Stop the periodic stale-pending sweep */
+  stopStaleSweep(): void {
+    if (this.staleSweepTimer) {
+      clearInterval(this.staleSweepTimer);
+      this.staleSweepTimer = null;
+    }
   }
 
   getSnapshot(): MetricsSnapshot {
@@ -399,18 +515,32 @@ export class DashboardMetrics {
    * /api/dashboard/summary so operators can see whether Request
    * started/authenticated/completed events are arriving (and how many
    * pendings are currently held) without needing log access.
+   *
+   * `pendingProxy` counts only pending entries bound for the two proxy
+   * endpoints (the ones eligible for the active list) — comparing it with
+   * `activeRequests.length` distinguishes "no proxy traffic right now" from
+   * "proxy pendings exist but were filtered out", which was the shape of the
+   * prefixed-URL bug (`/api/v1/messages` didn't match the old matcher).
    */
   getActiveDiagnostics(): {
     starts: number;
     auths: number;
     completions: number;
     pendingNow: number;
+    pendingProxy: number;
   } {
+    let pendingProxy = 0;
+    for (const p of Object.values(this.pendingRequests)) {
+      if (this.isProxyCompletion(p.url)) {
+        pendingProxy++;
+      }
+    }
     return {
       starts: this.diagStarts,
       auths: this.diagAuths,
       completions: this.diagCompletions,
       pendingNow: Object.keys(this.pendingRequests).length,
+      pendingProxy,
     };
   }
 
@@ -473,7 +603,10 @@ export class DashboardMetrics {
           providerId,
           kind: 'usage-api',
           percentage: Math.max(...usage.windows.map((w) => w.percentage)),
-          windows: usage.windows,
+          windows: usage.windows.map((w) => ({
+            ...w,
+            durationMs: windowDurationMs(w.windowLabel),
+          })),
           lastUpdated: usage.lastUpdated,
         });
       }
@@ -495,6 +628,8 @@ export class DashboardMetrics {
         providerId: this.planProviders[planName],
         kind: 'local-quota',
         resetAt: quota.resetAt,
+        periodType: quota.periodType,
+        windowHours: quota.windowHours,
         lastUpdated: new Date().toISOString(),
       });
     }
