@@ -309,6 +309,54 @@ describe('DashboardMetrics', () => {
       expect(metrics.getSnapshot().activeRequests).toHaveLength(0);
     });
 
+    it('should backfill a pending entry when the auth log arrives without a start log', () => {
+      const metrics = new DashboardMetrics();
+      // "Request started" was missed (listener attached mid-flight / eviction);
+      // the auth log alone must still surface the request as in-flight.
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request authenticated',
+        context: { requestId: 'req-orphan', keyName: 'claude-code', path: '/api/v1/messages' },
+      });
+
+      const snapshot = metrics.getSnapshot();
+      expect(snapshot.activeRequests).toHaveLength(1);
+      const active = snapshot.activeRequests[0]!;
+      expect(active.apiKey).toBe('claude-code');
+      expect(active.format).toBe('anthropic');
+
+      // and completion still clears it
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request completed',
+        context: { requestId: 'req-orphan', statusCode: 200, durationMs: 10 },
+      });
+      expect(metrics.getSnapshot().activeRequests).toHaveLength(0);
+    });
+
+    it('should prune pending entries older than the stale threshold at snapshot time', () => {
+      const metrics = new DashboardMetrics();
+      const fortyMinAgo = new Date(Date.now() - 40 * 60 * 1000).toISOString();
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: { requestId: 'req-stuck', method: 'POST', url: '/api/v1/messages' },
+      });
+      // age the entry beyond the 30-minute stale threshold (simulating a
+      // client disconnect whose completion log never arrived)
+      (metrics as unknown as { pendingRequests: Record<string, { startedAt: string }> })
+        .pendingRequests['req-stuck']!.startedAt = fortyMinAgo;
+
+      const snapshot = metrics.getSnapshot();
+      expect(snapshot.activeRequests).toHaveLength(0);
+      // and the entry is actually removed, not just hidden
+      expect(
+        Object.keys(
+          (metrics as unknown as { pendingRequests: Record<string, unknown> }).pendingRequests
+        )
+      ).toHaveLength(0);
+    });
+
     it('should bound the pending map by evicting the oldest entry', () => {
       const metrics = new DashboardMetrics();
       // MAX_PENDING is 500; push 505 starts with no completions
@@ -518,7 +566,7 @@ describe('DashboardMetrics', () => {
       expect(row.windows).toHaveLength(2);
     });
 
-    it('should produce a local-quota row with the remaining amount', () => {
+    it('should produce a local-quota row with only the reset time', () => {
       const metrics = new DashboardMetrics();
       metrics.setLocalQuota('Local-A', {
         percentage: 25,
@@ -529,12 +577,14 @@ describe('DashboardMetrics', () => {
 
       const rows = metrics.buildPlanQuotaRows();
       expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({
-        planName: 'Local-A',
-        kind: 'local-quota',
-        remaining: 750,
-        limit: 1000,
-      });
+      const row = rows[0]!;
+      expect(row.planName).toBe('Local-A');
+      expect(row.kind).toBe('local-quota');
+      expect(row.resetAt).toBe('2026-08-05T00:00:00.000Z');
+      // no remaining figure / progress bar data for local-quota rows
+      expect(row.remaining).toBeUndefined();
+      expect(row.limit).toBeUndefined();
+      expect(row.percentage).toBeUndefined();
     });
 
     it('should omit plans without any accurate remaining signal', () => {
@@ -571,6 +621,37 @@ describe('DashboardMetrics', () => {
       const rows = metrics.buildPlanQuotaRows();
       expect(rows).toHaveLength(1);
       expect(rows[0]!.kind).toBe('usage-api');
+    });
+
+    it('should order rows: balances first, then usage-api by consumption, then local-quota', () => {
+      const metrics = new DashboardMetrics();
+      metrics.setLocalQuota('Local-First', {
+        percentage: 10,
+        resetAt: null,
+        limit: 100,
+        used: 10,
+      });
+      metrics.setProviderUsage('Kimi-Low', {
+        windows: [{ type: '5h', percentage: 20, windowLabel: '5h' }],
+        lastUpdated: '2026-08-04T10:00:00.000Z',
+      });
+      metrics.setProviderUsage('DeepSeek-Balance', {
+        windows: [],
+        summary: { mode: 'balance', value: '¥10.00' },
+        lastUpdated: '2026-08-04T10:00:00.000Z',
+      });
+      metrics.setProviderUsage('Zhipu-High', {
+        windows: [{ type: '5h', percentage: 80, windowLabel: '5h' }],
+        lastUpdated: '2026-08-04T10:00:00.000Z',
+      });
+
+      const rows = metrics.buildPlanQuotaRows();
+      expect(rows.map((r) => r.planName)).toEqual([
+        'DeepSeek-Balance', // balance always first
+        'Zhipu-High', // usage-api rows sorted by consumption desc
+        'Kimi-Low',
+        'Local-First', // local-quota last
+      ]);
     });
   });
 });

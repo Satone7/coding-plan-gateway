@@ -75,14 +75,12 @@ export interface PlanQuotaRow {
   planName: string;
   providerId?: string;
   kind: 'usage-api' | 'balance' | 'local-quota';
-  /** Usage percentage 0-100 for 'usage-api' and 'local-quota' rows */
+  /** Usage percentage 0-100 for 'usage-api' rows */
   percentage?: number;
   windows?: Array<{ type: string; percentage: number; windowLabel: string; nextResetTime?: number }>;
   /** Human-readable balance string for 'balance' kind rows (e.g. '¥12.34') */
   balance?: string;
-  /** Remaining/limit pair for 'local-quota' kind rows */
-  remaining?: number;
-  limit?: number;
+  /** Quota reset time for 'local-quota' rows (null when not scheduled) */
   resetAt?: string | null;
   lastUpdated: string;
 }
@@ -124,6 +122,23 @@ interface PendingRequest {
   startedAt?: string;
 }
 
+/**
+ * Order quota panel rows: account balances first, then usage-API rows by
+ * highest consumption, then local-quota rows.
+ */
+function sortPlanQuotaRows(rows: PlanQuotaRow[]): PlanQuotaRow[] {
+  const kindOrder = (k: PlanQuotaRow['kind']): number =>
+    k === 'balance' ? 0 : k === 'usage-api' ? 1 : 2;
+  return rows.sort((a, b) => {
+    const byKind = kindOrder(a.kind) - kindOrder(b.kind);
+    if (byKind !== 0) {
+      return byKind;
+    }
+    // usage-api rows: most-consumed first
+    return (b.percentage ?? -1) - (a.percentage ?? -1);
+  });
+}
+
 export class DashboardMetrics {
   private completedRequests = 0;
   private failedRequests = 0;
@@ -140,6 +155,14 @@ export class DashboardMetrics {
   private static readonly MAX_ERRORS = 20;
   private static readonly MAX_RECENT = 200;
   private static readonly MAX_PENDING = 500;
+  /**
+   * Pending entries older than this are dropped at snapshot time. In-flight
+   * tracking depends on log-event pairs; any lost completion (client
+   * disconnect mid-stream, missed log line) would otherwise leave a request
+   * stuck in the "active" list forever. 30min comfortably covers the longest
+   * legitimate streaming response while guaranteeing eventual self-healing.
+   */
+  private static readonly STALE_PENDING_MS = 30 * 60 * 1000;
 
   /** Map a request URL to the API format it belongs to */
   private detectFormat(url: string | undefined): ActiveRequest['format'] {
@@ -187,6 +210,16 @@ export class DashboardMetrics {
       const pending = this.pendingRequests[requestId];
       if (pending) {
         pending.apiKey = ctx.keyName as string | undefined;
+      } else {
+        // The "Request started" entry never arrived (e.g. listener attached
+        // mid-flight or the entry was evicted under load). The auth log still
+        // carries the request path, so backfill a pending entry — otherwise
+        // in-flight tracking loses the request entirely until completion.
+        this.pendingRequests[requestId] = {
+          apiKey: ctx.keyName as string | undefined,
+          url: (ctx.path as string | undefined) ?? (ctx.url as string | undefined),
+          startedAt: new Date().toISOString(),
+        };
       }
     } else if (msg === 'Request completed') {
       this.recordCompletion(requestId, ctx);
@@ -315,16 +348,21 @@ export class DashboardMetrics {
     }
   }
 
-  /** In-flight proxy requests, longest-running first */
+  /** In-flight proxy requests, longest-running first; stale entries pruned */
   private buildActiveRequests(): ActiveRequest[] {
     const now = Date.now();
     const active: ActiveRequest[] = [];
+    const stale: string[] = [];
     for (const [requestId, p] of Object.entries(this.pendingRequests)) {
+      const startedAt = p.startedAt ?? new Date(now).toISOString();
+      const startMs = new Date(startedAt).getTime();
+      if (Number.isFinite(startMs) && now - startMs > DashboardMetrics.STALE_PENDING_MS) {
+        stale.push(requestId);
+        continue;
+      }
       if (!this.isProxyCompletion(p.url)) {
         continue;
       }
-      const startedAt = p.startedAt ?? new Date(now).toISOString();
-      const startMs = new Date(startedAt).getTime();
       active.push({
         requestId,
         apiKey: p.apiKey ?? 'anonymous',
@@ -334,6 +372,9 @@ export class DashboardMetrics {
         startedAt,
         elapsedMs: Number.isFinite(startMs) ? Math.max(0, now - startMs) : 0,
       });
+    }
+    for (const id of stale) {
+      delete this.pendingRequests[id];
     }
     active.sort((a, b) => b.elapsedMs - a.elapsedMs);
     return active;
@@ -380,12 +421,16 @@ export class DashboardMetrics {
   /**
    * Build the plan balance rows for the dashboard.
    *
-   * Only plans with an authoritative remaining-quota signal produce a row:
+   * Only plans with an authoritative quota signal produce a row:
    *  - 'balance'    — provider returned an account balance string (DeepSeek);
    *  - 'usage-api'  — provider returned real quota windows (Zhipu, Kimi);
-   *  - 'local-quota'— a finite configured local limit whose remaining is exact
-   *                   (limit > 0). Plans with no quota API and no finite local
-   *                   limit are deliberately omitted — the panel must not guess.
+   *  - 'local-quota'— a finite configured local limit (limit > 0). These rows
+   *                   carry only the reset time: the panel must not guess a
+   *                   "remaining" figure for providers whose true quota is
+   *                   opaque to us (the local counter is a self-imposed cap,
+   *                   not the provider's balance).
+   * Rows are ordered: balances first, then usage-API rows by highest
+   * consumption, then local-quota rows.
    */
   buildPlanQuotaRows(): PlanQuotaRow[] {
     const rows: PlanQuotaRow[] = [];
@@ -422,7 +467,8 @@ export class DashboardMetrics {
       if (seen.has(planName)) {
         continue;
       }
-      // Only a finite configured limit gives an accurate remaining amount.
+      // Only a finite configured limit is meaningful; unlimited plans have
+      // no signal worth a row.
       if (quota.limit <= 0) {
         continue;
       }
@@ -430,15 +476,12 @@ export class DashboardMetrics {
         planName,
         providerId: this.planProviders[planName],
         kind: 'local-quota',
-        remaining: Math.max(0, quota.limit - quota.used),
-        limit: quota.limit,
-        percentage: quota.percentage,
         resetAt: quota.resetAt,
         lastUpdated: new Date().toISOString(),
       });
     }
 
-    return rows;
+    return sortPlanQuotaRows(rows);
   }
 
   /**
