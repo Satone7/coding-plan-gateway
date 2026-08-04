@@ -56,12 +56,24 @@ if ! git -C "$SCRIPT_DIR" diff --quiet 2>/dev/null || \
   echo "Error: uncommitted changes detected. Commit or stash before deploying." >&2
   exit 1
 fi
+# Fetch may fail on hosts with unreliable GitHub access (e.g. the router's
+# TUN intermittently breaks git's TLS handshake). In that case the code may
+# already have been synced out-of-band (git bundle over SSH) — proceed when
+# origin/master is ahead of HEAD, abort only if there is genuinely nothing
+# new to deploy.
 if ! git -C "$SCRIPT_DIR" fetch origin master 2>&1; then
-  echo "Error: git fetch failed" >&2
-  exit 1
+  echo "Warning: git fetch failed; checking whether origin/master is already up to date" >&2
 fi
-if ! git -C "$SCRIPT_DIR" reset --hard origin/master 2>&1; then
-  echo "Error: git reset failed" >&2
+if git -C "$SCRIPT_DIR" merge-base --is-ancestor HEAD origin/master 2>/dev/null && \
+   [ "$(git -C "$SCRIPT_DIR" rev-parse HEAD)" != "$(git -C "$SCRIPT_DIR" rev-parse origin/master)" ]; then
+  if ! git -C "$SCRIPT_DIR" reset --hard origin/master 2>&1; then
+    echo "Error: git reset failed" >&2
+    exit 1
+  fi
+elif [ "$(git -C "$SCRIPT_DIR" rev-parse HEAD)" = "$(git -C "$SCRIPT_DIR" rev-parse origin/master 2>/dev/null || echo '')" ]; then
+  echo "      origin/master == HEAD, nothing to update"
+else
+  echo "Error: fetch failed and HEAD is not an ancestor of origin/master — cannot determine update state" >&2
   exit 1
 fi
 NEW_HEAD=$(git -C "$SCRIPT_DIR" rev-parse --short HEAD)
@@ -114,11 +126,11 @@ if [[ -n "$CONFIG_BACKUP" && -f "$CONFIG_BACKUP" ]]; then
   echo "Config restored" >&2
 fi
 
-# Restore codebase
-if [[ -n "$OLD_HEAD" ]]; then
-  git -C "$SCRIPT_DIR" reset --hard "$OLD_HEAD" 2>&1 || true
-  echo "Codebase reverted to $(git -C "$SCRIPT_DIR" rev-parse --short HEAD)" >&2
-fi
+# Note: the codebase is intentionally NOT reverted here. Rolling HEAD back
+# to OLD_HEAD while leaving the freshly-built image tagged :latest used to
+# mask failed deploys — the "rollback" rebuilt from the cached layers of the
+# same (new) commit and appeared to succeed while running old or new code
+# unpredictably. The image tag restore below is the actual rollback.
 
 # Restore old image
 if [[ -n "$BACKUP_TAG" ]] && docker image inspect "${IMAGE_NAME}:${BACKUP_TAG}" >/dev/null 2>&1; then

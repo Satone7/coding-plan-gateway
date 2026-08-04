@@ -151,6 +151,10 @@ export class DashboardMetrics {
   private planProviders: Record<string, string> = {}; // planName -> providerId
   private recentErrors: MetricsSnapshot['recentErrors'] = [];
   private pendingRequests: Record<string, PendingRequest> = {};
+  /** Diagnostic counters for tracing the in-flight pipeline via getSnapshot() */
+  private diagStarts = 0;
+  private diagAuths = 0;
+  private diagCompletions = 0;
 
   private static readonly MAX_ERRORS = 20;
   private static readonly MAX_RECENT = 200;
@@ -195,6 +199,7 @@ export class DashboardMetrics {
     const msg = log.message;
 
     if (msg === 'Request started') {
+      this.diagStarts++;
       // Bound the map so a flood of requests whose completion log never
       // arrives (client disconnects mid-stream before the hijacked responder
       // logs) cannot grow memory without limit. Oldest entries are evicted.
@@ -207,6 +212,7 @@ export class DashboardMetrics {
         startedAt: new Date().toISOString(),
       };
     } else if (msg === 'Request authenticated') {
+      this.diagAuths++;
       const pending = this.pendingRequests[requestId];
       if (pending) {
         pending.apiKey = ctx.keyName as string | undefined;
@@ -222,6 +228,7 @@ export class DashboardMetrics {
         };
       }
     } else if (msg === 'Request completed') {
+      this.diagCompletions++;
       this.recordCompletion(requestId, ctx);
       delete this.pendingRequests[requestId];
     } else if (msg === 'Request failed' || msg === 'Request error') {
@@ -393,6 +400,26 @@ export class DashboardMetrics {
       localQuota: { ...this.localQuota },
       planProviders: { ...this.planProviders },
       recentErrors: [...this.recentErrors],
+    };
+  }
+
+  /**
+   * Diagnostic counters for the in-flight pipeline, exposed on
+   * /api/dashboard/summary so operators can see whether Request
+   * started/authenticated/completed events are arriving (and how many
+   * pendings are currently held) without needing log access.
+   */
+  getActiveDiagnostics(): {
+    starts: number;
+    auths: number;
+    completions: number;
+    pendingNow: number;
+  } {
+    return {
+      starts: this.diagStarts,
+      auths: this.diagAuths,
+      completions: this.diagCompletions,
+      pendingNow: Object.keys(this.pendingRequests).length,
     };
   }
 

@@ -48,6 +48,7 @@ function registerSummaryAndErrors(app: FastifyInstance): void {
       modelUsages: snapshot.modelUsages,
       apiKeyUsages: snapshot.apiKeyUsages,
       planQuotas: dashboardMetrics.buildPlanQuotaRows(),
+      activeDiagnostics: dashboardMetrics.getActiveDiagnostics(),
       serverTime: new Date().toISOString(),
     };
   });
