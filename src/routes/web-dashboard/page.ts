@@ -49,6 +49,23 @@ const CLIENT_SCRIPT = String.raw`
       return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
     } catch (e) { return iso; }
   }
+  // unix-ms timestamp variant of fmtDateTime
+  function fmtDateTimeMs(ms) {
+    try {
+      var d = new Date(ms);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+    } catch (e) { return String(ms); }
+  }
+  // "3d 4h" / "5h 12m" / "42m" style remaining-time text
+  function fmtRemain(ms) {
+    if (ms <= 0) return '即将重置';
+    var m = Math.floor(ms / 60000);
+    var d = Math.floor(m / 1440); m -= d * 1440;
+    var h = Math.floor(m / 60); m -= h * 60;
+    if (d > 0) return d + 'd ' + h + 'h';
+    if (h > 0) return h + 'h ' + m + 'm';
+    return Math.max(1, m) + 'm';
+  }
   function escHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -132,11 +149,12 @@ const CLIENT_SCRIPT = String.raw`
       return;
     }
     var html = '<table><thead><tr>' +
-      '<th>API Key</th><th>入口</th><th>格式</th><th>开始时间</th><th class="num">已进行</th>' +
+      '<th>API Key</th><th>模型</th><th>入口</th><th>格式</th><th>开始时间</th><th class="num">已进行</th>' +
       '</tr></thead><tbody>';
     rows.forEach(function (r) {
       html += '<tr>' +
         '<td class="key">' + escHtml(r.apiKey) + '</td>' +
+        '<td class="key">' + escHtml(r.model || '…') + '</td>' +
         '<td class="url">' + escHtml(r.method + ' ' + r.url) + '</td>' +
         '<td><span class="chip">' + escHtml(r.format) + '</span></td>' +
         '<td class="num muted">' + fmtTime(r.startedAt) + '</td>' +
@@ -255,20 +273,58 @@ const CLIENT_SCRIPT = String.raw`
       body = '<div class="q-row"><span class="q-pct ' + cls + '">已用 ' + pct + '%</span>' +
         '<span class="q-pct ' + cls + '">剩余 ' + (100 - pct) + '%</span></div>' +
         '<div class="q-bar"><div class="q-fill ' + cls + '" style="width:' + Math.min(100, pct) + '%"></div></div>';
-      if (r.windows && r.windows.length > 1) {
-        body += '<div class="q-sub">' + r.windows.map(function (w) {
-          return escHtml(w.windowLabel || w.type) + ' ' + Math.round(w.percentage) + '%';
-        }).join(' · ') + '</div>';
-      }
+      (r.windows || []).forEach(function (w) {
+        body += windowRow(w);
+      });
       body += '<div class="q-sub">更新于 ' + fmtDateTime(r.lastUpdated) + '</div>';
-    } else { // local-quota: no remaining figure, no progress bar — the local
-             // counter is a self-imposed cap, not the provider's balance.
-      var resetTxt = r.resetAt ? fmtDateTime(r.resetAt) : '未安排';
-      body = '<div class="q-sub">本地配额 · 周期重置：' + escHtml(resetTxt) + '</div>';
+    } else { // local-quota: no remaining figure — the local counter is a
+             // self-imposed cap, not the provider's balance. Only the reset
+             // schedule is authoritative, shown with a cycle time axis.
+      var periodMs = localPeriodMs(r);
+      var resetMs = r.resetAt ? new Date(r.resetAt).getTime() : NaN;
+      if (r.resetAt && !isNaN(resetMs)) {
+        body = '<div class="q-sub">本地配额 · 周期重置</div>' + timeAxis(resetMs, periodMs);
+      } else {
+        body = '<div class="q-sub">本地配额 · 周期重置：未安排</div>';
+      }
     }
     return '<div class="q-card">' +
       '<div class="q-head"><span class="q-name">' + escHtml(r.planName) + '</span>' +
       '<span class="q-kind">' + kind + '</span></div>' + body + '</div>';
+  }
+
+  // One usage-API window: label + consumption + reset time axis
+  function windowRow(w) {
+    var label = escHtml(w.windowLabel || w.type);
+    var head = '<div class="q-sub q-whead"><span>' + label + ' 窗口 · 已用 ' +
+      Math.round(w.percentage) + '%</span></div>';
+    if (w.nextResetTime) {
+      return head + timeAxis(w.nextResetTime, w.durationMs);
+    }
+    return head + '<div class="q-sub q-reset">重置时间未知</div>';
+  }
+
+  // Time axis from cycle start to reset: fill grows to 100% as reset nears.
+  function timeAxis(resetMs, durationMs) {
+    var remain = resetMs - Date.now();
+    var pct = null;
+    if (durationMs && durationMs > 0) {
+      pct = Math.max(0, Math.min(100, Math.round((1 - remain / durationMs) * 100)));
+    }
+    var bar = pct === null
+      ? ''
+      : '<div class="q-bar q-time"><div class="q-fill time" style="width:' + pct + '%"></div></div>';
+    return bar + '<div class="q-sub q-reset">重置：' + fmtDateTimeMs(resetMs) +
+      '（剩余 ' + fmtRemain(remain) + '）</div>';
+  }
+
+  // Cycle length for a local-quota plan, derived from its configured period
+  function localPeriodMs(r) {
+    var DAY = 86400000;
+    if (r.periodType === '5h' && r.windowHours) return r.windowHours * 3600000;
+    if (r.periodType === 'weekly') return 7 * DAY;
+    if (r.periodType === 'monthly') return 30 * DAY; // approx; axis only
+    return undefined;
   }
 
   function kindLabel(kind) {
@@ -521,6 +577,10 @@ th.num { text-align: right; }
 .q-fill.ok { background: var(--ok); } .q-fill.warn { background: var(--warn); }
 .q-fill.crit { background: var(--err); }
 .q-sub { color: var(--muted); font-size: 11px; margin-top: 5px; }
+.q-whead { margin-top: 8px; }
+.q-reset { font-variant-numeric: tabular-nums; }
+.q-bar.q-time { height: 4px; margin: 4px 0 2px; }
+.q-fill.time { background: var(--accent); opacity: .8; }
 
 /* ---------- errors ---------- */
 .err-row { display: flex; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--border-soft);

@@ -4,8 +4,12 @@
  * recent-request buffer, and the plan-quota row builder.
  */
 
-import { describe, it, expect } from 'vitest';
-import { DashboardMetrics, type ProviderUsageSnapshot } from '@/utils/dashboard-metrics';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  DashboardMetrics,
+  windowDurationMs,
+  type ProviderUsageSnapshot,
+} from '@/utils/dashboard-metrics';
 
 /** Push a full start → (auth) → completion cycle through the aggregator */
 function pushRequest(
@@ -333,17 +337,35 @@ describe('DashboardMetrics', () => {
       });
       // age the entry beyond the 30-minute stale threshold (simulating a
       // client disconnect whose completion log never arrived)
-      (metrics as unknown as { pendingRequests: Record<string, { startedAt: string }> })
-        .pendingRequests['req-stuck']!.startedAt = fortyMinAgo;
+      metrics.agePendingForTest('req-stuck', fortyMinAgo);
 
       const snapshot = metrics.getSnapshot();
       expect(snapshot.activeRequests).toHaveLength(0);
       // and the entry is actually removed, not just hidden
-      expect(
-        Object.keys(
-          (metrics as unknown as { pendingRequests: Record<string, unknown> }).pendingRequests
-        )
-      ).toHaveLength(0);
+      expect(metrics.getActiveDiagnostics().pendingNow).toBe(0);
+    });
+
+    it('should prune stale pendings via the periodic sweep timer', () => {
+      vi.useFakeTimers();
+      try {
+        const metrics = new DashboardMetrics();
+        metrics.processEntry({
+          level: 'info',
+          message: 'Request started',
+          context: { requestId: 'req-swept', method: 'POST', url: '/api/v1/messages' },
+        });
+        metrics.agePendingForTest(
+          'req-swept',
+          new Date(Date.now() - 40 * 60 * 1000).toISOString()
+        );
+        metrics.startStaleSweep();
+        vi.advanceTimersByTime(61 * 1000);
+        metrics.stopStaleSweep();
+
+        expect(metrics.getActiveDiagnostics().pendingNow).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('should bound the pending map by evicting the oldest entry', () => {
@@ -359,6 +381,81 @@ describe('DashboardMetrics', () => {
 
       const active = metrics.getSnapshot().activeRequests;
       expect(active.length).toBeLessThanOrEqual(500);
+    });
+
+    it('should track prefixed proxy URLs with query strings (production traffic shape)', () => {
+      // Production serves /api/v1/... and clients append ?beta=true — the
+      // previous matcher missed both, leaving the active panel permanently
+      // empty despite healthy traffic.
+      const metrics = new DashboardMetrics();
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: { requestId: 'req-prefixed', method: 'POST', url: '/api/v1/messages?beta=true' },
+      });
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: { requestId: 'req-prefixed-oai', method: 'POST', url: '/api/v1/chat/completions' },
+      });
+
+      const snapshot = metrics.getSnapshot();
+      expect(snapshot.activeRequests).toHaveLength(2);
+      const byId = Object.fromEntries(snapshot.activeRequests.map((r) => [r.requestId, r]));
+      expect(byId['req-prefixed']!.format).toBe('anthropic');
+      expect(byId['req-prefixed-oai']!.format).toBe('openai');
+    });
+
+    it('should not count count_tokens metering requests as active', () => {
+      const metrics = new DashboardMetrics();
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: {
+          requestId: 'req-meter',
+          method: 'POST',
+          url: '/api/v1/messages/count_tokens?beta=true',
+        },
+      });
+
+      expect(metrics.getSnapshot().activeRequests).toHaveLength(0);
+      // …but format detection still classifies it for diagnostics
+      expect(metrics.getActiveDiagnostics().pendingProxy).toBe(0);
+    });
+
+    it('should attach the requested model to the active row when the handler log arrives', () => {
+      const metrics = new DashboardMetrics();
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: { requestId: 'req-model', method: 'POST', url: '/api/v1/messages?beta=true' },
+      });
+      metrics.processEntry({
+        level: 'info',
+        message: 'Anthropic message request',
+        context: { requestId: 'req-model', model: 'k3', stream: true },
+      });
+
+      const active = metrics.getSnapshot().activeRequests[0]!;
+      expect(active.model).toBe('k3');
+    });
+
+    it('should report pendingProxy in diagnostics separately from total pendings', () => {
+      const metrics = new DashboardMetrics();
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: { requestId: 'req-proxy', method: 'POST', url: '/api/v1/messages?beta=true' },
+      });
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: { requestId: 'req-dash', method: 'GET', url: '/api/dashboard/summary' },
+      });
+
+      const diag = metrics.getActiveDiagnostics();
+      expect(diag.pendingNow).toBe(2);
+      expect(diag.pendingProxy).toBe(1);
     });
   });
 
@@ -641,6 +738,55 @@ describe('DashboardMetrics', () => {
         'Kimi-Low',
         'Local-First', // local-quota last
       ]);
+    });
+
+    it('should derive window durationMs from the window label for the time axis', () => {
+      const metrics = new DashboardMetrics();
+      metrics.setProviderUsage('Kimi-A', {
+        windows: [
+          { type: '5h', percentage: 35, windowLabel: '5h', nextResetTime: 1785840000000 },
+          { type: 'weekly', percentage: 62, windowLabel: '1w', nextResetTime: 1786200000000 },
+        ],
+        lastUpdated: '2026-08-04T10:00:00.000Z',
+      }, 'kimi');
+
+      const row = metrics.buildPlanQuotaRows()[0]!;
+      const byLabel = Object.fromEntries(row.windows!.map((w) => [w.windowLabel, w]));
+      expect(byLabel['5h']!.durationMs).toBe(5 * 3_600_000);
+      expect(byLabel['1w']!.durationMs).toBe(7 * 24 * 3_600_000);
+      // timestamps pass through untouched so the UI can render reset times
+      expect(byLabel['1w']!.nextResetTime).toBe(1786200000000);
+    });
+
+    it('should carry period info on local-quota rows for the cycle time axis', () => {
+      const metrics = new DashboardMetrics();
+      metrics.setLocalQuota('Local-Weekly', {
+        percentage: 25,
+        resetAt: '2026-08-10T00:00:00.000Z',
+        periodType: 'weekly',
+        limit: 1000,
+        used: 250,
+      });
+
+      const row = metrics.buildPlanQuotaRows()[0]!;
+      expect(row.periodType).toBe('weekly');
+      expect(row.windowHours).toBeUndefined();
+      expect(row.resetAt).toBe('2026-08-10T00:00:00.000Z');
+    });
+  });
+
+  describe('windowDurationMs', () => {
+    it('should parse short window labels into milliseconds', () => {
+      expect(windowDurationMs('5h')).toBe(5 * 3_600_000);
+      expect(windowDurationMs('1w')).toBe(7 * 24 * 3_600_000);
+      expect(windowDurationMs('7d')).toBe(7 * 24 * 3_600_000);
+      expect(windowDurationMs('1m')).toBe(30 * 24 * 3_600_000);
+    });
+
+    it('should return undefined for unknown or missing labels', () => {
+      expect(windowDurationMs(undefined)).toBeUndefined();
+      expect(windowDurationMs('rolling')).toBeUndefined();
+      expect(windowDurationMs('')).toBeUndefined();
     });
   });
 });
