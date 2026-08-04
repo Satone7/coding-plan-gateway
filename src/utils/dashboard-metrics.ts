@@ -216,17 +216,11 @@ export class DashboardMetrics {
       const pending = this.pendingRequests[requestId];
       if (pending) {
         pending.apiKey = ctx.keyName as string | undefined;
-      } else {
-        // The "Request started" entry never arrived (e.g. listener attached
-        // mid-flight or the entry was evicted under load). The auth log still
-        // carries the request path, so backfill a pending entry — otherwise
-        // in-flight tracking loses the request entirely until completion.
-        this.pendingRequests[requestId] = {
-          apiKey: ctx.keyName as string | undefined,
-          url: (ctx.path as string | undefined) ?? (ctx.url as string | undefined),
-          startedAt: new Date().toISOString(),
-        };
       }
+      // Note: no backfill when pending is missing — with no start event we
+      // have no URL to classify, and an entry created here would be a
+      // permanent ghost if the completion also fails to arrive. Stale
+      // pendings are the actively harmful case, not missing ones.
     } else if (msg === 'Request completed') {
       this.diagCompletions++;
       this.recordCompletion(requestId, ctx);
@@ -359,12 +353,12 @@ export class DashboardMetrics {
   private buildActiveRequests(): ActiveRequest[] {
     const now = Date.now();
     const active: ActiveRequest[] = [];
-    const stale: string[] = [];
     for (const [requestId, p] of Object.entries(this.pendingRequests)) {
       const startedAt = p.startedAt ?? new Date(now).toISOString();
       const startMs = new Date(startedAt).getTime();
       if (Number.isFinite(startMs) && now - startMs > DashboardMetrics.STALE_PENDING_MS) {
-        stale.push(requestId);
+        // Drop inline so a lost completion cannot leave a ghost entry behind
+        delete this.pendingRequests[requestId];
         continue;
       }
       if (!this.isProxyCompletion(p.url)) {
@@ -379,9 +373,6 @@ export class DashboardMetrics {
         startedAt,
         elapsedMs: Number.isFinite(startMs) ? Math.max(0, now - startMs) : 0,
       });
-    }
-    for (const id of stale) {
-      delete this.pendingRequests[id];
     }
     active.sort((a, b) => b.elapsedMs - a.elapsedMs);
     return active;
