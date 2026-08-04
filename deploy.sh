@@ -64,16 +64,28 @@ fi
 if ! git -C "$SCRIPT_DIR" fetch origin master 2>&1; then
   echo "Warning: git fetch failed; checking whether origin/master is already up to date" >&2
 fi
-if git -C "$SCRIPT_DIR" merge-base --is-ancestor HEAD origin/master 2>/dev/null && \
-   [ "$(git -C "$SCRIPT_DIR" rev-parse HEAD)" != "$(git -C "$SCRIPT_DIR" rev-parse origin/master)" ]; then
-  if ! git -C "$SCRIPT_DIR" reset --hard origin/master 2>&1; then
+# Decide update state against the freshest ref we can see. FETCH_HEAD is
+# written by the fetch above whenever it succeeds; when the fetch fails
+# (flaky network/TLS to GitHub), the local remote-tracking ref may still be
+# current from a previous push on this machine or an out-of-band sync.
+TARGET_REF=""
+if git -C "$SCRIPT_DIR" rev-parse --verify --quiet FETCH_HEAD >/dev/null; then
+  TARGET_REF="FETCH_HEAD"
+elif git -C "$SCRIPT_DIR" rev-parse --verify --quiet origin/master >/dev/null; then
+  TARGET_REF="origin/master"
+fi
+if [ -n "$TARGET_REF" ] && \
+   git -C "$SCRIPT_DIR" merge-base --is-ancestor HEAD "$TARGET_REF" 2>/dev/null && \
+   [ "$(git -C "$SCRIPT_DIR" rev-parse HEAD)" != "$(git -C "$SCRIPT_DIR" rev-parse "$TARGET_REF")" ]; then
+  if ! git -C "$SCRIPT_DIR" reset --hard "$TARGET_REF" 2>&1; then
     echo "Error: git reset failed" >&2
     exit 1
   fi
-elif [ "$(git -C "$SCRIPT_DIR" rev-parse HEAD)" = "$(git -C "$SCRIPT_DIR" rev-parse origin/master 2>/dev/null || echo '')" ]; then
-  echo "      origin/master == HEAD, nothing to update"
+elif [ -n "$TARGET_REF" ] && \
+     [ "$(git -C "$SCRIPT_DIR" rev-parse HEAD)" = "$(git -C "$SCRIPT_DIR" rev-parse "$TARGET_REF")" ]; then
+  echo "      $TARGET_REF == HEAD, nothing to update"
 else
-  echo "Error: fetch failed and HEAD is not an ancestor of origin/master — cannot determine update state" >&2
+  echo "Error: fetch failed and HEAD is not an ancestor of the remote ref — cannot determine update state" >&2
   exit 1
 fi
 NEW_HEAD=$(git -C "$SCRIPT_DIR" rev-parse --short HEAD)
