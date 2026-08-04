@@ -309,28 +309,17 @@ describe('DashboardMetrics', () => {
       expect(metrics.getSnapshot().activeRequests).toHaveLength(0);
     });
 
-    it('should backfill a pending entry when the auth log arrives without a start log', () => {
+    it('should NOT backfill from an auth log without a start log (no URL to classify)', () => {
       const metrics = new DashboardMetrics();
-      // "Request started" was missed (listener attached mid-flight / eviction);
-      // the auth log alone must still surface the request as in-flight.
+      // "Request started" was missed (listener attached mid-flight / eviction).
+      // The auth log alone carries no URL, so creating an entry would risk a
+      // permanent ghost if the completion also never arrives — skip instead.
       metrics.processEntry({
         level: 'info',
         message: 'Request authenticated',
         context: { requestId: 'req-orphan', keyName: 'claude-code', path: '/api/v1/messages' },
       });
 
-      const snapshot = metrics.getSnapshot();
-      expect(snapshot.activeRequests).toHaveLength(1);
-      const active = snapshot.activeRequests[0]!;
-      expect(active.apiKey).toBe('claude-code');
-      expect(active.format).toBe('anthropic');
-
-      // and completion still clears it
-      metrics.processEntry({
-        level: 'info',
-        message: 'Request completed',
-        context: { requestId: 'req-orphan', statusCode: 200, durationMs: 10 },
-      });
       expect(metrics.getSnapshot().activeRequests).toHaveLength(0);
     });
 
