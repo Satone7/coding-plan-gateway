@@ -169,7 +169,9 @@ describe('Web Dashboard Routes', () => {
       );
       expect(row).toBeDefined();
       expect(row.kind).toBe('local-quota');
-      expect(row.remaining).toBe(300);
+      // local-quota rows carry only the reset time — no remaining/limit/bar
+      expect(row.remaining).toBeUndefined();
+      expect(row.limit).toBeUndefined();
       const unlimited = body.planQuotas.find(
         (r: { planName: string }) => r.planName === 'Route-Unlimited-Plan'
       );

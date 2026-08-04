@@ -4,13 +4,19 @@
  * a single HTML document. No external requests are made, so the page works
  * fully offline behind the gateway's own auth.
  *
- * The page is organized around four accurate, table-first views:
- *   1. in-flight requests (key / model / plan / elapsed, ticking every second)
- *   2. per-API-key token usage (current run + persisted history)
- *   3. per-model token usage (current run + persisted history)
- *   4. per-plan remaining quota/balance (plans without an authoritative
- *      remaining-quota signal are omitted, never guessed)
- * plus a recent-requests table and a recent-errors panel.
+ * Visual language follows the Operate-mode dashboard guidance distilled from
+ * the Taste Skill / Impeccable design frameworks (see knowledge base):
+ * tinted-neutral dark palette, restrained single accent, 8px spacing grid,
+ * typographic hierarchy over boxes, tabular-nums for all figures, and
+ * transitions kept under 300ms with ease-out entrances.
+ *
+ * Content panels:
+ *   1. in-flight requests (key / entry / format / elapsed, ticking every second)
+ *   2. per-API-key token usage (current run)
+ *   3. per-model & per-plan token usage (current run merged with history)
+ *   4. plan quota / balance cards (balances first, usage-API windows second,
+ *      local-quota plans last without any guessed remaining figure)
+ *   5. recent requests table + recent errors + persisted daily history
  */
 
 /**
@@ -29,10 +35,6 @@ const CLIENT_SCRIPT = String.raw`
     if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
     return String(Math.round(n));
   }
-  function fmtFull(n) {
-    if (n == null || isNaN(n)) return '0';
-    return Number(n).toLocaleString('en-US');
-  }
   function fmtDur(ms) {
     if (ms >= 60000) return Math.floor(ms / 60000) + 'm' + Math.round((ms % 60000) / 1000) + 's';
     if (ms >= 1000) return (ms / 1000).toFixed(1) + 's';
@@ -40,6 +42,12 @@ const CLIENT_SCRIPT = String.raw`
   }
   function fmtTime(iso) {
     try { return new Date(iso).toLocaleTimeString(); } catch (e) { return iso; }
+  }
+  function fmtDateTime(iso) {
+    try {
+      var d = new Date(iso);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+    } catch (e) { return iso; }
   }
   function escHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -120,19 +128,19 @@ const CLIENT_SCRIPT = String.raw`
     $('#activeBadge').textContent = rows.length ? String(rows.length) : '';
     var wrap = $('#activeWrap');
     if (!rows.length) {
-      wrap.innerHTML = '<div class="empty-sm">当前无进行中的请求</div>';
+      wrap.innerHTML = '<div class="empty">当前无进行中的请求</div>';
       return;
     }
     var html = '<table><thead><tr>' +
-      '<th>API Key</th><th>入口</th><th>格式</th><th>开始时间</th><th>已进行</th>' +
+      '<th>API Key</th><th>入口</th><th>格式</th><th>开始时间</th><th class="num">已进行</th>' +
       '</tr></thead><tbody>';
     rows.forEach(function (r) {
       html += '<tr>' +
-        '<td class="cell-key">' + escHtml(r.apiKey) + '</td>' +
-        '<td class="cell-url">' + escHtml(r.method + ' ' + r.url) + '</td>' +
-        '<td>' + escHtml(r.format) + '</td>' +
-        '<td class="cell-num">' + fmtTime(r.startedAt) + '</td>' +
-        '<td class="cell-num elapsed" data-started="' + escHtml(r.startedAt) + '">' +
+        '<td class="key">' + escHtml(r.apiKey) + '</td>' +
+        '<td class="url">' + escHtml(r.method + ' ' + r.url) + '</td>' +
+        '<td><span class="chip">' + escHtml(r.format) + '</span></td>' +
+        '<td class="num muted">' + fmtTime(r.startedAt) + '</td>' +
+        '<td class="num elapsed" data-started="' + escHtml(r.startedAt) + '">' +
           fmtDur(r.elapsedMs) + '</td>' +
         '</tr>';
     });
@@ -149,13 +157,8 @@ const CLIENT_SCRIPT = String.raw`
     });
   }
 
-  // ---------- usage leaderboards (keys / models) ----------
-  function mergeHistory(byName) {
-    // persisted history across restarts (UsageStatsStore query window)
-    return byName || {};
-  }
-
-  function renderBoard(wrapSel, live, histNames) {
+  // ---------- usage leaderboards (keys / models / plans) ----------
+  function renderBoard(wrapSel, live, histNames, nameHeader) {
     var wrap = $(wrapSel);
     var rows = [];
     Object.keys(live || {}).forEach(function (name) {
@@ -184,26 +187,30 @@ const CLIENT_SCRIPT = String.raw`
       }
     });
     if (!rows.length) {
-      wrap.innerHTML = '<div class="empty-sm">暂无用量数据</div>';
+      wrap.innerHTML = '<div class="empty">暂无用量数据</div>';
       return;
     }
     rows.sort(function (a, b) { return (b.tokens + b.histTokens) - (a.tokens + a.histTokens); });
     var maxTok = 0;
     rows.forEach(function (r) { var t = r.tokens + r.histTokens; if (t > maxTok) maxTok = t; });
+    var hasHist = rows.some(function (r) { return r.histTokens > 0 || r.histRequests > 0; });
     var html = '<table><thead><tr>' +
-      '<th>名称</th><th class="cell-num">本次运行 Tokens</th><th class="cell-num">历史 Tokens</th>' +
-      '<th class="cell-num">本次请求</th><th class="cell-num">历史请求</th><th class="cell-bar"></th>' +
+      '<th>' + nameHeader + '</th><th class="num">本次运行</th>' +
+      (hasHist ? '<th class="num">历史</th>' : '') +
+      '<th class="num">请求</th>' +
+      (hasHist ? '<th class="num">历史请求</th>' : '') +
+      '<th class="bar-col"></th>' +
       '</tr></thead><tbody>';
     rows.forEach(function (r) {
       var total = r.tokens + r.histTokens;
       var pct = maxTok > 0 ? Math.round((total / maxTok) * 100) : 0;
       html += '<tr>' +
-        '<td class="cell-key" title="' + escHtml(r.name) + '">' + escHtml(r.name) + '</td>' +
-        '<td class="cell-num">' + fmtNum(r.tokens) + '</td>' +
-        '<td class="cell-num muted">' + fmtNum(r.histTokens) + '</td>' +
-        '<td class="cell-num">' + fmtNum(r.requests) + '</td>' +
-        '<td class="cell-num muted">' + fmtNum(r.histRequests) + '</td>' +
-        '<td class="cell-bar"><div class="bar"><div class="bar-fill" style="width:' + pct + '%"></div></div></td>' +
+        '<td class="key" title="' + escHtml(r.name) + '">' + escHtml(r.name) + '</td>' +
+        '<td class="num">' + fmtNum(r.tokens) + '</td>' +
+        (hasHist ? '<td class="num muted">' + fmtNum(r.histTokens) + '</td>' : '') +
+        '<td class="num muted">' + fmtNum(r.requests) + '</td>' +
+        (hasHist ? '<td class="num muted">' + fmtNum(r.histRequests) + '</td>' : '') +
+        '<td class="bar-col"><div class="bar"><div class="bar-fill" style="width:' + pct + '%"></div></div></td>' +
         '</tr>';
     });
     html += '</tbody></table>';
@@ -212,11 +219,11 @@ const CLIENT_SCRIPT = String.raw`
 
   function renderBoards() {
     var s = state.summary || {};
-    var byModel = state.stats ? mergeHistory(state.stats.byModel) : {};
-    var byPlan = state.stats ? mergeHistory(state.stats.byPlan) : {};
-    renderBoard('#keysWrap', s.apiKeyUsages, null);
-    renderBoard('#modelsWrap', s.modelUsages, byModel);
-    renderBoard('#plansUsageWrap', s.planUsages, byPlan);
+    var byModel = state.stats ? state.stats.byModel : null;
+    var byPlan = state.stats ? state.stats.byPlan : null;
+    renderBoard('#keysWrap', s.apiKeyUsages, null, 'API Key');
+    renderBoard('#modelsWrap', s.modelUsages, byModel, '模型');
+    renderBoard('#plansUsageWrap', s.planUsages, byPlan, 'Plan');
   }
 
   // ---------- plan quota / balance ----------
@@ -225,15 +232,10 @@ const CLIENT_SCRIPT = String.raw`
     var rows = s.planQuotas || [];
     var wrap = $('#quotaWrap');
     if (!rows.length) {
-      wrap.innerHTML = '<div class="empty-sm">暂无可准确查询余量的 Plan（无配额 API 且未配置有限本地配额的 Plan 不会显示）</div>';
+      wrap.innerHTML = '<div class="empty">暂无可准确查询余量的 Plan<br>' +
+        '<span class="empty-sub">无配额 API 且未配置有限本地配额的 Plan 不会显示</span></div>';
       return;
     }
-    rows.sort(function (a, b) {
-      // most-consumed first for percentage kinds; balances last (not comparable)
-      var pa = a.percentage != null ? a.percentage : -1;
-      var pb = b.percentage != null ? b.percentage : -1;
-      return pb - pa;
-    });
     var html = '';
     rows.forEach(function (r) {
       html += quotaCard(r);
@@ -242,34 +244,31 @@ const CLIENT_SCRIPT = String.raw`
   }
 
   function quotaCard(r) {
-    var head = '<div class="quota-head"><span class="quota-name">' + escHtml(r.planName) + '</span>' +
-      '<span class="quota-kind">' + kindLabel(r.kind) + '</span></div>';
+    var kind = kindLabel(r.kind);
     var body = '';
     if (r.kind === 'balance') {
-      body = '<div class="quota-balance">' + escHtml(r.balance || '—') + '</div>' +
-        '<div class="quota-sub">账户余额 · 更新于 ' + fmtTime(r.lastUpdated) + '</div>';
+      body = '<div class="q-balance">' + escHtml(r.balance || '—') + '</div>' +
+        '<div class="q-sub">账户余额 · 更新于 ' + fmtDateTime(r.lastUpdated) + '</div>';
     } else if (r.kind === 'usage-api') {
       var pct = Math.round(r.percentage || 0);
       var cls = pct >= 90 ? 'crit' : pct >= 70 ? 'warn' : 'ok';
-      body = '<div class="quota-head"><span class="quota-pct ' + cls + '">已用 ' + pct + '%</span>' +
-        '<span class="quota-pct ' + cls + '">剩余 ' + (100 - pct) + '%</span></div>' +
-        '<div class="quota-bar"><div class="quota-fill ' + cls + '" style="width:' + Math.min(100, pct) + '%"></div></div>';
+      body = '<div class="q-row"><span class="q-pct ' + cls + '">已用 ' + pct + '%</span>' +
+        '<span class="q-pct ' + cls + '">剩余 ' + (100 - pct) + '%</span></div>' +
+        '<div class="q-bar"><div class="q-fill ' + cls + '" style="width:' + Math.min(100, pct) + '%"></div></div>';
       if (r.windows && r.windows.length > 1) {
-        body += '<div class="quota-sub">' + r.windows.map(function (w) {
+        body += '<div class="q-sub">' + r.windows.map(function (w) {
           return escHtml(w.windowLabel || w.type) + ' ' + Math.round(w.percentage) + '%';
         }).join(' · ') + '</div>';
       }
-      body += '<div class="quota-sub">更新于 ' + fmtTime(r.lastUpdated) + '</div>';
-    } else { // local-quota
-      var pct2 = Math.round(r.percentage || 0);
-      var cls2 = pct2 >= 90 ? 'crit' : pct2 >= 70 ? 'warn' : 'ok';
-      var resetTxt = r.resetAt ? ' · 重置 ' + fmtTime(r.resetAt) : '';
-      body = '<div class="quota-head"><span class="quota-pct ' + cls2 + '">剩余 ' +
-        fmtFull(r.remaining) + ' / ' + fmtFull(r.limit) + '</span></div>' +
-        '<div class="quota-bar"><div class="quota-fill ' + cls2 + '" style="width:' + Math.min(100, pct2) + '%"></div></div>' +
-        '<div class="quota-sub">本地配额已用 ' + pct2 + '%' + escHtml(resetTxt) + '</div>';
+      body += '<div class="q-sub">更新于 ' + fmtDateTime(r.lastUpdated) + '</div>';
+    } else { // local-quota: no remaining figure, no progress bar — the local
+             // counter is a self-imposed cap, not the provider's balance.
+      var resetTxt = r.resetAt ? fmtDateTime(r.resetAt) : '未安排';
+      body = '<div class="q-sub">本地配额 · 周期重置：' + escHtml(resetTxt) + '</div>';
     }
-    return '<div class="quota-row">' + head + body + '</div>';
+    return '<div class="q-card">' +
+      '<div class="q-head"><span class="q-name">' + escHtml(r.planName) + '</span>' +
+      '<span class="q-kind">' + kind + '</span></div>' + body + '</div>';
   }
 
   function kindLabel(kind) {
@@ -282,13 +281,13 @@ const CLIENT_SCRIPT = String.raw`
     var rows = (s.recentRequests || []).slice(0, 50);
     var wrap = $('#recentWrap');
     if (!rows.length) {
-      wrap.innerHTML = '<div class="empty-sm">本次运行暂无已完成的代理请求</div>';
+      wrap.innerHTML = '<div class="empty">本次运行暂无已完成的代理请求</div>';
       return;
     }
     var html = '<table><thead><tr>' +
-      '<th>时间</th><th>API Key</th><th>模型</th><th>Plan</th><th>格式</th>' +
-      '<th class="cell-num">输入</th><th class="cell-num">输出</th>' +
-      '<th class="cell-num">耗时</th><th class="cell-num">状态</th>' +
+      '<th>时间</th><th>API Key</th><th>模型</th><th>Plan</th>' +
+      '<th class="num">输入</th><th class="num">输出</th>' +
+      '<th class="num">耗时</th><th class="num">状态</th>' +
       '</tr></thead><tbody>';
     rows.forEach(function (r) {
       var failed = r.status >= 400;
@@ -296,15 +295,14 @@ const CLIENT_SCRIPT = String.raw`
         ? r.model + ' → ' + r.canonicalModel
         : r.model;
       html += '<tr class="' + (failed ? 'row-failed' : '') + '">' +
-        '<td class="cell-num">' + fmtTime(r.at) + '</td>' +
-        '<td class="cell-key">' + escHtml(r.apiKey) + '</td>' +
-        '<td class="cell-key" title="' + escHtml(model) + '">' + escHtml(model) + '</td>' +
-        '<td class="cell-key">' + escHtml(r.plan) + '</td>' +
-        '<td>' + escHtml(r.format) + '</td>' +
-        '<td class="cell-num">' + fmtNum(r.inputTokens) + '</td>' +
-        '<td class="cell-num">' + fmtNum(r.outputTokens) + '</td>' +
-        '<td class="cell-num">' + fmtDur(r.durationMs) + '</td>' +
-        '<td class="cell-num ' + (failed ? 'st-fail' : 'st-ok') + '">' + r.status + '</td>' +
+        '<td class="num muted">' + fmtTime(r.at) + '</td>' +
+        '<td class="key">' + escHtml(r.apiKey) + '</td>' +
+        '<td class="key" title="' + escHtml(model) + '">' + escHtml(model) + '</td>' +
+        '<td class="key">' + escHtml(r.plan) + '</td>' +
+        '<td class="num">' + fmtNum(r.inputTokens) + '</td>' +
+        '<td class="num">' + fmtNum(r.outputTokens) + '</td>' +
+        '<td class="num muted">' + fmtDur(r.durationMs) + '</td>' +
+        '<td class="num"><span class="st ' + (failed ? 'st-fail' : 'st-ok') + '">' + r.status + '</span></td>' +
         '</tr>';
     });
     html += '</tbody></table>';
@@ -315,7 +313,7 @@ const CLIENT_SCRIPT = String.raw`
   function renderErrors() {
     var errs = state.errors || [];
     if (!errs.length) {
-      $('#errorList').innerHTML = '<div class="empty-sm">暂无错误，运行正常</div>';
+      $('#errorList').innerHTML = '<div class="empty">暂无错误，运行正常</div>';
       return;
     }
     $('#errorList').innerHTML = errs.slice(0, 12).map(function (e) {
@@ -334,15 +332,14 @@ const CLIENT_SCRIPT = String.raw`
     var wrap = $('#historyWrap');
     var s = state.stats;
     if (!s || !s.days) {
-      wrap.innerHTML = '<div class="empty-sm">暂无历史统计数据（usage-stats 持久化未启用或无记录）</div>';
+      wrap.innerHTML = '<div class="empty">暂无历史统计数据<span class="empty-sub">usage-stats 持久化未启用或无记录</span></div>';
       return;
     }
     var days = s.days;
     var totalTok = 0, totalReq = 0;
     days.forEach(function (d) { totalTok += d.totalTokens; totalReq += d.requests; });
-    var N = 30;
-    var shown = days.slice(-N);
-    var html = '<div class="hist-summary"><span>近 ' + days.length + ' 天累计</span>' +
+    var shown = days.slice(-30);
+    var html = '<div class="hist-summary">近 ' + days.length + ' 天累计 ' +
       '<b>' + fmtNum(totalTok) + '</b> tokens · <b>' + fmtNum(totalReq) + '</b> 请求</div>';
     var maxTok = 1;
     shown.forEach(function (d) { if (d.totalTokens > maxTok) maxTok = d.totalTokens; });
@@ -400,115 +397,168 @@ const CLIENT_SCRIPT = String.raw`
 })();
 `;
 
+/**
+ * Design tokens: tinted-neutral dark palette (no pure black/greys), a single
+ * restrained accent, status hues reserved for semantics, 8px spacing grid,
+ * and motion kept under 300ms with ease-out entrances.
+ */
 const STYLES = `
 :root {
-  --bg: #1a1b26;
-  --bg-alt: #1f2335;
-  --panel: #24283b;
-  --border: #2f344d;
-  --text: #c0caf5;
-  --muted: #565f89;
-  --brand: #7dcfff;
-  --success: #9ece6a;
-  --warning: #e0af68;
-  --error: #f7768e;
+  --bg: #131620;
+  --bg-soft: #171b28;
+  --panel: #1c2133;
+  --panel-hi: #222842;
+  --border: #2a3152;
+  --border-soft: #232a45;
+  --text: #c9d1f2;
+  --text-hi: #eef1ff;
+  --muted: #7c86b3;
+  --faint: #5a6390;
+  --accent: #6ea8fe;
+  --accent-dim: rgba(110, 168, 254, .14);
+  --ok: #7ee0a3;
+  --warn: #f2c97d;
+  --err: #ff8fa3;
+  --radius: 8px;
+  --shadow: 0 1px 2px rgba(5, 8, 20, .4);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
-  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-  "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
-.topbar { display: flex; align-items: center; gap: 12px; padding: 12px 20px;
-  background: var(--bg-alt); border-bottom: 1px solid var(--border); }
-.topbar h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .5px; }
-.topbar .sub { color: var(--muted); font-size: 12px; }
+  font: 13px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+  "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased; }
+
+/* ---------- top bar ---------- */
+.topbar { display: flex; align-items: baseline; gap: 12px; padding: 16px 24px 14px;
+  border-bottom: 1px solid var(--border-soft); }
+.topbar h1 { font-size: 15px; margin: 0; font-weight: 650; color: var(--text-hi);
+  letter-spacing: .02em; }
+.topbar .sub { color: var(--faint); font-size: 12px; }
 .topbar .spacer { flex: 1; }
-.btn { background: var(--panel); border: 1px solid var(--border); color: var(--text);
-  padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
-.btn:hover { border-color: var(--brand); }
-#status { color: var(--muted); font-size: 12px; padding: 6px 20px 0; }
-.stats { display: flex; gap: 14px; padding: 12px 20px 0; flex-wrap: wrap; }
-.stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
-  padding: 10px 16px; min-width: 130px; }
-.stat-card .label { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
-.stat-card .value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.stat-card .value.live { color: var(--brand); }
-.stat-card .value.err { color: var(--error); }
-.main { display: grid; grid-template-columns: 1fr 360px; gap: 14px; padding: 12px 20px 20px; }
+.btn { background: transparent; border: 1px solid var(--border); color: var(--muted);
+  padding: 5px 14px; border-radius: 6px; cursor: pointer; font-size: 12px;
+  transition: color .15s ease, border-color .15s ease, background .15s ease; }
+.btn:hover { color: var(--text-hi); border-color: var(--accent); background: var(--accent-dim); }
+#status { color: var(--faint); font-size: 11px; padding: 8px 24px 0; letter-spacing: .02em; }
+
+/* ---------- stat cards ---------- */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px; padding: 12px 24px 0; }
+.stat-card { background: var(--panel); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow); }
+.stat-card .label { color: var(--muted); font-size: 11px; letter-spacing: .04em;
+  text-transform: uppercase; margin-bottom: 6px; }
+.stat-card .value { font-size: 24px; font-weight: 650; color: var(--text-hi);
+  font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stat-card .value.live { color: var(--accent); }
+.stat-card .value.err { color: var(--err); }
+
+/* ---------- layout ---------- */
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px;
+  padding: 16px 24px 24px; }
 @media (max-width: 1100px) { .main { grid-template-columns: 1fr; } }
-.col > .panel { margin-bottom: 14px; }
+.col > .panel { margin-bottom: 16px; }
 .col > .panel:last-child { margin-bottom: 0; }
-.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
-.panel h2 { font-size: 12px; color: var(--muted); font-weight: 600; margin: 0;
-  padding: 10px 14px; border-bottom: 1px solid var(--border); letter-spacing: .5px; }
-.panel h2 .badge { display: inline-block; min-width: 18px; text-align: center; background: var(--brand);
-  color: var(--bg); border-radius: 9px; font-size: 11px; padding: 0 5px; margin-left: 6px; }
-.table-wrap { overflow-x: auto; padding: 4px 6px 8px; }
+.panel { background: var(--panel); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.panel h2 { font-size: 11px; color: var(--muted); font-weight: 650; margin: 0;
+  padding: 12px 16px 10px; border-bottom: 1px solid var(--border-soft);
+  letter-spacing: .08em; text-transform: uppercase; display: flex; align-items: center; }
+.panel h2 .badge { display: inline-block; min-width: 18px; text-align: center;
+  background: var(--accent); color: var(--bg); border-radius: 9px; font-size: 11px;
+  font-weight: 700; padding: 1px 5px; margin-left: 8px; }
+.panel h2 .badge:empty { display: none; }
+
+/* ---------- tables ---------- */
+.table-wrap { overflow-x: auto; padding: 4px 8px 10px; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px;
-  padding: 8px 8px 6px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-td { padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { text-align: left; color: var(--faint); font-weight: 600; font-size: 11px;
+  letter-spacing: .04em; padding: 10px 10px 8px; border-bottom: 1px solid var(--border-soft);
+  white-space: nowrap; }
+td { padding: 7px 10px; border-bottom: 1px solid var(--border-soft);
+  white-space: nowrap; color: var(--text); }
+tbody tr { transition: background .12s ease; }
+tbody tr:hover { background: var(--panel-hi); }
 tr:last-child td { border-bottom: none; }
-.cell-num { text-align: right; font-variant-numeric: tabular-nums; }
-th.cell-num { text-align: right; }
-.cell-key { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-.cell-url { color: var(--muted); max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+th.num { text-align: right; }
+.key { max-width: 200px; overflow: hidden; text-overflow: ellipsis; font-weight: 550; }
+.url { color: var(--muted); max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
 .muted { color: var(--muted); }
-.row-failed td { background: rgba(247, 118, 142, .06); }
-.st-ok { color: var(--success); }
-.st-fail { color: var(--error); font-weight: 600; }
-.cell-bar { width: 90px; }
-.bar { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
-.bar-fill { height: 100%; background: var(--brand); border-radius: 4px; opacity: .8; }
-.empty-sm { color: var(--muted); padding: 14px; text-align: center; font-size: 12px; }
-.elapsed { color: var(--brand); font-weight: 600; }
-/* quota cards */
-.quota-row { padding: 10px 14px; border-bottom: 1px solid var(--border); }
-.quota-row:last-child { border-bottom: none; }
-.quota-head { display: flex; justify-content: space-between; margin-bottom: 4px; gap: 8px; }
-.quota-name { font-size: 12px; font-weight: 600; }
-.quota-kind { color: var(--muted); font-size: 10px; border: 1px solid var(--border);
-  border-radius: 3px; padding: 0 5px; align-self: center; white-space: nowrap; }
-.quota-balance { font-size: 18px; font-weight: 600; color: var(--success);
-  font-variant-numeric: tabular-nums; margin: 4px 0 2px; }
-.quota-pct { font-size: 12px; font-variant-numeric: tabular-nums; }
-.quota-pct.ok { color: var(--success); } .quota-pct.warn { color: var(--warning); }
-.quota-pct.crit { color: var(--error); }
-.quota-bar { height: 5px; background: var(--bg); border-radius: 3px; overflow: hidden; margin: 4px 0; }
-.quota-fill { height: 100%; border-radius: 3px; transition: width .4s; }
-.quota-fill.ok { background: var(--success); } .quota-fill.warn { background: var(--warning); }
-.quota-fill.crit { background: var(--error); }
-.quota-sub { color: var(--muted); font-size: 11px; margin-top: 3px; }
-/* errors */
-.err-row { display: flex; gap: 8px; padding: 7px 14px; border-bottom: 1px solid var(--border);
+.chip { display: inline-block; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--muted); font-size: 11px; padding: 0 6px; line-height: 1.7; }
+.elapsed { color: var(--accent); font-weight: 650; font-variant-numeric: tabular-nums; }
+.row-failed td { background: rgba(255, 143, 163, .05); }
+.st { display: inline-block; min-width: 34px; text-align: center; border-radius: 4px;
+  font-size: 11px; font-weight: 650; padding: 0 6px; line-height: 1.8;
+  font-variant-numeric: tabular-nums; }
+.st-ok { color: var(--ok); background: rgba(126, 224, 163, .1); }
+.st-fail { color: var(--err); background: rgba(255, 143, 163, .12); }
+.bar-col { width: 90px; }
+.bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--accent); border-radius: 3px; opacity: .75;
+  transition: width .25s ease-out; }
+.empty { color: var(--faint); padding: 22px 16px; text-align: center; font-size: 12px; }
+.empty-sub { display: block; color: var(--faint); font-size: 11px; margin-top: 4px; opacity: .8; }
+
+/* ---------- quota cards ---------- */
+#quotaWrap { display: flex; flex-direction: column; }
+.q-card { padding: 14px 16px; border-bottom: 1px solid var(--border-soft); }
+.q-card:last-child { border-bottom: none; }
+.q-head { display: flex; justify-content: space-between; align-items: center;
+  gap: 8px; margin-bottom: 8px; }
+.q-name { font-size: 13px; font-weight: 600; color: var(--text-hi); }
+.q-kind { color: var(--faint); font-size: 10px; letter-spacing: .06em; border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 6px; white-space: nowrap; text-transform: uppercase; }
+.q-balance { font-size: 22px; font-weight: 650; color: var(--ok); letter-spacing: .01em;
+  font-variant-numeric: tabular-nums; margin: 2px 0 6px; }
+.q-row { display: flex; justify-content: space-between; margin-bottom: 6px; gap: 8px; }
+.q-pct { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.q-pct.ok { color: var(--ok); } .q-pct.warn { color: var(--warn); }
+.q-pct.crit { color: var(--err); }
+.q-bar { height: 5px; background: var(--bg); border-radius: 3px; overflow: hidden; margin: 6px 0; }
+.q-fill { height: 100%; border-radius: 3px; transition: width .3s ease-out; }
+.q-fill.ok { background: var(--ok); } .q-fill.warn { background: var(--warn); }
+.q-fill.crit { background: var(--err); }
+.q-sub { color: var(--muted); font-size: 11px; margin-top: 5px; }
+
+/* ---------- errors ---------- */
+.err-row { display: flex; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--border-soft);
   font-size: 12px; align-items: baseline; }
 .err-row:last-child { border-bottom: none; }
-.err-time { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.err-time { color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .err-body { min-width: 0; }
-.err-msg { color: var(--error); display: block; }
+.err-msg { color: var(--err); display: block; font-weight: 550; }
 .err-detail { color: var(--muted); display: block; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
-/* key prompt */
-#keyPrompt { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none;
-  align-items: center; justify-content: center; z-index: 200; }
+
+/* ---------- key prompt ---------- */
+#keyPrompt { position: fixed; inset: 0; background: rgba(7, 9, 16, .6);
+  backdrop-filter: blur(2px); display: none; align-items: center;
+  justify-content: center; z-index: 200; }
 #keyPrompt .dialog { background: var(--panel); border: 1px solid var(--border);
-  border-radius: 8px; padding: 20px; width: 360px; }
-#keyPrompt h3 { margin: 0 0 8px; font-size: 14px; }
-#keyPrompt p { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+  border-radius: 10px; padding: 22px; width: 380px; box-shadow: 0 8px 32px rgba(5, 8, 20, .5); }
+#keyPrompt h3 { margin: 0 0 8px; font-size: 14px; color: var(--text-hi); }
+#keyPrompt p { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
+#keyPrompt code { background: var(--bg); border-radius: 3px; padding: 0 4px; }
 #keyInput { width: 100%; background: var(--bg); border: 1px solid var(--border);
-  color: var(--text); border-radius: 4px; padding: 8px; font-size: 13px; margin-bottom: 12px; }
+  color: var(--text-hi); border-radius: 6px; padding: 8px 10px; font-size: 13px;
+  margin-bottom: 14px; outline: none; transition: border-color .15s ease; }
+#keyInput:focus { border-color: var(--accent); }
 #keyPrompt .row { display: flex; gap: 8px; justify-content: flex-end; }
-/* historical daily chart */
-.hist-summary { padding: 10px 14px 0; color: var(--muted); font-size: 12px; }
-.hist-summary b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ---------- historical daily chart ---------- */
+.hist-summary { padding: 12px 16px 0; color: var(--muted); font-size: 12px; }
+.hist-summary b { color: var(--text-hi); font-variant-numeric: tabular-nums; }
 .hist-chart { display: flex; align-items: flex-end; gap: 2px; height: 110px;
-  padding: 12px 14px 4px; }
+  padding: 12px 16px 6px; }
 .hist-col { flex: 1; display: flex; flex-direction: column; align-items: center;
   justify-content: flex-end; height: 100%; min-width: 0; cursor: default; }
 .hist-bar-wrap { width: 100%; flex: 1; display: flex; align-items: flex-end; }
-.hist-bar { width: 100%; background: var(--brand); border-radius: 2px 2px 0 0;
-  opacity: .75; min-height: 0; }
+.hist-bar { width: 100%; background: var(--accent); border-radius: 2px 2px 0 0;
+  opacity: .65; min-height: 0; transition: opacity .12s ease; }
 .hist-col:hover .hist-bar { opacity: 1; }
-.hist-x { font-size: 9px; color: var(--muted); margin-top: 4px; white-space: nowrap;
+.hist-x { font-size: 9px; color: var(--faint); margin-top: 4px; white-space: nowrap;
   transform: rotate(-45deg); transform-origin: center; }
 `;
 
@@ -552,37 +602,37 @@ function renderBody(): string {
   <div class="col">
     <div class="panel">
       <h2>进行中请求<span class="badge" id="activeBadge"></span></h2>
-      <div id="activeWrap" class="table-wrap"><div class="empty-sm">加载中…</div></div>
+      <div id="activeWrap" class="table-wrap"><div class="empty">加载中…</div></div>
     </div>
     <div class="panel">
       <h2>按 API Key 的 Token 用量（本次运行）</h2>
-      <div id="keysWrap" class="table-wrap"><div class="empty-sm">加载中…</div></div>
+      <div id="keysWrap" class="table-wrap"><div class="empty">加载中…</div></div>
     </div>
     <div class="panel">
       <h2>按模型的 Token 用量（本次运行 + 历史）</h2>
-      <div id="modelsWrap" class="table-wrap"><div class="empty-sm">加载中…</div></div>
+      <div id="modelsWrap" class="table-wrap"><div class="empty">加载中…</div></div>
     </div>
     <div class="panel">
       <h2>按 Plan 的 Token 用量（本次运行 + 历史）</h2>
-      <div id="plansUsageWrap" class="table-wrap"><div class="empty-sm">加载中…</div></div>
+      <div id="plansUsageWrap" class="table-wrap"><div class="empty">加载中…</div></div>
     </div>
     <div class="panel">
       <h2>近期完成的请求</h2>
-      <div id="recentWrap" class="table-wrap"><div class="empty-sm">加载中…</div></div>
+      <div id="recentWrap" class="table-wrap"><div class="empty">加载中…</div></div>
     </div>
   </div>
   <div class="col">
     <div class="panel">
-      <h2>Plan 余量 / 余额（仅显示可准确查询的 Plan）</h2>
-      <div id="quotaWrap"><div class="empty-sm">加载中…</div></div>
+      <h2>Plan 余量 / 余额</h2>
+      <div id="quotaWrap"><div class="empty">加载中…</div></div>
     </div>
     <div class="panel">
-      <h2>历史每日 Token 统计 · 跨重启持久化</h2>
-      <div id="historyWrap"><div class="empty-sm">加载中…</div></div>
+      <h2>历史每日 Token 统计</h2>
+      <div id="historyWrap"><div class="empty">加载中…</div></div>
     </div>
     <div class="panel">
-      <h2>近期错误（上游 / 网关）</h2>
-      <div id="errorList"><div class="empty-sm">加载中…</div></div>
+      <h2>近期错误</h2>
+      <div id="errorList"><div class="empty">加载中…</div></div>
     </div>
   </div>
 </main>
