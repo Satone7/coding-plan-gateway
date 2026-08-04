@@ -7,14 +7,17 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import Fastify from 'fastify';
 import { registerWebDashboardRoutes } from '@/routes/web-dashboard';
-import { dashboardMetrics, type FlowChain } from '@/utils/dashboard-metrics';
+import { dashboardMetrics } from '@/utils/dashboard-metrics';
 
-function seedFlow(overrides: Partial<FlowChain> = {}): void {
+let seedCounter = 0;
+
+function seedRequest(overrides: { apiKey?: string; plan?: string; model?: string; status?: number } = {}): string {
+  const requestId = `req-seed-${seedCounter++}`;
   dashboardMetrics.processEntry({
     level: 'info',
     message: 'Request started',
     context: {
-      requestId: overrides.at ?? 'req-seed',
+      requestId,
       method: 'POST',
       url: '/api/v1/chat/completions',
     },
@@ -22,35 +25,45 @@ function seedFlow(overrides: Partial<FlowChain> = {}): void {
   dashboardMetrics.processEntry({
     level: 'info',
     message: 'Request authenticated',
-    context: { requestId: overrides.at ?? 'req-seed', keyName: overrides.apiKey ?? 'tester' },
+    context: { requestId, keyName: overrides.apiKey ?? 'tester' },
   });
   dashboardMetrics.processEntry({
     level: 'info',
     message: 'Request completed',
     context: {
-      requestId: overrides.at ?? 'req-seed',
+      requestId,
       statusCode: overrides.status ?? 200,
-      durationMs: overrides.durationMs ?? 100,
+      durationMs: 100,
       provider: {
         planId: 1,
         planName: overrides.plan ?? 'Plan-A',
         model: overrides.model ?? 'k3',
         statusCode: overrides.status ?? 200,
       },
-      tokens: {
-        input: 10,
-        output: 5,
-        total: overrides.totalTokens ?? 15,
-      },
+      tokens: { input: 10, output: 5, total: 15 },
     },
+  });
+  return requestId;
+}
+
+/** Seed an in-flight request (start + auth, no completion) */
+function seedActive(requestId: string, keyName = 'live-tester'): void {
+  dashboardMetrics.processEntry({
+    level: 'info',
+    message: 'Request started',
+    context: { requestId, method: 'POST', url: '/api/v1/messages' },
+  });
+  dashboardMetrics.processEntry({
+    level: 'info',
+    message: 'Request authenticated',
+    context: { requestId, keyName },
   });
 }
 
 describe('Web Dashboard Routes', () => {
   beforeEach(() => {
-    // Reset the singleton between tests by re-seeding known state only;
-    // the singleton is module-scoped, so tests only assert on shape/values
-    // they control (or use tolerant matchers).
+    // The metrics singleton is module-scoped and shared across tests;
+    // assertions use unique plan/model names or tolerant matchers.
   });
 
   describe('GET /dashboard', () => {
@@ -63,53 +76,22 @@ describe('Web Dashboard Routes', () => {
       expect(response.statusCode).toBe(200);
       expect(response.headers['content-type']).toContain('text/html');
       const body = response.body;
-      expect(body).toContain('请求流向');
+      // the four core panels
+      expect(body).toContain('进行中请求');
+      expect(body).toContain('按 API Key 的 Token 用量');
+      expect(body).toContain('按模型的 Token 用量');
+      expect(body).toContain('Plan 余量 / 余额');
+      // no flow diagram leftovers
+      expect(body).not.toContain('请求流向');
       // fully self-contained: no CDN/script/link references
       expect(body).not.toMatch(/src="http/);
       expect(body).not.toMatch(/href="http/);
     });
   });
 
-  describe('GET /api/dashboard/flows', () => {
-    it('should return flows within the requested window', async () => {
-      seedFlow({ model: 'k3', plan: 'Kimi-A' });
-      const app = Fastify();
-      await registerWebDashboardRoutes(app);
-
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/dashboard/flows?minutes=60',
-      });
-
-      expect(response.statusCode).toBe(200);
-      const body = response.json();
-      expect(body.windowMinutes).toBe(60);
-      expect(Array.isArray(body.flows)).toBe(true);
-      expect(body.flows.length).toBeGreaterThan(0);
-      const flow = body.flows.find((f: FlowChain) => f.plan === 'Kimi-A');
-      expect(flow).toBeDefined();
-      expect(flow.model).toBe('k3');
-      expect(flow.apiKey).toBe('tester');
-    });
-
-    it('should default to a 60-minute window and clamp invalid values', async () => {
-      const app = Fastify();
-      await registerWebDashboardRoutes(app);
-
-      const def = await app.inject({ method: 'GET', url: '/api/dashboard/flows' });
-      expect(def.json().windowMinutes).toBe(60);
-
-      const invalid = await app.inject({
-        method: 'GET',
-        url: '/api/dashboard/flows?minutes=-5',
-      });
-      expect(invalid.json().windowMinutes).toBe(60);
-    });
-  });
-
   describe('GET /api/dashboard/summary', () => {
     it('should return counters and per-plan usage', async () => {
-      seedFlow({ model: 'k3', plan: 'Summary-Plan' });
+      seedRequest({ model: 'k3', plan: 'Summary-Plan' });
       const app = Fastify();
       await registerWebDashboardRoutes(app);
 
@@ -119,6 +101,87 @@ describe('Web Dashboard Routes', () => {
       expect(body).toHaveProperty('completedRequests');
       expect(body).toHaveProperty('failedRequests');
       expect(body.planUsages['Summary-Plan'].requests).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should expose in-flight requests in activeRequests', async () => {
+      seedActive('req-active-route-test');
+      const app = Fastify();
+      await registerWebDashboardRoutes(app);
+
+      const response = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(Array.isArray(body.activeRequests)).toBe(true);
+      const active = body.activeRequests.find(
+        (r: { requestId: string }) => r.requestId === 'req-active-route-test'
+      );
+      expect(active).toBeDefined();
+      expect(active.apiKey).toBe('live-tester');
+      expect(active.format).toBe('anthropic');
+      expect(typeof active.elapsedMs).toBe('number');
+    });
+
+    it('should expose finished requests in recentRequests', async () => {
+      seedRequest({ model: 'k3-recent', plan: 'Recent-Plan' });
+      const app = Fastify();
+      await registerWebDashboardRoutes(app);
+
+      const response = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
+      const body = response.json();
+      expect(Array.isArray(body.recentRequests)).toBe(true);
+      const row = body.recentRequests.find((r: { plan: string }) => r.plan === 'Recent-Plan');
+      expect(row).toBeDefined();
+      expect(row.model).toBe('k3-recent');
+      expect(row.apiKey).toBe('tester');
+    });
+
+    it('should expose per-key token usage in apiKeyUsages', async () => {
+      seedRequest({ apiKey: 'route-key-check' });
+      const app = Fastify();
+      await registerWebDashboardRoutes(app);
+
+      const response = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
+      const body = response.json();
+      expect(body.apiKeyUsages['route-key-check'].tokens).toBeGreaterThanOrEqual(15);
+    });
+
+    it('should expose planQuotas rows only for plans with an accurate signal', async () => {
+      dashboardMetrics.setLocalQuota('Route-Quota-Plan', {
+        percentage: 40,
+        resetAt: null,
+        limit: 500,
+        used: 200,
+      });
+      dashboardMetrics.setLocalQuota('Route-Unlimited-Plan', {
+        percentage: 0,
+        resetAt: null,
+        limit: 0,
+        used: 0,
+      });
+      const app = Fastify();
+      await registerWebDashboardRoutes(app);
+
+      const response = await app.inject({ method: 'GET', url: '/api/dashboard/summary' });
+      const body = response.json();
+      expect(Array.isArray(body.planQuotas)).toBe(true);
+      const row = body.planQuotas.find(
+        (r: { planName: string }) => r.planName === 'Route-Quota-Plan'
+      );
+      expect(row).toBeDefined();
+      expect(row.kind).toBe('local-quota');
+      expect(row.remaining).toBe(300);
+      const unlimited = body.planQuotas.find(
+        (r: { planName: string }) => r.planName === 'Route-Unlimited-Plan'
+      );
+      expect(unlimited).toBeUndefined();
+    });
+
+    it('should not expose the removed flows endpoint', async () => {
+      const app = Fastify();
+      await registerWebDashboardRoutes(app);
+
+      const response = await app.inject({ method: 'GET', url: '/api/dashboard/flows' });
+      expect(response.statusCode).toBe(404);
     });
   });
 

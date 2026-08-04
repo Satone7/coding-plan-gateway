@@ -1,10 +1,52 @@
 /**
  * Unit tests for DashboardMetrics utility.
- * Tests Usage API reset time extraction for plan selection.
+ * Covers quota-extraction helpers, the in-flight request tracker, the
+ * recent-request buffer, and the plan-quota row builder.
  */
 
 import { describe, it, expect } from 'vitest';
 import { DashboardMetrics, type ProviderUsageSnapshot } from '@/utils/dashboard-metrics';
+
+/** Push a full start → (auth) → completion cycle through the aggregator */
+function pushRequest(
+  metrics: DashboardMetrics,
+  overrides: {
+    requestId?: string;
+    url?: string;
+    keyName?: string;
+    completion?: Record<string, unknown>;
+  } = {}
+): void {
+  const requestId = overrides.requestId ?? 'req-1';
+  metrics.processEntry({
+    level: 'info',
+    message: 'Request started',
+    context: {
+      requestId,
+      method: 'POST',
+      url: overrides.url ?? '/api/v1/chat/completions',
+    },
+  });
+  if (overrides.keyName) {
+    metrics.processEntry({
+      level: 'info',
+      message: 'Request authenticated',
+      context: { requestId, keyName: overrides.keyName },
+    });
+  }
+  metrics.processEntry({
+    level: 'info',
+    message: 'Request completed',
+    context: {
+      requestId,
+      statusCode: 200,
+      durationMs: 1234,
+      provider: { planId: 1, planName: 'Kimi-A', model: 'k3', statusCode: 200 },
+      tokens: { input: 100, output: 50, total: 150 },
+      ...overrides.completion,
+    },
+  });
+}
 
 describe('DashboardMetrics', () => {
   describe('getUsageResetTimes', () => {
@@ -188,71 +230,126 @@ describe('DashboardMetrics', () => {
     });
   });
 
-  describe('processEntry flow chains', () => {
-    function pushRequest(
-      metrics: DashboardMetrics,
-      overrides: {
-        requestId?: string;
-        url?: string;
-        keyName?: string;
-        completion?: Record<string, unknown>;
-      } = {}
-    ): void {
-      const requestId = overrides.requestId ?? 'req-1';
+  describe('active request tracking', () => {
+    it('should track a started-but-unfinished proxy request as active', () => {
+      const metrics = new DashboardMetrics();
       metrics.processEntry({
         level: 'info',
         message: 'Request started',
-        context: {
-          requestId,
-          method: 'POST',
-          url: overrides.url ?? '/api/v1/chat/completions',
-        },
+        context: { requestId: 'req-live', method: 'POST', url: '/api/v1/messages' },
       });
-      if (overrides.keyName) {
-        metrics.processEntry({
-          level: 'info',
-          message: 'Request authenticated',
-          context: { requestId, keyName: overrides.keyName },
-        });
-      }
+
+      const snapshot = metrics.getSnapshot();
+      expect(snapshot.activeRequests).toHaveLength(1);
+      const active = snapshot.activeRequests[0]!;
+      expect(active.requestId).toBe('req-live');
+      expect(active.format).toBe('anthropic');
+      expect(active.apiKey).toBe('anonymous');
+      expect(active.elapsedMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should attribute the API key once the auth log arrives', () => {
+      const metrics = new DashboardMetrics();
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: { requestId: 'req-live2', method: 'POST', url: '/api/v1/chat/completions' },
+      });
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request authenticated',
+        context: { requestId: 'req-live2', keyName: 'claude-code' },
+      });
+
+      const active = metrics.getSnapshot().activeRequests[0]!;
+      expect(active.apiKey).toBe('claude-code');
+      expect(active.format).toBe('openai');
+    });
+
+    it('should remove the request from active once it completes', () => {
+      const metrics = new DashboardMetrics();
+      pushRequest(metrics, { requestId: 'req-done', keyName: 'tester' });
+
+      expect(metrics.getSnapshot().activeRequests).toHaveLength(0);
+    });
+
+    it('should not list non-proxy requests as active', () => {
+      const metrics = new DashboardMetrics();
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: { requestId: 'req-models', method: 'GET', url: '/api/v1/models' },
+      });
+
+      expect(metrics.getSnapshot().activeRequests).toHaveLength(0);
+    });
+
+    it('should keep a request active between the error log and the completion log', () => {
+      const metrics = new DashboardMetrics();
+      metrics.processEntry({
+        level: 'info',
+        message: 'Request started',
+        context: { requestId: 'req-failing', method: 'POST', url: '/api/v1/messages' },
+      });
+      metrics.processEntry({
+        level: 'error',
+        message: 'Request error',
+        error: { name: 'Error', message: 'upstream 429' },
+        context: { requestId: 'req-failing' },
+      });
+
+      // still in flight — the completion log has not arrived yet
+      expect(metrics.getSnapshot().activeRequests).toHaveLength(1);
+
       metrics.processEntry({
         level: 'info',
         message: 'Request completed',
-        context: {
-          requestId,
-          statusCode: 200,
-          durationMs: 1234,
-          provider: { planId: 1, planName: 'Kimi-A', model: 'k3', statusCode: 200 },
-          tokens: { input: 100, output: 50, total: 150 },
-          ...overrides.completion,
-        },
+        context: { requestId: 'req-failing', statusCode: 429, durationMs: 41 },
       });
-    }
+      expect(metrics.getSnapshot().activeRequests).toHaveLength(0);
+    });
 
-    it('should record a flow chain for proxy completions', () => {
+    it('should bound the pending map by evicting the oldest entry', () => {
+      const metrics = new DashboardMetrics();
+      // MAX_PENDING is 500; push 505 starts with no completions
+      for (let i = 0; i < 505; i++) {
+        metrics.processEntry({
+          level: 'info',
+          message: 'Request started',
+          context: { requestId: `req-flood-${i}`, method: 'POST', url: '/api/v1/messages' },
+        });
+      }
+
+      const active = metrics.getSnapshot().activeRequests;
+      expect(active.length).toBeLessThanOrEqual(500);
+    });
+  });
+
+  describe('recent request buffer', () => {
+    it('should record a recent request for proxy completions', () => {
       const metrics = new DashboardMetrics();
       pushRequest(metrics, { keyName: 'claude-code' });
 
       const snapshot = metrics.getSnapshot();
-      expect(snapshot.flows).toHaveLength(1);
-      const flow = snapshot.flows[0]!;
-      expect(flow.apiKey).toBe('claude-code');
-      expect(flow.model).toBe('k3');
-      expect(flow.plan).toBe('Kimi-A');
-      expect(flow.format).toBe('openai');
-      expect(flow.totalTokens).toBe(150);
-      expect(flow.status).toBe(200);
+      expect(snapshot.recentRequests).toHaveLength(1);
+      const row = snapshot.recentRequests[0]!;
+      expect(row.apiKey).toBe('claude-code');
+      expect(row.model).toBe('k3');
+      expect(row.plan).toBe('Kimi-A');
+      expect(row.format).toBe('openai');
+      expect(row.totalTokens).toBe(150);
+      expect(row.status).toBe(200);
     });
 
     it('should detect anthropic format from /v1/messages url', () => {
       const metrics = new DashboardMetrics();
       pushRequest(metrics, { url: '/api/v1/messages' });
 
-      const flow = metrics.getSnapshot().flows[0]!;
-      expect(flow.format).toBe('anthropic');
+      const row = metrics.getSnapshot().recentRequests[0]!;
+      expect(row.format).toBe('anthropic');
     });
 
-    it('should keep canonicalModel on the flow chain for rewritten models', () => {
+    it('should keep canonicalModel on the row for rewritten models', () => {
       const metrics = new DashboardMetrics();
       pushRequest(metrics, {
         completion: {
@@ -266,9 +363,9 @@ describe('DashboardMetrics', () => {
         },
       });
 
-      const flow = metrics.getSnapshot().flows[0]!;
-      expect(flow.model).toBe('k3');
-      expect(flow.canonicalModel).toBe('k3-256k');
+      const row = metrics.getSnapshot().recentRequests[0]!;
+      expect(row.model).toBe('k3');
+      expect(row.canonicalModel).toBe('k3-256k');
     });
 
     it('should record failed proxy requests with placeholder plan', () => {
@@ -285,21 +382,21 @@ describe('DashboardMetrics', () => {
       });
 
       const snapshot = metrics.getSnapshot();
-      expect(snapshot.flows).toHaveLength(1);
-      const flow = snapshot.flows[0]!;
-      expect(flow.status).toBe(500);
-      expect(flow.plan).toBe('—');
-      expect(flow.apiKey).toBe('anonymous');
+      expect(snapshot.recentRequests).toHaveLength(1);
+      const row = snapshot.recentRequests[0]!;
+      expect(row.status).toBe(500);
+      expect(row.plan).toBe('—');
+      expect(row.apiKey).toBe('anonymous');
     });
 
     it('should ignore completions for non-proxy endpoints', () => {
       const metrics = new DashboardMetrics();
       pushRequest(metrics, { url: '/api/v1/models' });
 
-      expect(metrics.getSnapshot().flows).toHaveLength(0);
+      expect(metrics.getSnapshot().recentRequests).toHaveLength(0);
     });
 
-    it('should record the failure flow once on completion after the error log', () => {
+    it('should record the failure row once on completion after the error log', () => {
       const metrics = new DashboardMetrics();
       metrics.processEntry({
         level: 'info',
@@ -311,7 +408,7 @@ describe('DashboardMetrics', () => {
         message: 'Request authenticated',
         context: { requestId: 'req-e1', keyName: 'claude-code' },
       });
-      // error path first (no flow recorded)…
+      // error path first (no row recorded)…
       metrics.processEntry({
         level: 'error',
         message: 'Request error',
@@ -337,14 +434,14 @@ describe('DashboardMetrics', () => {
 
       const snapshot = metrics.getSnapshot();
       expect(snapshot.failedRequests).toBe(1);
-      expect(snapshot.flows).toHaveLength(1);
-      const flow = snapshot.flows[0]!;
-      expect(flow.format).toBe('anthropic');
-      expect(flow.plan).toBe('Kimi K3');
-      expect(flow.model).toBe('kimi-k3');
-      expect(flow.apiKey).toBe('claude-code');
+      expect(snapshot.recentRequests).toHaveLength(1);
+      const row = snapshot.recentRequests[0]!;
+      expect(row.format).toBe('anthropic');
+      expect(row.plan).toBe('Kimi K3');
+      expect(row.model).toBe('kimi-k3');
+      expect(row.apiKey).toBe('claude-code');
       // upstream never responded (0) → falls back to gateway status
-      expect(flow.status).toBe(429);
+      expect(row.status).toBe(429);
     });
 
     it('should prefer the real upstream status over the gateway status', () => {
@@ -356,20 +453,124 @@ describe('DashboardMetrics', () => {
         },
       });
 
-      const flow = metrics.getSnapshot().flows[0]!;
-      expect(flow.status).toBe(429);
+      const row = metrics.getSnapshot().recentRequests[0]!;
+      expect(row.status).toBe(429);
     });
 
-    it('should cap the flow buffer at the max size', () => {
+    it('should cap the recent buffer at the max size, newest first', () => {
       const metrics = new DashboardMetrics();
-      for (let i = 0; i < 510; i++) {
+      for (let i = 0; i < 210; i++) {
         pushRequest(metrics, { requestId: `req-${i}` });
       }
 
-      const flows = metrics.getSnapshot().flows;
-      expect(flows).toHaveLength(500);
+      const rows = metrics.getSnapshot().recentRequests;
+      expect(rows).toHaveLength(200);
       // newest first
-      expect(flows[0]!.at >= flows[flows.length - 1]!.at).toBe(true);
+      expect(rows[0]!.at >= rows[rows.length - 1]!.at).toBe(true);
+    });
+
+    it('should accumulate per-key / per-model / per-plan usage on success', () => {
+      const metrics = new DashboardMetrics();
+      pushRequest(metrics, { keyName: 'key-a' });
+      pushRequest(metrics, { requestId: 'req-2', keyName: 'key-a' });
+
+      const snapshot = metrics.getSnapshot();
+      expect(snapshot.apiKeyUsages['key-a']).toEqual({ requests: 2, tokens: 300 });
+      expect(snapshot.modelUsages['k3']).toEqual({ requests: 2, tokens: 300 });
+      expect(snapshot.planUsages['Kimi-A']).toEqual({ requests: 2, tokens: 300 });
+    });
+  });
+
+  describe('buildPlanQuotaRows', () => {
+    it('should produce a balance row for providers with an account balance', () => {
+      const metrics = new DashboardMetrics();
+      metrics.setProviderUsage('DeepSeek-A', {
+        windows: [],
+        summary: { mode: 'balance', value: '¥42.50' },
+        lastUpdated: '2026-08-04T10:00:00.000Z',
+      }, 'deepseek');
+
+      const rows = metrics.buildPlanQuotaRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        planName: 'DeepSeek-A',
+        providerId: 'deepseek',
+        kind: 'balance',
+        balance: '¥42.50',
+      });
+    });
+
+    it('should produce a usage-api row with the max window percentage', () => {
+      const metrics = new DashboardMetrics();
+      metrics.setProviderUsage('Kimi-A', {
+        windows: [
+          { type: '5h', percentage: 35, windowLabel: '5h' },
+          { type: 'weekly', percentage: 62, windowLabel: '1w' },
+        ],
+        lastUpdated: '2026-08-04T10:00:00.000Z',
+      }, 'kimi');
+
+      const rows = metrics.buildPlanQuotaRows();
+      expect(rows).toHaveLength(1);
+      const row = rows[0]!;
+      expect(row.kind).toBe('usage-api');
+      expect(row.percentage).toBe(62);
+      expect(row.windows).toHaveLength(2);
+    });
+
+    it('should produce a local-quota row with the remaining amount', () => {
+      const metrics = new DashboardMetrics();
+      metrics.setLocalQuota('Local-A', {
+        percentage: 25,
+        resetAt: '2026-08-05T00:00:00.000Z',
+        limit: 1000,
+        used: 250,
+      });
+
+      const rows = metrics.buildPlanQuotaRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        planName: 'Local-A',
+        kind: 'local-quota',
+        remaining: 750,
+        limit: 1000,
+      });
+    });
+
+    it('should omit plans without any accurate remaining signal', () => {
+      const metrics = new DashboardMetrics();
+      // usage-API plan whose fetch produced no windows and no balance
+      metrics.setProviderUsage('Broken-Usage-Plan', {
+        windows: [],
+        lastUpdated: '2026-08-04T10:00:00.000Z',
+      });
+      // local plan with no finite limit (unlimited / not configured)
+      metrics.setLocalQuota('Unlimited-Plan', {
+        percentage: 0,
+        resetAt: null,
+        limit: 0,
+        used: 0,
+      });
+
+      expect(metrics.buildPlanQuotaRows()).toHaveLength(0);
+    });
+
+    it('should prefer the usage-API row over the local-quota row for the same plan', () => {
+      const metrics = new DashboardMetrics();
+      metrics.setProviderUsage('Dual', {
+        windows: [{ type: '5h', percentage: 10, windowLabel: '5h' }],
+        lastUpdated: '2026-08-04T10:00:00.000Z',
+      });
+      metrics.setLocalQuota('Dual', {
+        percentage: 50,
+        resetAt: null,
+        limit: 100,
+        used: 50,
+      });
+
+      const rows = metrics.buildPlanQuotaRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.kind).toBe('usage-api');
     });
   });
 });
