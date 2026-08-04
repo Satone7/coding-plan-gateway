@@ -61,15 +61,19 @@ fi
 # already have been synced out-of-band (git bundle over SSH) — proceed when
 # origin/master is ahead of HEAD, abort only if there is genuinely nothing
 # new to deploy.
-if ! git -C "$SCRIPT_DIR" fetch origin master 2>&1; then
+FETCH_OK=0
+if git -C "$SCRIPT_DIR" fetch origin master 2>&1; then
+  FETCH_OK=1
+else
   echo "Warning: git fetch failed; checking whether origin/master is already up to date" >&2
 fi
-# Decide update state against the freshest ref we can see. FETCH_HEAD is
-# written by the fetch above whenever it succeeds; when the fetch fails
-# (flaky network/TLS to GitHub), the local remote-tracking ref may still be
-# current from a previous push on this machine or an out-of-band sync.
+# Decide update state against the freshest ref we can see. FETCH_HEAD is only
+# trustworthy from a fetch that SUCCEEDED just now — a stale FETCH_HEAD file
+# from an older fetch can lag behind both HEAD and origin/master (e.g. this
+# machine pushed since) and would wrongly abort or downgrade the deploy.
 TARGET_REF=""
-if git -C "$SCRIPT_DIR" rev-parse --verify --quiet FETCH_HEAD >/dev/null; then
+if [ "$FETCH_OK" = "1" ] && \
+   git -C "$SCRIPT_DIR" rev-parse --verify --quiet FETCH_HEAD >/dev/null; then
   TARGET_REF="FETCH_HEAD"
 elif git -C "$SCRIPT_DIR" rev-parse --verify --quiet origin/master >/dev/null; then
   TARGET_REF="origin/master"
