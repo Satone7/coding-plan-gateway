@@ -71,11 +71,17 @@ fi
 # trustworthy from a fetch that SUCCEEDED just now — a stale FETCH_HEAD file
 # from an older fetch can lag behind both HEAD and origin/master (e.g. this
 # machine pushed since) and would wrongly abort or downgrade the deploy.
+# When HEAD is ahead of the fetched ref (typical right after `git push` from
+# this machine), prefer the local remote-tracking ref if it covers HEAD.
 TARGET_REF=""
 if [ "$FETCH_OK" = "1" ] && \
    git -C "$SCRIPT_DIR" rev-parse --verify --quiet FETCH_HEAD >/dev/null; then
   TARGET_REF="FETCH_HEAD"
-elif git -C "$SCRIPT_DIR" rev-parse --verify --quiet origin/master >/dev/null; then
+fi
+if git -C "$SCRIPT_DIR" rev-parse --verify --quiet origin/master >/dev/null && \
+   { [ -z "$TARGET_REF" ] || \
+     ! git -C "$SCRIPT_DIR" merge-base --is-ancestor HEAD "$TARGET_REF" 2>/dev/null; } && \
+   git -C "$SCRIPT_DIR" merge-base --is-ancestor HEAD origin/master 2>/dev/null; then
   TARGET_REF="origin/master"
 fi
 if [ -n "$TARGET_REF" ] && \
