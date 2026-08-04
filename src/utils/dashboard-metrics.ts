@@ -209,7 +209,7 @@ export class DashboardMetrics {
   private diagAuths = 0;
   private diagCompletions = 0;
 
-  private static readonly MAX_ERRORS = 20;
+  private static readonly MAX_ERRORS = 100; // paginated on the client — keep a decent history
   private static readonly MAX_RECENT = 200;
   private static readonly MAX_PENDING = 500;
   /**

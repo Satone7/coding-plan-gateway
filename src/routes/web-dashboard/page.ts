@@ -16,7 +16,9 @@
  *   3. per-model & per-plan token usage (current run merged with history)
  *   4. plan quota / balance cards (balances first, usage-API windows second,
  *      local-quota plans last without any guessed remaining figure)
- *   5. recent requests table + recent errors + persisted daily history
+ *   5. recent requests table (paginated, filterable by status/key/plan/model)
+ *      + recent errors (paginated, filterable by level/keyword)
+ *      + persisted daily history
  */
 
 /**
@@ -80,7 +82,14 @@ const CLIENT_SCRIPT = String.raw`
     summary: null,
     errors: [],
     stats: null,
+    // recent-requests panel: filters + pagination
+    recentFilter: { status: 'all', key: 'all', plan: 'all', model: '' },
+    recentPage: 0,
+    // recent-errors panel: filters + pagination
+    errorFilter: { level: 'all', q: '' },
+    errorPage: 0,
   };
+  var PAGE_SIZE = 20;
 
   // ---------- fetch ----------
   function headers() {
@@ -112,6 +121,14 @@ const CLIENT_SCRIPT = String.raw`
       state.stats = results[2] && results[2].days ? results[2] : null;
       setStatus('更新于 ' + new Date().toLocaleTimeString());
       render();
+      // First paint (and recoveries after errors) need the interactive panels
+      // too; afterwards they only re-render on user interaction so filter
+      // controls are never clobbered by the poll.
+      if (!state.panelsPrimed) {
+        state.panelsPrimed = true;
+        renderRecent();
+        renderErrors();
+      }
       scheduleAuto();
     }).catch(function (err) {
       if (String(err.message) !== 'unauthorized') {
@@ -331,27 +348,59 @@ const CLIENT_SCRIPT = String.raw`
     return { 'usage-api': '配额 API', 'balance': '余额', 'local-quota': '本地配额' }[kind] || kind;
   }
 
-  // ---------- recent requests ----------
+  // ---------- recent requests (paginated + filterable) ----------
   function renderRecent() {
     var s = state.summary || {};
-    var rows = (s.recentRequests || []).slice(0, 50);
+    var all = s.recentRequests || [];
     var wrap = $('#recentWrap');
-    if (!rows.length) {
+    if (!all.length) {
       wrap.innerHTML = '<div class="empty">本次运行暂无已完成的代理请求</div>';
       return;
     }
-    var html = '<table><thead><tr>' +
+
+    var f = state.recentFilter;
+    var rows = all.filter(function (r) {
+      if (f.status === 'ok' && r.status >= 400) return false;
+      if (f.status === 'fail' && r.status < 400) return false;
+      if (f.key !== 'all' && r.apiKey !== f.key) return false;
+      if (f.plan !== 'all' && r.plan !== f.plan) return false;
+      if (f.model) {
+        var q = f.model.toLowerCase();
+        var name = (r.model + ' ' + (r.canonicalModel || '')).toLowerCase();
+        if (name.indexOf(q) < 0) return false;
+      }
+      return true;
+    });
+
+    var html = filterBar('recent', [
+      selectFilter('recentStatus', '状态', [['all', '全部状态'], ['ok', '成功'], ['fail', '失败']], f.status),
+      selectFilter('recentKey', 'API Key', [['all', '全部 Key']].concat(
+        uniq(all.map(function (r) { return r.apiKey; })).map(function (k) { return [k, k]; })), f.key),
+      selectFilter('recentPlan', 'Plan', [['all', '全部 Plan']].concat(
+        uniq(all.map(function (r) { return r.plan; })).map(function (p) { return [p, p]; })), f.plan),
+      '<input class="flt-input" id="fltRecentModel" placeholder="模型搜索…" value="' +
+        escHtml(f.model) + '">',
+    ].join(''));
+
+    var page = clampPage(state.recentPage, rows.length);
+    state.recentPage = page;
+    var slice = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+    html += '<table><thead><tr>' +
       '<th>时间</th><th>API Key</th><th>模型</th><th>Plan</th>' +
       '<th class="num">输入</th><th class="num">输出</th>' +
       '<th class="num">耗时</th><th class="num">状态</th>' +
       '</tr></thead><tbody>';
-    rows.forEach(function (r) {
+    if (!slice.length) {
+      html += '<tr><td colspan="8" class="empty">无符合筛选条件的请求</td></tr>';
+    }
+    slice.forEach(function (r) {
       var failed = r.status >= 400;
       var model = r.canonicalModel && r.canonicalModel !== r.model
         ? r.model + ' → ' + r.canonicalModel
         : r.model;
       html += '<tr class="' + (failed ? 'row-failed' : '') + '">' +
-        '<td class="num muted">' + fmtTime(r.at) + '</td>' +
+        '<td class="muted">' + fmtTime(r.at) + '</td>' +
         '<td class="key">' + escHtml(r.apiKey) + '</td>' +
         '<td class="key" title="' + escHtml(model) + '">' + escHtml(model) + '</td>' +
         '<td class="key">' + escHtml(r.plan) + '</td>' +
@@ -362,17 +411,46 @@ const CLIENT_SCRIPT = String.raw`
         '</tr>';
     });
     html += '</tbody></table>';
+    html += pager('recent', page, rows.length);
     wrap.innerHTML = html;
   }
 
-  // ---------- errors ----------
+  // ---------- errors (paginated + filterable) ----------
   function renderErrors() {
-    var errs = state.errors || [];
-    if (!errs.length) {
-      $('#errorList').innerHTML = '<div class="empty">暂无错误，运行正常</div>';
+    var all = state.errors || [];
+    var wrap = $('#errorList');
+    if (!all.length) {
+      wrap.innerHTML = '<div class="empty">暂无错误，运行正常</div>';
       return;
     }
-    $('#errorList').innerHTML = errs.slice(0, 12).map(function (e) {
+
+    var f = state.errorFilter;
+    var rows = all.filter(function (e) {
+      if (f.level !== 'all' && e.level !== f.level) return false;
+      if (f.q) {
+        var hay = ((e.message || '') + ' ' +
+          (e.error ? (e.error.message || '') + ' ' + (e.error.name || '') : '')).toLowerCase();
+        if (hay.indexOf(f.q.toLowerCase()) < 0) return false;
+      }
+      return true;
+    });
+
+    var levels = uniq(all.map(function (e) { return e.level; }));
+    var html = filterBar('error', [
+      selectFilter('errorLevel', '级别', [['all', '全部级别']].concat(
+        levels.map(function (l) { return [l, l]; })), f.level),
+      '<input class="flt-input" id="fltErrorQ" placeholder="关键词搜索…" value="' +
+        escHtml(f.q) + '">',
+    ].join(''));
+
+    var page = clampPage(state.errorPage, rows.length);
+    state.errorPage = page;
+    var slice = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+    if (!slice.length) {
+      html += '<div class="empty">无符合筛选条件的错误</div>';
+    }
+    html += slice.map(function (e) {
       var detail = e.error ? (e.error.message || e.error.name) : (e.message || '');
       var code = e.error && e.error.code ? ' [' + e.error.code + ']' : '';
       return '<div class="err-row">' +
@@ -381,6 +459,81 @@ const CLIENT_SCRIPT = String.raw`
         (detail && detail !== e.message ? '<span class="err-detail">' + escHtml(detail) + '</span>' : '') +
         '</div></div>';
     }).join('');
+    html += pager('error', page, rows.length);
+    wrap.innerHTML = html;
+  }
+
+  // ---------- filter / pager building blocks ----------
+  function uniq(arr) {
+    var seen = {}, out = [];
+    arr.forEach(function (x) {
+      if (x != null && !seen[x]) { seen[x] = 1; out.push(x); }
+    });
+    return out.sort();
+  }
+
+  function filterBar(id, inner) {
+    return '<div class="flt-bar" id="fltBar-' + id + '">' + inner + '</div>';
+  }
+
+  function selectFilter(id, label, options, value) {
+    var opts = options.map(function (o) {
+      return '<option value="' + escHtml(o[0]) + '"' +
+        (o[0] === value ? ' selected' : '') + '>' + escHtml(o[1]) + '</option>';
+    }).join('');
+    return '<select class="flt-select" id="flt' + id + '" title="' + escHtml(label) + '">' +
+      opts + '</select>';
+  }
+
+  function clampPage(page, total) {
+    var maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+    return Math.min(Math.max(0, page), maxPage);
+  }
+
+  function pager(id, page, total) {
+    var pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    return '<div class="pager">' +
+      '<button class="pager-btn" data-panel="' + id + '" data-dir="-1"' +
+        (page <= 0 ? ' disabled' : '') + '>‹ 上一页</button>' +
+      '<span class="pager-info">第 ' + (page + 1) + ' / ' + pages + ' 页 · 共 ' + total + ' 条</span>' +
+      '<button class="pager-btn" data-panel="' + id + '" data-dir="1"' +
+        (page >= pages - 1 ? ' disabled' : '') + '>下一页 ›</button>' +
+      '</div>';
+  }
+
+  // Event delegation: pager clicks + filter changes both re-render only their
+  // own panel; changing any filter resets that panel to page 1.
+  function bindPanelEvents() {
+    document.addEventListener('click', function (ev) {
+      var btn = ev.target.closest ? ev.target.closest('.pager-btn') : null;
+      if (!btn || btn.disabled) return;
+      var panel = btn.getAttribute('data-panel');
+      var dir = parseInt(btn.getAttribute('data-dir'), 10);
+      if (panel === 'recent') { state.recentPage += dir; renderRecent(); }
+      if (panel === 'error') { state.errorPage += dir; renderErrors(); }
+    });
+    document.addEventListener('change', function (ev) {
+      var id = ev.target.id;
+      if (id === 'fltrecentStatus') { state.recentFilter.status = ev.target.value; state.recentPage = 0; renderRecent(); }
+      if (id === 'fltrecentKey') { state.recentFilter.key = ev.target.value; state.recentPage = 0; renderRecent(); }
+      if (id === 'fltrecentPlan') { state.recentFilter.plan = ev.target.value; state.recentPage = 0; renderRecent(); }
+      if (id === 'flterrorLevel') { state.errorFilter.level = ev.target.value; state.errorPage = 0; renderErrors(); }
+    });
+    document.addEventListener('input', function (ev) {
+      var id = ev.target.id;
+      if (id === 'fltRecentModel') { state.recentFilter.model = ev.target.value; state.recentPage = 0; renderRecent(); refocus(ev.target); }
+      if (id === 'fltErrorQ') { state.errorFilter.q = ev.target.value; state.errorPage = 0; renderErrors(); refocus(ev.target); }
+    });
+  }
+
+  // innerHTML re-render drops focus; restore it (caret to end) after typing
+  function refocus(el) {
+    var id = el.id, pos = el.selectionStart;
+    var again = document.getElementById(id);
+    if (again) {
+      again.focus();
+      try { again.setSelectionRange(pos, pos); } catch (e) { /* noop */ }
+    }
   }
 
   // ---------- historical daily chart ----------
@@ -415,8 +568,10 @@ const CLIENT_SCRIPT = String.raw`
     renderActive();
     renderBoards();
     renderQuotas();
-    renderRecent();
-    renderErrors();
+    // Recent + errors panels are user-interactive (filters/pagination hold
+    // local state); re-rendering them on the 5s poll would clobber an open
+    // dropdown or a search box mid-typing, so they render only on their own
+    // events. Data freshness there is bounded by the next user interaction.
     renderHistory();
   }
 
@@ -445,6 +600,7 @@ const CLIENT_SCRIPT = String.raw`
     });
     $('#keyBtn').addEventListener('click', function () { showKeyPrompt(true); });
     state.tickTimer = setInterval(tickElapsed, 1000);
+    bindPanelEvents();
 
     refreshAll();
   }
@@ -556,6 +712,25 @@ th.num { text-align: right; }
   transition: width .25s ease-out; }
 .empty { color: var(--faint); padding: 22px 16px; text-align: center; font-size: 12px; }
 .empty-sub { display: block; color: var(--faint); font-size: 11px; margin-top: 4px; opacity: .8; }
+
+/* ---------- filter bars + pagers ---------- */
+.flt-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px 6px; }
+.flt-select, .flt-input { background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: 6px; font-size: 12px; padding: 4px 8px;
+  outline: none; transition: border-color .15s ease; }
+.flt-select { max-width: 160px; cursor: pointer; }
+.flt-input { flex: 1; min-width: 120px; }
+.flt-select:focus, .flt-input:focus { border-color: var(--accent); }
+.flt-select:hover, .flt-input:hover { border-color: var(--muted); }
+.pager { display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 8px 16px 12px; }
+.pager-info { color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.pager-btn { background: transparent; border: 1px solid var(--border); color: var(--muted);
+  border-radius: 6px; font-size: 11px; padding: 3px 10px; cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease; }
+.pager-btn:hover:not(:disabled) { color: var(--text-hi); border-color: var(--accent);
+  background: var(--accent-dim); }
+.pager-btn:disabled { opacity: .35; cursor: default; }
 
 /* ---------- quota cards ---------- */
 #quotaWrap { display: flex; flex-direction: column; }

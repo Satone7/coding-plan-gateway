@@ -83,6 +83,12 @@ describe('Web Dashboard Routes', () => {
       expect(body).toContain('Plan 余量 / 余额');
       // no flow diagram leftovers
       expect(body).not.toContain('请求流向');
+      // recent-requests and errors panels are paginated + filterable
+      expect(body).toContain('近期完成的请求');
+      expect(body).toContain('近期错误');
+      expect(body).toContain('pager-btn');
+      expect(body).toContain('fltRecentModel');
+      expect(body).toContain('fltErrorQ');
       // fully self-contained: no CDN/script/link references
       expect(body).not.toMatch(/src="http/);
       expect(body).not.toMatch(/href="http/);
