@@ -429,6 +429,8 @@ const CLIENT_SCRIPT = String.raw`
     });
 
     // Grid span: trailing HEAT_WEEKS weeks ending on today's (partial) week.
+    // The data itself may cover a shorter retention window; the left columns
+    // simply stay at level 0 before the first recorded day.
     var today = new Date();
     today.setHours(0, 0, 0, 0);
     var dow = (today.getDay() + 6) % 7; // Mon = 0 … Sun = 6
