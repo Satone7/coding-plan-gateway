@@ -10,15 +10,17 @@
  * typographic hierarchy over boxes, tabular-nums for all figures, and
  * transitions kept under 300ms with ease-out entrances.
  *
- * Content panels:
- *   1. in-flight requests (key / entry / format / elapsed, ticking every second)
- *   2. per-API-key token usage (current run)
- *   3. per-model & per-plan token usage (current run merged with history)
- *   4. plan quota / balance cards (balances first, usage-API windows second,
- *      local-quota plans last without any guessed remaining figure)
- *   5. recent requests table (paginated, filterable by status/key/plan/model)
- *      + recent errors (paginated, filterable by level/keyword)
- *      + persisted daily history
+ * Layout (reworked 2026-08, heatmap edition):
+ *   Row 1 — headline stat cards (active / completed / failed / run tokens)
+ *   Row 2 — 进行中请求 (compact; long-running stragglers auto-fold into a
+ *           collapsed "异常长请求" row so they can't hog the screen) beside
+ *           Plan 余量 / 余额
+ *   Row 3 — 历史 Token 日历热力图 (full width, GitHub-contributions style:
+ *           weeks as columns, weekday rows, 5-level green scale, hover
+ *           inspector bar showing the exact day numbers)
+ *   Row 4 — Token 消耗 leaderboards (per API Key / per Plan) beside 近期错误
+ *   Row 5 — 按模型 Token 用量 (full width, collapsed when empty)
+ *   Row 6 — 近期完成的请求 (full width, paginated + filterable)
  */
 
 /**
@@ -37,7 +39,14 @@ const CLIENT_SCRIPT = String.raw`
     if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
     return String(Math.round(n));
   }
+  // Full-precision grouped number for the heatmap inspector ("1,234,567")
+  function fmtFull(n) {
+    try { return Number(n).toLocaleString('en-US'); } catch (e) { return String(n); }
+  }
   function fmtDur(ms) {
+    if (ms >= 3600000) {
+      return Math.floor(ms / 3600000) + 'h' + Math.round((ms % 3600000) / 60000) + 'm';
+    }
     if (ms >= 60000) return Math.floor(ms / 60000) + 'm' + Math.round((ms % 60000) / 1000) + 's';
     if (ms >= 1000) return (ms / 1000).toFixed(1) + 's';
     return Math.round(ms) + 'ms';
@@ -73,6 +82,12 @@ const CLIENT_SCRIPT = String.raw`
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+  // Local-timezone YYYY-MM-DD (toISOString would shift the day by the offset)
+  function ymdLocal(d) {
+    var m = String(d.getMonth() + 1), day = String(d.getDate());
+    return d.getFullYear() + '-' + (m.length < 2 ? '0' + m : m) + '-' +
+      (day.length < 2 ? '0' + day : day);
+  }
 
   // ---------- state ----------
   var state = {
@@ -88,8 +103,14 @@ const CLIENT_SCRIPT = String.raw`
     // recent-errors panel: filters + pagination
     errorFilter: { level: 'all', q: '' },
     errorPage: 0,
+    // active panel: show folded long-running stragglers?
+    showLong: false,
   };
   var PAGE_SIZE = 20;
+  // In-flight requests older than this are folded out of the compact table
+  var LONG_REQ_MS = 10 * 60 * 1000;
+  // Heatmap shows the trailing N weeks, today included
+  var HEAT_WEEKS = 26;
 
   // ---------- fetch ----------
   function headers() {
@@ -155,32 +176,65 @@ const CLIENT_SCRIPT = String.raw`
     $('#statTokens').textContent = fmtNum(tok);
   }
 
-  // ---------- active requests ----------
+  // ---------- active requests (compact; stragglers auto-fold) ----------
   function renderActive() {
     var s = state.summary;
     var rows = (s && s.activeRequests) || [];
+    var now = Date.now();
+    var normal = [], long = [];
+    rows.forEach(function (r) {
+      var started = new Date(r.startedAt).getTime();
+      if (!isNaN(started) && now - started > LONG_REQ_MS) long.push(r); else normal.push(r);
+    });
+    normal.sort(function (a, b) { return (b.elapsedMs || 0) - (a.elapsedMs || 0); });
+    long.sort(function (a, b) { return (b.elapsedMs || 0) - (a.elapsedMs || 0); });
+
     $('#activeBadge').textContent = rows.length ? String(rows.length) : '';
     var wrap = $('#activeWrap');
     if (!rows.length) {
       wrap.innerHTML = '<div class="empty">当前无进行中的请求</div>';
       return;
     }
-    var html = '<table><thead><tr>' +
-      '<th>API Key</th><th>模型</th><th>入口</th><th>格式</th><th>开始时间</th><th class="num">已进行</th>' +
-      '</tr></thead><tbody>';
-    rows.forEach(function (r) {
-      html += '<tr>' +
-        '<td class="key">' + escHtml(r.apiKey) + '</td>' +
-        '<td class="key">' + escHtml(r.model || '…') + '</td>' +
-        '<td class="url">' + escHtml(r.method + ' ' + r.url) + '</td>' +
-        '<td><span class="chip">' + escHtml(r.format) + '</span></td>' +
-        '<td class="num muted">' + fmtTime(r.startedAt) + '</td>' +
-        '<td class="num elapsed" data-started="' + escHtml(r.startedAt) + '">' +
-          fmtDur(r.elapsedMs) + '</td>' +
-        '</tr>';
-    });
-    html += '</tbody></table>';
+    var html = '';
+    if (normal.length) {
+      html += '<table><thead><tr>' +
+        '<th>API Key</th><th>模型</th><th>格式</th><th>开始时间</th><th class="num">已进行</th>' +
+        '</tr></thead><tbody>';
+      normal.slice(0, 12).forEach(function (r) { html += activeRow(r); });
+      html += '</tbody></table>';
+      if (normal.length > 12) {
+        html += '<div class="long-note">另有 ' + (normal.length - 12) + ' 个进行中请求未列出</div>';
+      }
+    } else {
+      html += '<div class="empty">当前无进行中的请求</div>';
+    }
+    if (long.length) {
+      html += '<button class="long-toggle" id="longToggle">' +
+        (state.showLong ? '▾' : '▸') + ' ' + long.length +
+        ' 个请求已进行超过 10 分钟（可能为异常长请求，点击' +
+        (state.showLong ? '折叠' : '展开') + '）</button>';
+      if (state.showLong) {
+        html += '<table class="long-table"><thead><tr>' +
+          '<th>API Key</th><th>模型</th><th>入口</th><th>格式</th>' +
+          '<th>开始时间</th><th class="num">已进行</th>' +
+          '</tr></thead><tbody>';
+        long.forEach(function (r) { html += activeRow(r, true); });
+        html += '</tbody></table>';
+      }
+    }
     wrap.innerHTML = html;
+  }
+
+  function activeRow(r, withUrl) {
+    return '<tr>' +
+      '<td class="key">' + escHtml(r.apiKey) + '</td>' +
+      '<td class="key">' + escHtml(r.model || '…') + '</td>' +
+      (withUrl ? '<td class="url">' + escHtml(r.method + ' ' + r.url) + '</td>' : '') +
+      '<td><span class="chip">' + escHtml(r.format) + '</span></td>' +
+      '<td class="num muted">' + fmtTime(r.startedAt) + '</td>' +
+      '<td class="num elapsed" data-started="' + escHtml(r.startedAt) + '">' +
+        fmtDur(r.elapsedMs) + '</td>' +
+      '</tr>';
   }
 
   // Tick the "已进行" column every second between data refreshes.
@@ -257,8 +311,13 @@ const CLIENT_SCRIPT = String.raw`
     var byModel = state.stats ? state.stats.byModel : null;
     var byPlan = state.stats ? state.stats.byPlan : null;
     renderBoard('#keysWrap', s.apiKeyUsages, null, 'API Key');
-    renderBoard('#modelsWrap', s.modelUsages, byModel, '模型');
     renderBoard('#plansUsageWrap', s.planUsages, byPlan, 'Plan');
+    renderBoard('#modelsWrap', s.modelUsages, byModel, '模型');
+    // The model board is third-order information; hide it entirely while the
+    // gateway has served nothing yet instead of showing an empty panel.
+    var hasModelRows = Object.keys(s.modelUsages || {}).length > 0 ||
+      (byModel && Object.keys(byModel).length > 0);
+    $('#modelsPanel').style.display = hasModelRows ? '' : 'none';
   }
 
   // ---------- plan quota / balance ----------
@@ -346,6 +405,141 @@ const CLIENT_SCRIPT = String.raw`
 
   function kindLabel(kind) {
     return { 'usage-api': '配额 API', 'balance': '余额', 'local-quota': '本地配额' }[kind] || kind;
+  }
+
+  // ---------- calendar heatmap (GitHub-contributions style) ----------
+  // Weeks as columns (oldest → newest left → right), weekday rows Mon..Sun.
+  // Intensity uses a 5-level scale over sqrt-normalized tokens so everyday
+  // variance stays visible even when one day spikes; hovering a cell pins the
+  // exact numbers into the inspector bar (native title= stays as fallback).
+  function renderHistory() {
+    var wrap = $('#historyWrap');
+    var s = state.stats;
+    if (!s || !s.days) {
+      wrap.innerHTML = '<div class="empty">暂无历史统计数据' +
+        '<span class="empty-sub">usage-stats 持久化未启用或无记录</span></div>';
+      return;
+    }
+    var byDate = {};
+    var totalTok = 0, totalReq = 0;
+    s.days.forEach(function (d) {
+      byDate[d.date] = d;
+      totalTok += d.totalTokens;
+      totalReq += d.requests;
+    });
+
+    // Grid span: trailing HEAT_WEEKS weeks ending on today's (partial) week.
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var dow = (today.getDay() + 6) % 7; // Mon = 0 … Sun = 6
+    var start = new Date(today);
+    start.setDate(start.getDate() - dow - (HEAT_WEEKS - 1) * 7);
+    var todayStr = ymdLocal(today);
+
+    var cells = [];
+    var maxTok = 0;
+    var cursor = new Date(start);
+    while (cursor.getTime() <= today.getTime()) {
+      var ds = ymdLocal(cursor);
+      var rec = byDate[ds] || null;
+      var tok = rec ? rec.totalTokens : 0;
+      if (tok > maxTok) maxTok = tok;
+      var col = Math.floor((cursor.getTime() - start.getTime()) / 604800000);
+      var row = (cursor.getDay() + 6) % 7;
+      cells.push({
+        date: ds, col: col, row: row,
+        month: cursor.getMonth(), firstOfMonth: cursor.getDate() === 1,
+        tokens: tok,
+        requests: rec ? rec.requests : 0,
+        future: false,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    // Pad the rest of today's week so the grid keeps a rectangular shape
+    var pad = new Date(today);
+    for (var i = dow + 1; i < 7; i++) {
+      pad.setDate(pad.getDate() + 1);
+      cells.push({
+        date: ymdLocal(pad), col: HEAT_WEEKS - 1, row: i,
+        month: pad.getMonth(), firstOfMonth: false,
+        tokens: 0, requests: 0, future: true,
+      });
+    }
+
+    function level(tok) {
+      if (tok <= 0 || maxTok <= 0) return 0;
+      var r = Math.sqrt(tok / maxTok);
+      return Math.max(1, Math.min(4, Math.ceil(r * 4)));
+    }
+
+    var dayNames = ['一', '三', '五', '日'];
+    var dayRows = [0, 2, 4, 6];
+    var html = '<div class="hm-body">' +
+      '<div class="hm-months">' + monthLabels(cells) + '</div>' +
+      '<div class="hm-main">' +
+        '<div class="hm-days">' +
+          dayNames.map(function (n, i) {
+            return '<span style="top:' + (dayRows[i] * 16) + 'px">' + n + '</span>';
+          }).join('') +
+        '</div>' +
+        '<div class="hm-grid" id="hmGrid">' +
+          cells.map(function (c) {
+            if (c.future) {
+              return '<i class="hm-cell future" style="grid-column:' + (c.col + 1) +
+                ';grid-row:' + (c.row + 1) + '"></i>';
+            }
+            var tip = c.date + '：' + fmtFull(c.tokens) + ' tokens · ' + c.requests + ' 次请求';
+            return '<i class="hm-cell lv' + level(c.tokens) +
+              (c.date === todayStr ? ' today' : '') +
+              '" data-date="' + c.date + '" data-tok="' + c.tokens +
+              '" data-req="' + c.requests + '"' +
+              ' style="grid-column:' + (c.col + 1) + ';grid-row:' + (c.row + 1) + '"' +
+              ' title="' + escHtml(tip) + '"></i>';
+          }).join('') +
+        '</div>' +
+      '</div></div>' +
+      '<div class="hm-foot">' +
+        '<div class="hm-tip" id="hmTip">悬停查看每日详情（颜色按当日峰值的平方根比例分档）</div>' +
+        '<div class="hm-legend"><span>少</span>' +
+          '<i class="hm-cell lv0"></i><i class="hm-cell lv1"></i><i class="hm-cell lv2"></i>' +
+          '<i class="hm-cell lv3"></i><i class="hm-cell lv4"></i><span>多</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="hm-summary">近 ' + s.days.length + ' 天累计 <b>' + fmtNum(totalTok) +
+        '</b> tokens · <b>' + fmtNum(totalReq) + '</b> 请求 · 单日峰值 <b>' +
+        fmtNum(maxTok) + '</b>（统计窗口 ' + escHtml(s.from) + ' ~ ' + escHtml(s.to) + '）</div>';
+    wrap.innerHTML = html;
+
+    var tip = $('#hmTip');
+    var defTip = '悬停查看每日详情（颜色按当日峰值的平方根比例分档）';
+    $('#hmGrid').addEventListener('mouseover', function (ev) {
+      var t = ev.target;
+      if (!t || !t.getAttribute || !t.getAttribute('data-date')) return;
+      tip.innerHTML = '<b>' + escHtml(t.getAttribute('data-date')) + '</b> · <b>' +
+        fmtFull(Number(t.getAttribute('data-tok'))) + '</b> tokens · <b>' +
+        escHtml(t.getAttribute('data-req')) + '</b> 次请求';
+    });
+    $('#hmGrid').addEventListener('mouseleave', function () { tip.textContent = defTip; });
+  }
+
+  // Month labels aligned to the first column containing a day of that month
+  function monthLabels(cells) {
+    var labels = [];
+    var seen = {};
+    cells.forEach(function (c) {
+      if (c.future) return;
+      if (!seen[c.month]) {
+        seen[c.month] = true;
+        labels.push({ col: c.col, name: (c.month + 1) + '月' });
+      }
+    });
+    return labels.filter(function (l, i) {
+      // drop labels that would overlap the previous one or the right edge
+      if (i > 0 && l.col - labels[i - 1].col < 3) return false;
+      return l.col < HEAT_WEEKS - 1;
+    }).map(function (l) {
+      return '<span style="left:' + (l.col * 16) + 'px">' + l.name + '</span>';
+    }).join('');
   }
 
   // ---------- recent requests (paginated + filterable) ----------
@@ -506,11 +700,15 @@ const CLIENT_SCRIPT = String.raw`
   function bindPanelEvents() {
     document.addEventListener('click', function (ev) {
       var btn = ev.target.closest ? ev.target.closest('.pager-btn') : null;
-      if (!btn || btn.disabled) return;
-      var panel = btn.getAttribute('data-panel');
-      var dir = parseInt(btn.getAttribute('data-dir'), 10);
-      if (panel === 'recent') { state.recentPage += dir; renderRecent(); }
-      if (panel === 'error') { state.errorPage += dir; renderErrors(); }
+      if (btn && !btn.disabled) {
+        var panel = btn.getAttribute('data-panel');
+        var dir = parseInt(btn.getAttribute('data-dir'), 10);
+        if (panel === 'recent') { state.recentPage += dir; renderRecent(); }
+        if (panel === 'error') { state.errorPage += dir; renderErrors(); }
+        return;
+      }
+      var toggle = ev.target.closest ? ev.target.closest('#longToggle') : null;
+      if (toggle) { state.showLong = !state.showLong; renderActive(); }
     });
     document.addEventListener('change', function (ev) {
       var id = ev.target.id;
@@ -534,33 +732,6 @@ const CLIENT_SCRIPT = String.raw`
       again.focus();
       try { again.setSelectionRange(pos, pos); } catch (e) { /* noop */ }
     }
-  }
-
-  // ---------- historical daily chart ----------
-  function renderHistory() {
-    var wrap = $('#historyWrap');
-    var s = state.stats;
-    if (!s || !s.days) {
-      wrap.innerHTML = '<div class="empty">暂无历史统计数据<span class="empty-sub">usage-stats 持久化未启用或无记录</span></div>';
-      return;
-    }
-    var days = s.days;
-    var totalTok = 0, totalReq = 0;
-    days.forEach(function (d) { totalTok += d.totalTokens; totalReq += d.requests; });
-    var shown = days.slice(-30);
-    var html = '<div class="hist-summary">近 ' + days.length + ' 天累计 ' +
-      '<b>' + fmtNum(totalTok) + '</b> tokens · <b>' + fmtNum(totalReq) + '</b> 请求</div>';
-    var maxTok = 1;
-    shown.forEach(function (d) { if (d.totalTokens > maxTok) maxTok = d.totalTokens; });
-    html += '<div class="hist-chart">';
-    shown.forEach(function (d) {
-      var pct = Math.round((d.totalTokens / maxTok) * 100);
-      html += '<div class="hist-col" title="' + d.date + '：' + fmtNum(d.totalTokens) + ' tok · ' + d.requests + ' 次">' +
-        '<div class="hist-bar-wrap"><div class="hist-bar" style="height:' + Math.max(pct, d.totalTokens > 0 ? 3 : 0) + '%"></div></div>' +
-        '<div class="hist-x">' + d.date.slice(5) + '</div></div>';
-    });
-    html += '</div>';
-    wrap.innerHTML = html;
   }
 
   function render() {
@@ -631,6 +802,11 @@ const STYLES = `
   --ok: #7ee0a3;
   --warn: #f2c97d;
   --err: #ff8fa3;
+  --hm0: #20263e;
+  --hm1: #1e553f;
+  --hm2: #2f9260;
+  --hm3: #53d38b;
+  --hm4: #a9f0bd;
   --radius: 8px;
   --shadow: 0 1px 2px rgba(5, 8, 20, .4);
 }
@@ -666,11 +842,9 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
 .stat-card .value.err { color: var(--err); }
 
 /* ---------- layout ---------- */
-.main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px;
-  padding: 16px 24px 24px; }
-@media (max-width: 1100px) { .main { grid-template-columns: 1fr; } }
-.col > .panel { margin-bottom: 16px; }
-.col > .panel:last-child { margin-bottom: 0; }
+.main { display: flex; flex-direction: column; gap: 16px; padding: 16px 24px 24px; }
+.duo { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 1100px) { .duo { grid-template-columns: 1fr; } }
 .panel { background: var(--panel); border: 1px solid var(--border-soft);
   border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
 .panel h2 { font-size: 11px; color: var(--muted); font-weight: 650; margin: 0;
@@ -712,6 +886,17 @@ th.num { text-align: right; }
   transition: width .25s ease-out; }
 .empty { color: var(--faint); padding: 22px 16px; text-align: center; font-size: 12px; }
 .empty-sub { display: block; color: var(--faint); font-size: 11px; margin-top: 4px; opacity: .8; }
+
+/* ---------- active requests: straggler fold ---------- */
+.long-toggle { display: block; width: calc(100% - 16px); margin: 4px 8px 10px;
+  background: rgba(242, 201, 125, .06); border: 1px dashed rgba(242, 201, 125, .35);
+  color: var(--warn); border-radius: 6px; font-size: 11px; padding: 6px 10px;
+  cursor: pointer; text-align: left;
+  transition: background .15s ease, border-color .15s ease; }
+.long-toggle:hover { background: rgba(242, 201, 125, .12); border-color: var(--warn); }
+.long-table { margin-top: 4px; }
+.long-table .elapsed { color: var(--warn); }
+.long-note { color: var(--faint); font-size: 11px; padding: 4px 16px 8px; }
 
 /* ---------- filter bars + pagers ---------- */
 .flt-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px 6px; }
@@ -782,19 +967,40 @@ th.num { text-align: right; }
 #keyInput:focus { border-color: var(--accent); }
 #keyPrompt .row { display: flex; gap: 8px; justify-content: flex-end; }
 
-/* ---------- historical daily chart ---------- */
-.hist-summary { padding: 12px 16px 0; color: var(--muted); font-size: 12px; }
-.hist-summary b { color: var(--text-hi); font-variant-numeric: tabular-nums; }
-.hist-chart { display: flex; align-items: flex-end; gap: 2px; height: 110px;
-  padding: 12px 16px 6px; }
-.hist-col { flex: 1; display: flex; flex-direction: column; align-items: center;
-  justify-content: flex-end; height: 100%; min-width: 0; cursor: default; }
-.hist-bar-wrap { width: 100%; flex: 1; display: flex; align-items: flex-end; }
-.hist-bar { width: 100%; background: var(--accent); border-radius: 2px 2px 0 0;
-  opacity: .65; min-height: 0; transition: opacity .12s ease; }
-.hist-col:hover .hist-bar { opacity: 1; }
-.hist-x { font-size: 9px; color: var(--faint); margin-top: 4px; white-space: nowrap;
-  transform: rotate(-45deg); transform-origin: center; }
+/* ---------- calendar heatmap ---------- */
+/* 13px cell + 3px gap = 16px pitch; every offset below is a multiple of it */
+#historyWrap { padding: 16px 18px 12px; }
+.hm-body { overflow-x: auto; padding-bottom: 4px; }
+.hm-months { position: relative; height: 15px; margin-left: 28px;
+  min-width: 780px; /* 26 cols * 16px + trailing labels */ }
+.hm-months span { position: absolute; top: 0; font-size: 10px; color: var(--faint);
+  white-space: nowrap; }
+.hm-main { display: flex; }
+.hm-days { position: relative; width: 24px; flex: none; margin-right: 4px; }
+.hm-days span { position: absolute; font-size: 10px; color: var(--faint); line-height: 13px; }
+.hm-grid { display: grid; grid-template-rows: repeat(7, 13px);
+  grid-auto-columns: 13px; grid-auto-flow: column; gap: 3px; }
+.hm-cell { width: 13px; height: 13px; border-radius: 2px; background: var(--hm0); }
+.hm-cell.future { background: transparent; }
+.hm-cell.lv0 { background: var(--hm0); }
+.hm-cell.lv1 { background: var(--hm1); }
+.hm-cell.lv2 { background: var(--hm2); }
+.hm-cell.lv3 { background: var(--hm3); }
+.hm-cell.lv4 { background: var(--hm4); }
+.hm-cell.today { outline: 1px solid var(--accent); outline-offset: 1px; }
+.hm-cell[data-date]:hover { outline: 1px solid var(--text-hi); outline-offset: 0; }
+.hm-foot { display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; margin-top: 10px; }
+.hm-tip { color: var(--muted); font-size: 11px; min-height: 16px;
+  font-variant-numeric: tabular-nums; }
+.hm-tip b { color: var(--text-hi); font-weight: 600; }
+.hm-legend { display: flex; align-items: center; gap: 3px; color: var(--faint);
+  font-size: 10px; flex: none; }
+.hm-legend .hm-cell { width: 10px; height: 10px; }
+.hm-legend span { margin: 0 4px; }
+.hm-summary { color: var(--muted); font-size: 12px; margin-top: 8px;
+  padding-top: 8px; border-top: 1px solid var(--border-soft); }
+.hm-summary b { color: var(--text-hi); font-variant-numeric: tabular-nums; }
 `;
 
 /**
@@ -834,41 +1040,41 @@ function renderBody(): string {
   <div class="stat-card"><div class="label">本次运行 Tokens</div><div class="value" id="statTokens">–</div></div>
 </section>
 <main class="main">
-  <div class="col">
+  <div class="duo">
     <div class="panel">
       <h2>进行中请求<span class="badge" id="activeBadge"></span></h2>
       <div id="activeWrap" class="table-wrap"><div class="empty">加载中…</div></div>
     </div>
     <div class="panel">
-      <h2>按 API Key 的 Token 用量（本次运行）</h2>
-      <div id="keysWrap" class="table-wrap"><div class="empty">加载中…</div></div>
-    </div>
-    <div class="panel">
-      <h2>按模型的 Token 用量（本次运行 + 历史）</h2>
-      <div id="modelsWrap" class="table-wrap"><div class="empty">加载中…</div></div>
-    </div>
-    <div class="panel">
-      <h2>按 Plan 的 Token 用量（本次运行 + 历史）</h2>
-      <div id="plansUsageWrap" class="table-wrap"><div class="empty">加载中…</div></div>
-    </div>
-    <div class="panel">
-      <h2>近期完成的请求</h2>
-      <div id="recentWrap" class="table-wrap"><div class="empty">加载中…</div></div>
-    </div>
-  </div>
-  <div class="col">
-    <div class="panel">
       <h2>Plan 余量 / 余额</h2>
       <div id="quotaWrap"><div class="empty">加载中…</div></div>
     </div>
+  </div>
+  <div class="panel">
+    <h2>历史 Token 日历</h2>
+    <div id="historyWrap"><div class="empty">加载中…</div></div>
+  </div>
+  <div class="duo">
     <div class="panel">
-      <h2>历史每日 Token 统计</h2>
-      <div id="historyWrap"><div class="empty">加载中…</div></div>
+      <h2>Token 消耗 · 按 API Key（本次运行）</h2>
+      <div id="keysWrap" class="table-wrap"><div class="empty">加载中…</div></div>
     </div>
     <div class="panel">
-      <h2>近期错误</h2>
-      <div id="errorList"><div class="empty">加载中…</div></div>
+      <h2>Token 消耗 · 按 Plan（本次运行 + 历史）</h2>
+      <div id="plansUsageWrap" class="table-wrap"><div class="empty">加载中…</div></div>
     </div>
+  </div>
+  <div class="panel" id="modelsPanel">
+    <h2>按模型的 Token 用量（本次运行 + 历史）</h2>
+    <div id="modelsWrap" class="table-wrap"><div class="empty">加载中…</div></div>
+  </div>
+  <div class="panel">
+    <h2>近期完成的请求</h2>
+    <div id="recentWrap" class="table-wrap"><div class="empty">加载中…</div></div>
+  </div>
+  <div class="panel">
+    <h2>近期错误</h2>
+    <div id="errorList"><div class="empty">加载中…</div></div>
   </div>
 </main>
 <div id="keyPrompt">

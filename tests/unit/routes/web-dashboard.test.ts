@@ -78,9 +78,15 @@ describe('Web Dashboard Routes', () => {
       const body = response.body;
       // the four core panels
       expect(body).toContain('进行中请求');
-      expect(body).toContain('按 API Key 的 Token 用量');
+      expect(body).toContain('Token 消耗 · 按 API Key');
       expect(body).toContain('按模型的 Token 用量');
       expect(body).toContain('Plan 余量 / 余额');
+      // daily history renders as a GitHub-style calendar heatmap
+      expect(body).toContain('历史 Token 日历');
+      expect(body).toContain('hm-grid');
+      expect(body).toContain('hmTip');
+      // long-running in-flight requests fold behind a toggle
+      expect(body).toContain('longToggle');
       // no flow diagram leftovers
       expect(body).not.toContain('请求流向');
       // recent-requests and errors panels are paginated + filterable
