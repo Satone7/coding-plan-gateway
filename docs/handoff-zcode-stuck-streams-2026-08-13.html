@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Handoff：ZCode 流式请求卡死排查与修复方案（2026-08-13）</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   HTML Report Style — Design System v3
+   Technical-report theme: dark header + card panels, dense data
+   tables with sticky headers, spec key-value grids, stat tiles,
+   diff lines, collapsible raw output, print-ready.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Design Tokens ── */
+:root {
+  color-scheme: light;
+  --bg: #f5f7fa;
+  --panel: #ffffff;
+  --ink: #17212f;
+  --muted: #5c6b7a;
+  --line: #d8e0ea;
+  --soft: #eef4fb;
+  --accent: #0b6fcb;
+  --accent-ink: #074d8d;
+  --accent-soft: rgba(11, 111, 203, 0.14);
+  --ok: #176b4d;
+  --ok-bg: #e8f6ef;
+  --warn: #9a5b00;
+  --warn-bg: #fff4db;
+  --risk: #b42318;
+  --risk-bg: #ffeceb;
+  --code-bg: #eef1f5;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+
+/* ── Reset & Base ── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+img, svg, video { max-width: 100%; height: auto; }
+
+::selection { background: #bcd9f7; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ── Header ── */
+header {
+  padding: 42px 24px 34px;
+  background: #132238;
+  color: #fff;
+  border-bottom: 5px solid var(--accent);
+}
+
+header h1 {
+  max-width: 980px;
+  font-size: clamp(28px, 5vw, 44px);
+  font-weight: 760;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+header .lede {
+  max-width: 980px;
+  margin-top: 12px;
+  color: #c3d2e5;
+  font-size: clamp(15px, 2vw, 17px);
+  line-height: 1.55;
+}
+
+/* ── Meta line (inside header) ── */
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* ── Main Container ── */
+main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 24px 56px;
+}
+
+/* ── Panel Sections ── */
+.summary, .toc, section {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.summary { padding: 22px; margin-bottom: 20px; }
+.toc     { padding: 18px 22px; }
+section  { padding: 24px; margin-top: 20px; transition: border-color .25s, box-shadow .25s; }
+
+section[id], h2[id], h3[id], h4[id] { scroll-margin-top: 14px; }
+section:target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ── Typography ── */
+h1, h2, h3 {
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+h1 { margin: 0; }
+
+h2 {
+  margin-top: 34px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 24px;
+}
+
+h3 {
+  margin-top: 24px;
+  font-size: 18px;
+}
+
+h4 {
+  margin-top: 18px;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+section h2:first-child { margin-top: 0; }
+
+.summary > h2:first-child {
+  margin-top: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+  font-size: 20px;
+}
+
+p      { margin: 12px 0; }
+ul, ol { padding-left: 22px; }
+li     { margin: 6px 0; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+blockquote {
+  margin: 16px 0;
+  padding: 10px 16px;
+  border-left: 3px solid var(--line);
+  border-radius: 0 6px 6px 0;
+  background: #fbfcfe;
+  color: #37485c;
+  font-style: normal;
+}
+
+blockquote p { margin: 6px 0; }
+
+figure { margin: 20px 0; }
+
+figure img, figure svg {
+  display: block;
+  margin: 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+figcaption {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+/* ── Code ── */
+code {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  white-space: pre;
+  font-family: var(--mono);
+}
+
+pre code {
+  padding: 0;
+  background: none;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+pre[data-file] {
+  position: relative;
+  padding-top: 36px;
+}
+
+pre[data-file]::before {
+  content: attr(data-file);
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 6px 6px 0 0;
+  background: #e4e9f0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+.diff-add, .diff-del {
+  display: block;
+  margin: 0 -4px;
+  padding: 0 4px;
+  border-left: 3px solid transparent;
+}
+
+.diff-add { background: var(--ok-bg);   border-left-color: var(--ok); }
+.diff-del { background: var(--risk-bg); border-left-color: var(--risk); }
+
+kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: #fff;
+  font-family: var(--mono);
+  font-size: 0.85em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* ── Tables ── */
+.tbl-wrap { margin: 16px 0; overflow-x: auto; }
+.tbl-wrap table { margin: 0; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+caption {
+  caption-side: top;
+  padding-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+th, td {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  vertical-align: top;
+  text-align: left;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #eef4fb;
+  color: #1d334d;
+  font-weight: 750;
+}
+
+td code { overflow-wrap: anywhere; }
+
+tr.highlight { background: #fef3c7; }
+
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+table.dense { font-size: 0.88rem; }
+table.dense th, table.dense td { padding: 7px 9px; }
+
+table.zebra tbody tr:nth-child(even) { background: #f7fafd; }
+
+table.fixed { table-layout: fixed; }
+
+/* ── Table of Contents ── */
+.toc h2 {
+  margin-top: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+  font-size: 20px;
+}
+
+.toc ol {
+  columns: 2;
+  margin: 12px 0 0;
+  padding-left: 24px;
+}
+
+/* ── Key-Value Spec Grid ── */
+.kv {
+  margin: 16px 0;
+  border-top: 1px solid var(--line);
+}
+
+.kv > div {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 2px 16px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.kv dt {
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.kv dd { min-width: 0; }
+
+/* ── Stat Tiles ── */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.stat {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.stat b {
+  display: block;
+  color: var(--accent-ink);
+  font-size: 26px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.stat.ok b   { color: var(--ok); }
+.stat.warn b { color: var(--warn); }
+.stat.risk b { color: var(--risk); }
+
+/* ── Badges ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ok   { background: var(--ok-bg);   color: var(--ok); }
+.warn { background: var(--warn-bg); color: var(--warn); }
+.risk { background: var(--risk-bg); color: var(--risk); }
+.info { background: var(--soft);     color: var(--accent-ink); }
+
+/* ── Callout Boxes ── */
+.callout {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border-left: 4px solid var(--accent);
+  border-radius: 6px;
+  background: var(--soft);
+}
+
+.callout.warn {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.callout.risk {
+  border-left-color: var(--risk);
+  background: var(--risk-bg);
+}
+
+.callout.ok {
+  border-left-color: var(--ok);
+  background: var(--ok-bg);
+}
+
+/* ── Collapsible Raw Output ── */
+details {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+summary {
+  cursor: pointer;
+  color: var(--accent-ink);
+  font-weight: 650;
+}
+
+summary::marker { color: var(--muted); }
+
+details[open] summary { margin-bottom: 8px; }
+
+details > :last-child { margin-bottom: 0; }
+
+/* ── Card Grid ── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfe;
+}
+
+.card strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+/* ── Flow Steps ── */
+.flow {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.step {
+  min-height: 112px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.step b {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--accent-ink);
+}
+
+/* ── Flow Node Diagram ── */
+.migration-flow {
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.flow-row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.flow-node {
+  position: relative;
+  min-height: 148px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.flow-node:not(:last-child)::after {
+  content: "›";
+  position: absolute;
+  top: 50%;
+  right: -13px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.flow-node h3 {
+  margin: 8px 0 6px;
+  font-size: 16px;
+}
+
+.flow-node p {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.flow-node ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* ── Side-by-side Comparison ── */
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.compare > div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfe;
+}
+
+.compare > div.best {
+  border-color: var(--ok);
+  background: var(--ok-bg);
+}
+
+/* ── Vertical Timeline ── */
+.timeline { position: relative; padding: 1rem 1rem 0.25rem 2.5rem; }
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 0.25rem; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--line);
+}
+
+.timeline-item { position: relative; margin-bottom: 1.5rem; }
+
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -1.15rem; top: 0.5rem;
+  width: 0.7rem; height: 0.7rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ── Source List ── */
+.source-list li {
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+/* ── Utility ── */
+.highlight, mark { background: #fef08a; padding: 0 0.15rem; border-radius: 2px; }
+.note { color: var(--muted); font-size: 0.9rem; }
+
+hr {
+  margin: 1.75rem 0;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  header { padding: 24px 16px 20px; }
+  main   { padding: 16px 12px 32px; }
+  .grid, .grid.cols-2, .grid.cols-4, .flow, .flow-row {
+    grid-template-columns: 1fr;
+  }
+  .flow-node:not(:last-child)::after {
+    content: "↓";
+    top: auto;
+    right: 50%;
+    bottom: -18px;
+    transform: translateX(50%);
+  }
+  .toc ol { columns: 1; }
+  .compare { grid-template-columns: 1fr; }
+  .kv > div { grid-template-columns: 1fr; }
+  table { display: block; overflow-x: auto; }
+}
+
+/* ── Print ── */
+@media print {
+  body { background: #fff; font-size: 11.5pt; }
+  header { padding: 0 0 14pt; background: none; color: #000; border-bottom: 2pt solid #000; }
+  header .lede { color: #333; }
+  .meta span { border-color: #aaa; background: none; color: #333; }
+  main { max-width: none; padding: 0; }
+  .summary, .toc, section { box-shadow: none; border-color: #bbb; }
+  section { margin-top: 14pt; }
+  section:target { box-shadow: none; border-color: #bbb; }
+  h2, h3, h4 { break-after: avoid; }
+  .callout, .card, .stat, .step, .flow-node, pre, blockquote,
+  figure, tr, details, .kv > div { break-inside: avoid; }
+  thead { display: table-header-group; }
+  table { display: table; }
+  pre { white-space: pre-wrap; word-break: break-word; }
+  .tbl-wrap { overflow-x: visible; }
+  .toc ol { columns: 2; }
+  a { color: #000; }
+  p a[href^="http"]::after, li a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    color: #555;
+    font-size: 0.8em;
+    word-break: break-all;
+  }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Handoff：ZCode 流式请求卡死 — 排查结论与修复方案</h1>
+  <p class="lede">生产环境（root@192.168.100.1）ZCode 客户端流式请求卡死问题的完整排查记录、失败签名识别方法、已排除项、根因边界，以及待修复缺陷与实施清单。修复将在新会话中执行。</p>
+  <div class="meta" aria-label="报告元信息">
+    <span>日期：2026-08-13</span>
+    <span>项目：coding-plan-gateway</span>
+    <span>状态：<span class="badge warn">待修复</span></span>
+    <span>事件窗口：07:51–08:04 UTC（已自愈）</span>
+  </div>
+</header>
+
+<main>
+
+<article class="summary">
+  <h2>结论摘要</h2>
+  <p>2026-08-13 07:51–08:04（UTC），三条 ZCode 客户端（ai-sdk，<code>max_tokens: 384000</code>）的流式请求在「上游已开始流式、网关已劫持响应」之后中途死亡：两条呈现「流一段时间 + 恰好 300s 上游空闲超时」签名，一条 6.7s 即失败。网关的流式 catch 分支（headers 已发送路径）<mark>不打任何错误日志</mark>，静默以「Request completed 200、provider statusCode 0、0 token」落日志，同时触发 <code>Plan marked as failed</code>。客户端表现为请求卡死。上游 DeepSeek 经 5 轮直连复现全部正常，事件已于 08:23 后自愈（19/19 成功）。<strong>根因边界明确：网关代码存在 3 个缺陷（静默 catch、客户端断开误记计划失败、状态误导），导致上游/网络的瞬时故障被放大为「客户端卡 5 分钟 + 日志无可查」。</strong>本 handoff 的目标是让修复会话直接实施 §6–§7 的修复清单。</p>
+  <div class="stats">
+    <div class="stat risk"><b>3</b><span>ZCode 卡死请求（07:51–08:04）</span></div>
+    <div class="stat warn"><b>2 / 3</b><span>呈现「+300s 空闲超时」签名</span></div>
+    <div class="stat ok"><b>5 / 5</b><span>DeepSeek 直连复现全部正常</span></div>
+    <div class="stat ok"><b>19 / 19</b><span>08:23 后 ZCode 流量全部成功</span></div>
+    <div class="stat risk"><b>3</b><span>待修复网关缺陷</span></div>
+  </div>
+</article>
+
+<nav class="toc" aria-label="目录">
+  <h2>目录</h2>
+  <ol>
+    <li><a href="#s1">事件概述与环境</a></li>
+    <li><a href="#s2">失败请求时间线</a></li>
+    <li><a href="#s3">失败签名与诊断命令</a></li>
+    <li><a href="#s4">已排除项与复现实验</a></li>
+    <li><a href="#s5">根因分析：已确认事实与未决问题</a></li>
+    <li><a href="#s6">待修复缺陷与方案草案</a></li>
+    <li><a href="#s7">修复实施清单与验收标准</a></li>
+    <li><a href="#s8">关联线索与遗留事项</a></li>
+  </ol>
+</nav>
+
+<!-- ══════════════════ 1 ══════════════════ -->
+<section id="s1">
+  <h2>1. 事件概述与环境</h2>
+  <p>用户报告：生产环境上「几个 zcode apikey 的请求一直卡死无法返回」。排查发现涉及两类请求：</p>
+  <ul>
+    <li><strong>ZCode 客户端</strong>（UA <code>ZCode/3.7.6 ai-sdk/provider-utils/4.0.27</code>，Vercel AI SDK 系）：流式 Anthropic 请求，<code>deepseek-v4-pro</code> + <code>max_tokens: 384000</code>，13–37 条消息、225KB–260KB body。失败 3 条（faex1 密钥 1 条、zcode 密钥 2 条）。</li>
+    <li><strong>nas-hermes 客户端</strong>（路由器本机 <code>/home/pren/scripts/run_trading_simple.py</code>，OpenAI/Python）：一条非流式请求上游 33s 返回 200 后响应从未发完（§8 单独记录，与 ZCode 问题相互独立）。</li>
+  </ul>
+  <dl class="kv">
+    <div><dt>生产位置</dt><dd>路由器 <code>root@192.168.100.1</code>（BusyBox ash，无 python3/ss，有 tcpdump/netstat）</dd></div>
+    <div><dt>容器</dt><dd><code>coding-plan-gateway</code>，端口 8087；出网经 <code>HTTP_PROXY=http://pren:231231@172.17.0.1:7890</code>（即路由器 OpenClash）</dd></div>
+    <div><dt>上游计划</dt><dd>plan 5「DeepSeek」（provider: deepseek，无自定义 baseUrl，走内置预设 <code>https://api.deepseek.com/anthropic</code>）；<code>timeout: 300</code>（秒，见 §3）</dd></div>
+    <div><dt>影响模型</dt><dd><code>deepseek-v4-pro</code>（Anthropic 格式，stream=true）</dd></div>
+    <div><dt>当前状态</dt><dd><span class="badge ok">已自愈</span> 08:23 起 ZCode 流量全部正常（19/19 成功，含 225KB/37 消息大请求）</dd></div>
+  </dl>
+</section>
+
+<!-- ══════════════════ 2 ══════════════════ -->
+<section id="s2">
+  <h2>2. 失败请求时间线（全部 UTC）</h2>
+  <div class="tbl-wrap">
+    <table class="dense zebra">
+      <caption>表 1：卡死/异常请求完整记录</caption>
+      <thead>
+        <tr>
+          <th>requestId</th>
+          <th>开始</th>
+          <th>结束</th>
+          <th class="num">总时长</th>
+          <th>密钥</th>
+          <th>客户端</th>
+          <th>结局</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="highlight">
+          <td><code>faeba439-…</code></td>
+          <td>07:51:37</td>
+          <td>07:57:03</td>
+          <td class="num">326.6s</td>
+          <td>faex1</td>
+          <td>ZCode（260KB，13 消息）</td>
+          <td>静默失败：流 26.6s → 静默 → +300s 空闲超时被杀</td>
+        </tr>
+        <tr class="highlight">
+          <td><code>51f78a88-…</code></td>
+          <td>07:58:31</td>
+          <td>07:58:38</td>
+          <td class="num">6.7s</td>
+          <td>zcode</td>
+          <td>ZCode（260KB，13 消息）</td>
+          <td>静默失败：6.7s 即中断</td>
+        </tr>
+        <tr class="highlight">
+          <td><code>f802b2b2-…</code></td>
+          <td>07:59:08</td>
+          <td>08:04:14</td>
+          <td class="num">305.5s</td>
+          <td>zcode</td>
+          <td>ZCode（260KB，13 消息）</td>
+          <td>静默失败：流 5.5s → 静默 → +300s 空闲超时被杀</td>
+        </tr>
+        <tr>
+          <td><code>req-2tla</code></td>
+          <td>07:39:46</td>
+          <td>—</td>
+          <td class="num">30min+</td>
+          <td>nas-hermes</td>
+          <td>trading 脚本（OpenAI/Python，非流式）</td>
+          <td>上游 33s 返回 200，响应从未发完；"Request completed" 从未打出；被仪表盘 30min 陈旧清理扫掉</td>
+        </tr>
+        <tr>
+          <td><code>7912b2fd-…</code></td>
+          <td>07:56:54</td>
+          <td>07:56:55</td>
+          <td class="num">1.0s</td>
+          <td>zcode</td>
+          <td>ZCode 模型探测（78B，glm-5.2，max_tokens:1）</td>
+          <td><span class="badge ok">成功</span>（对照组：ZCode 探测流量正常）</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>三条 ZCode 失败请求的共同点：<code>stream: true</code>、<code>max_tokens: 384000</code>、~260KB/13 消息、无 <code>?beta=true</code>；与同一时刻正常完成的 claude-cli 流量（<code>max_tokens: 64000</code>、<code>?beta=true</code>）交织存在，说明并非上游整体故障。</p>
+</section>
+
+<!-- ══════════════════ 3 ══════════════════ -->
+<section id="s3">
+  <h2>3. 失败签名与诊断命令</h2>
+  <p>「静默流式失败」的完整识别签名（网关日志视角）：</p>
+  <ol>
+    <li>认证/路由/转发全部正常（<code>Request authenticated</code> → <code>Anthropic message request</code> → <code>Request routed to plan</code> → <code>Forwarding Anthropic streaming request</code>）；</li>
+    <li>上游已发送 ≥1 个数据块（网关已 <code>reply.hijack()</code> 并发出 SSE 头——否则会走 error handler 打出 <code>Request failed</code>，本事件中没有）；</li>
+    <li>流中途死亡：<strong>无</strong> <code>Anthropic streaming request completed</code>、<strong>无</strong> token 回调、<strong>无</strong>任何 warn/error 错误日志；</li>
+    <li>同一毫秒出现 <code>Plan marked as failed</code>（warn，planId=5）——catch 里 <code>router.markPlanFailed()</code> 的痕迹；</li>
+    <li>收尾为 <code>Request completed</code>，<code>statusCode: 200</code>、<code>provider: {durationMs: 0, statusCode: 0}</code>、无 tokens——这是 handler 早期 <code>attachProviderMetrics</code>（durationMs 0/statusCode 0）的原值，从未被覆盖。</li>
+  </ol>
+  <div class="callout warn">
+    <strong>⚠️ 关键机制：</strong>时长 =「流时长 + 300s」的两条请求，与 <code>plan.timeout: 300</code>（秒）精确吻合。<code>makeStreamingRequest</code> 里 <code>timeout: options.timeout * 1000</code> 是 <strong>socket 空闲超时</strong>——上游停止发数据 300s 后，<code>req.on('timeout')</code> → destroy → <code>handleStreamError('Request timeout')</code> → reject → catch（headers 已发送）→ 静默 <code>logCompletion()</code>。也就是说这两条请求的「卡死 5 分钟」是网关的超时兜底在兜着，而不是自然结束。
+  </div>
+  <h3>3.1 诊断命令（修复会话可直接复用）</h3>
+  <pre data-file="router: root@192.168.100.1"><span style="color:var(--muted)"># 找静默失败签名（Plan marked as failed 与 0/0 provider 成对出现）</span>
+docker logs coding-plan-gateway --since 2026-08-13T00:00:00Z 2&gt;&amp;1 \
+  | grep -E "Plan marked as failed|Request completed" \
+  | grep -B1 -A1 "Plan marked as failed"
+
+<span style="color:var(--muted)"># 拉单个 requestId 的完整生命周期（requestId 出现在每条日志里）</span>
+docker logs coding-plan-gateway --since 2026-08-13T07:50:00Z 2&gt;&amp;1 | grep -E "f802b2b2"
+
+<span style="color:var(--muted)"># 仪表盘在途/历史（auth-exempt）</span>
+curl -s http://127.0.0.1:8087/api/dashboard/summary   <span style="color:var(--muted)"># activeRequests / recentRequests / activeDiagnostics</span>
+curl -s http://127.0.0.1:8087/api/dashboard/errors    <span style="color:var(--muted)"># 错误缓冲（静默失败不会出现在这里——它不报错）</span></pre>
+</section>
+
+<!-- ══════════════════ 4 ══════════════════ -->
+<section id="s4">
+  <h2>4. 已排除项与复现实验</h2>
+  <h3>4.1 上游 DeepSeek 直连复现（从路由器经同一 OpenClash 7890 路径，与容器同网路）</h3>
+  <div class="tbl-wrap">
+    <table class="dense zebra">
+      <caption>表 2：直连 api.deepseek.com/anthropic/v1/messages 复现实验</caption>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>请求形状</th>
+          <th class="num">时长</th>
+          <th>结果</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>极小 body + <code>max_tokens: 384000</code> + stream</td><td class="num">1.3s</td><td><span class="badge ok">200 干净收尾</span></td></tr>
+        <tr><td>2</td><td>234KB / 13 消息（无 thinking 块）</td><td class="num">0.17s</td><td><span class="badge warn">400</span>「<code>content[].thinking</code> 必须回传」——发现 DeepSeek Anthropic 端点为 thinking 模式</td></tr>
+        <tr><td>3</td><td>234KB / 13 消息（含 thinking 块回传）</td><td class="num">7.6s</td><td><span class="badge ok">200 干净收尾</span></td></tr>
+        <tr><td>4</td><td>真实代码任务 + thinking（30KB）</td><td class="num">55.9s</td><td><span class="badge ok">200 连续流式 494KB，end_turn</span></td></tr>
+        <tr><td>5</td><td>30 个工具定义 + 顶层 <code>thinking</code> + <code>cache_control</code> + anthropic-beta 头（ai-sdk 全保真）</td><td class="num">18.7s</td><td><span class="badge ok">200 干净收尾</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>五轮复现全部正常 → <strong>上游 DeepSeek 对 ZCode 形状的请求（含 384000 max_tokens）无系统性问题</strong>。DeepSeek 上游密钥为 config 中明文 <code>sk-</code> 值，复现用 <code>awk</code> 取 plan 5 的 <code>apiKey</code> 行即可（勿打印到日志/会话）。</p>
+
+  <h3>4.2 其他排除项</h3>
+  <ul>
+    <li><strong>OpenClash</strong>：07:00–08:59 路由器 OpenClash 日志零异常（无切换/重启/超时/重置）。</li>
+    <li><strong>cloudflared 隧道</strong>：最近重启在 08:18，与失败窗口（07:51–08:04）不匹配；失败窗口内 claude-cli 流量经同一隧道正常完成。</li>
+    <li><strong>配额/熔断</strong>：DeepSeek 计划 usage API 显示 0% 消耗，熔断器状态始终 closed。</li>
+    <li><strong>网关自身健康</strong>：容器 Up 3 days，同窗口 faex1/quant 的流式与非流式请求全部正常。</li>
+  </ul>
+</section>
+
+<!-- ══════════════════ 5 ══════════════════ -->
+<section id="s5">
+  <h2>5. 根因分析：已确认事实与未决问题</h2>
+  <div class="grid cols-2">
+    <div class="card">
+      <strong>✅ 已确认事实</strong>
+      <ul>
+        <li>三条 ZCode 失败都是「上游已流式 ≥1 块后中途死亡」，网关 headers 已发送。</li>
+        <li>其中两条时长精确等于「流时长 + 300s」= 网关上游空闲超时兜底。</li>
+        <li>网关把这类失败全部静默处理：不记错误消息、显示 200/0 token、并给计划记一次熔断失败。</li>
+        <li>上游直连复现 5/5 正常，事件已自愈（08:23 后 19/19 成功）。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <strong>❓ 未决问题（现有日志无法区分）</strong>
+      <ul>
+        <li>上游静默 300s 的原因：DeepSeek 流中途挂死（瞬时故障）？还是<strong>下游堵塞</strong>——客户端/隧道不读数据 → 网关背压 <code>res.pause()</code> 暂停上游 → 上游 300s 无数据 → 超时？</li>
+        <li>51f78a88 的 6.7s 失败：客户端主动取消？还是上游 RST？</li>
+        <li>req-2tla（trading 脚本）"Request completed" 从未打出——网关响应发送侧的未知问题。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout ok">
+    <strong>✅ 修复会话的定位：</strong>不需要先解开未决问题再动手。三个缺陷（§6）无论哪种触发机制都成立且都值得修；修完后同类事件再发生时，日志将直接给出答案。
+  </div>
+</section>
+
+<!-- ══════════════════ 6 ══════════════════ -->
+<section id="s6">
+  <h2>6. 待修复缺陷与方案草案</h2>
+
+  <h3>6.1 缺陷 1：流式 catch 静默吞错（本次无法定位的直接原因）<span class="badge risk">必修</span></h3>
+  <p>位置：<code>src/routes/anthropic/handlers.ts:512-608</code>（Anthropic 流式 catch）与 <code>src/routes/openai/handlers.ts:479-575</code>（OpenAI 流式 catch）。当 <code>reply.raw.headersSent === true</code> 时，catch 分支不记录任何错误信息，直接 <code>logCompletion()</code>。</p>
+  <pre data-file="src/routes/anthropic/handlers.ts（catch 块开头，约 512 行）"><span class="diff-add">+  } catch (primaryError) {</span>
+<span class="diff-add">+    endStage(request, 'upstreamRequest');</span>
+<span class="diff-add">+    logger.warn('Streaming request failed mid-stream', {</span>
+<span class="diff-add">+      requestId,</span>
+<span class="diff-add">+      planId: plan.id,</span>
+<span class="diff-add">+      planName: plan.name,</span>
+<span class="diff-add">+      model,</span>
+<span class="diff-add">+      error: primaryError instanceof Error ? primaryError.message : String(primaryError),</span>
+<span class="diff-add">+      headersSent: reply.raw.headersSent,</span>
+<span class="diff-add">+      clientClosed: reply.raw.destroyed,</span>
+<span class="diff-add">+      durationMs: request.startTime ? Date.now() - request.startTime : 0,</span>
+<span class="diff-add">+    });</span>
+<span class="diff-del">-    // （原代码从这里开始：endStage + markPlanFailed + refundQuota + failover 判断）</span></pre>
+  <p>同位置还要给 provider metrics 打上失败标记（见 6.3）。OpenAI handler 的流式 catch 同构修改。</p>
+
+  <h3>6.2 缺陷 2：客户端断开被记成计划失败（熔断器污染）<span class="badge risk">必修</span></h3>
+  <p>链路：客户端断开 → <code>src/services/request-proxy.ts:770-782</code> 的 <code>onClientClose</code> 销毁上游请求 → <code>req.on('error')</code> 触发 <code>handleStreamError</code> → reject → handler catch → <code>router.markPlanFailed(plan.id)</code>。<strong>客户端的锅记到计划头上</strong>，累积 5 次会误开熔断器（阈值 <code>failureThreshold: 5</code>）。</p>
+  <p>方案：proxy 里给错误打上客户端断开标记，handler catch 据此跳过 <code>markPlanFailed</code>。</p>
+  <pre data-file="src/services/request-proxy.ts（onClientClose 附近，约 769-786 行）">let clientClosed = false;
+const onClientClose = (): void =&gt; {
+  if (!clientClosed) {
+    clientClosed = true;
+    if (!req.destroyed) {
+      req.destroy();
+    }
+  }
+};
+<span class="diff-add">// handleStreamError 增加可选 cause 参数，req.on('error') 处传入：</span>
+<span class="diff-add">req.on('error', (error) =&gt; {</span>
+<span class="diff-add">  handleStreamError(</span>
+<span class="diff-add">    `Request failed: ${error.message}`,</span>
+<span class="diff-add">    undefined,</span>
+<span class="diff-add">    clientClosed ? 'client-abort' : undefined</span>
+<span class="diff-add">  );</span>
+<span class="diff-add">  cleanupClientClose();</span>
+<span class="diff-add">});</span>
+<span class="diff-del">- req.on('error', (error) =&gt; {</span>
+<span class="diff-del">-   handleStreamError(`Request failed: ${error.message}`);</span>
+<span class="diff-del">-   cleanupClientClose();</span>
+<span class="diff-del">- });</span></pre>
+  <pre data-file="src/routes/anthropic/handlers.ts（catch 块内）"><span class="diff-add">+  const isClientAbort = (primaryError as { cause?: string }).cause === 'client-abort';</span>
+<span class="diff-add">+  if (!isClientAbort) {</span>
+      router.markPlanFailed(plan.id);
+<span class="diff-add">+  }</span></pre>
+  <div class="callout">
+    <strong>ℹ️ 注意：</strong>实现时优先看 <code>src/utils/retryable-error.ts</code> 里已有错误的扩展模式（<code>statusCode</code> 挂载方式），<code>cause</code> 字段保持一致风格。OpenAI handler 同样处理。配额 refund 逻辑保持不变（超出本次范围）。
+  </div>
+
+  <h3>6.3 缺陷 3：状态误导——失败被显示为「200 OK / 0 token」<span class="badge warn">建议修</span></h3>
+  <p>流式中途失败时，早期 <code>attachProviderMetrics</code> 的 <code>{durationMs: 0, statusCode: 0}</code> 原值保留，<code>Request completed</code> 记 <code>statusCode: 200</code>（hijack 后的 reply 状态），仪表盘显示「200 OK、0 token」。方案（可选，与 6.1 一起做）：catch 里 <code>attachProviderMetrics</code> 更新为实际错误（如 <code>statusCode: 499</code> 客户端断开 / <code>502</code> 上游错误，或复用错误对象的 <code>statusCode</code>），并在 <code>ProviderMetrics</code> 增加可选 <code>error</code> 字段透出到完成日志。</p>
+
+  <h3>6.4 可选加固：下游堵塞检测<span class="badge info">可选</span></h3>
+  <p>背压路径（<code>request-proxy.ts:615-627</code>）：客户端不读 → <code>write()</code> 返回 false → <code>res.pause()</code> → 上游停 → 300s 空闲超时。可加「pause 后 N 秒（如 60s）未 drain 则主动 destroy + 记 warn『Client not reading response』」的定时器，把 5 分钟卡死缩短到 1 分钟并给出明确日志。若修复会话时间紧张可推迟。</p>
+</section>
+
+<!-- ══════════════════ 7 ══════════════════ -->
+<section id="s7">
+  <h2>7. 修复实施清单与验收标准</h2>
+  <div class="flow">
+    <div class="step"><b>1. 分支</b>从 master 切 <code>fix/streaming-silent-failures</code>，按 TDD 先写测试。</div>
+    <div class="step"><b>2. 测试</b>在 <code>tests/integration/routes/anthropic.test.ts</code> / <code>openai.test.ts</code> 补：上游流中途断 → 断言 warn 日志出现；客户端断开 → 断言 <code>markPlanFailed</code> 未调用（mock router 验证）。</div>
+    <div class="step"><b>3. 实现</b>按 §6.1–6.3 修改三个文件（anthropic/openai handlers + request-proxy）。</div>
+    <div class="step"><b>4. 质量门</b><code>npm run lint</code>、<code>npm run typecheck</code>、<code>npm test</code>（80% 覆盖率红线）。</div>
+    <div class="step"><b>5. 合并部署</b><code>git merge --no-ff</code> 后按项目惯例 git bundle + 路由器 <code>sh deploy.sh</code>（见 prod-environment 记忆中的 deploy 注意点）。</div>
+  </div>
+  <h3>7.1 验收标准（部署后在生产验证）</h3>
+  <ul>
+    <li>复现路径：用任一有效客户端密钥（<code>npm run key:create</code> 建临时密钥）向网关发流式请求，上游流中途掐断/客户端提前断开 → <code>docker logs</code> 中能看到新的 <code>Streaming request failed mid-stream</code> warn 日志（含 error 消息、headersSent、clientClosed、durationMs）。</li>
+    <li>客户端断开场景：warn 日志出现但<strong>不再</strong>出现 <code>Plan marked as failed</code>。</li>
+    <li>正常流式请求回归：日志与仪表盘行为与修复前一致（成功的流仍显示 200 + tokens）。</li>
+    <li>观察 ZCode 日常流量（用户持续使用中）：一旦再次发生中途失败，日志可直接定位「上游错误 / 客户端断开 / 超时」三者之一。</li>
+  </ul>
+  <div class="callout warn">
+    <strong>⚠️ 修复会话注意：</strong>本仓库要求改动后同步更新 <code>CLAUDE.md</code>（Key Architecture Decisions / Recent Changes）。本次修复属于行为修复 + 日志增强，应在 Recent Changes 记一条 <code>fix/streaming-silent-failures</code> 条目，并核对 §3 的失败签名描述是否需在 CLAUDE.md 中补一句「流式中途失败会打 warn 日志、客户端断开不再记计划失败」。
+  </div>
+</section>
+
+<!-- ══════════════════ 8 ══════════════════ -->
+<section id="s8">
+  <h2>8. 关联线索与遗留事项</h2>
+  <h3>8.1 抓包证据（待分析或删除）</h3>
+  <p>路由器 <code>/tmp/zcap.pcap</code>（15MB，08:28:30 起约 1 分钟的 8087 端口全量流量，<strong>内含明文 API key</strong>）。捕获期间无失败样本（流量已健康），主要价值是成功流量的对照；若修复后问题复发，可立即起 <code>tcpdump -i any -s 0 -w /tmp/zcap.pcap "tcp port 8087"</code>（需保持 SSH 会话存活）抓失败样本。确认无用后请删除该文件。</p>
+  <h3>8.2 trading 脚本 hang（独立问题，未修）</h3>
+  <p>路由器本机 <code>/home/pren/scripts/run_trading_simple.py</code>（nas-hermes 客户端）在 07:39:46 的请求 hang：上游 33s 返回 200 后网关侧响应未发完（"Request completed" 从未打出），脚本两个 socket 长时间 CLOSE_WAIT。判断为客户端脚本未读响应/未关连接（客户端 bug），但网关侧 onResponse 未触发的原因同样值得在修复会话中顺带看一眼（非流式路径理论上不应有此现象）。</p>
+  <h3>8.3 DeepSeek Anthropic 端点特性（修复会话可能用到的背景）</h3>
+  <ul>
+    <li>该端点是 <strong>thinking 模式</strong>：assistant 消息必须回传 <code>content[].thinking</code> 块，否则 400「<code>The content[].thinking in the thinking mode must be passed back to the API</code>」。</li>
+    <li>要求 <code>tool_use</code> 块后必须紧跟对应 <code>tool_result</code> 消息。</li>
+    <li><code>max_tokens: 384000</code>（ZCode 默认）可正常处理，真实任务 thinking 流式可达分钟级（复现中 56s/3880 事件）——用户感知的「卡」可能部分是模型思考时间长 + ZCode UI 不渲染 thinking 增量，修复时应避免把「慢」误判为「挂」。</li>
+    <li>ZCode 客户端（ai-sdk）会发送顶层 <code>thinking</code> 参数、<code>cache_control</code> 块、anthropic-beta 头——网关 passthrough 均已正确处理（复现验证过）。</li>
+  </ul>
+  <h3>8.4 会话记忆</h3>
+  <p>本排查的关键事实已写入 Claude 记忆：<code>prod-environment</code>（网关出网代理路径、路由器工具环境、config 位置）与新增 <code>zcode-stream-failures</code>（事件签名、排除项、修复清单位置）。修复会话开局可先读记忆与本 handoff。</p>
+</section>
+
+<p class="note" style="margin-top: 2rem;">
+  🤖 Generated with <a href="https://claude.com/claude-code" style="color:var(--accent)">Claude Code</a>
+</p>
+
+</main>
+</body>
+</html>
