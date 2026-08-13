@@ -2,7 +2,7 @@
  * Integration tests for OpenAI-compatible routes.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FastifyInstance } from 'fastify';
 import Fastify from 'fastify';
 import { mkdir, rm } from 'fs/promises';
@@ -12,6 +12,8 @@ import { FilePlanRepository } from '@/services/plan-repository';
 import { RequestProxy } from '@/services/request-proxy';
 import { registerOpenAIRoutes } from '@/routes/openai';
 import { registerErrorHandler } from '@/middleware/error-handler';
+import { CircuitBreaker } from '@/services/circuit-breaker';
+import { logger } from '@/utils/logger';
 import { createMockPlanInput } from '../../fixtures/mock-plans';
 
 // Test encryption key
@@ -403,6 +405,99 @@ describe('OpenAI Routes', () => {
       expect(body.error).toHaveProperty('message');
       expect(body.error).toHaveProperty('type');
       expect(body.error).toHaveProperty('code');
+    });
+  });
+
+  describe('Streaming mid-stream failures (ZCode stuck-streams incident)', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>;
+    let infoSpy: ReturnType<typeof vi.spyOn>;
+    let recordFailureSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(async () => {
+      await repository.save(
+        createMockPlanInput({ name: 'Stream Plan', models: ['test-model'] })
+      );
+      warnSpy = vi.spyOn(logger, 'warn');
+      infoSpy = vi.spyOn(logger, 'info');
+      recordFailureSpy = vi.spyOn(CircuitBreaker.prototype, 'recordFailure');
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    const STREAM_BODY = {
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'Hello' }],
+      stream: true,
+    };
+
+    /** Mock the proxy: stream one chunk, then die mid-stream like the incident. */
+    function mockMidStreamFailure(error: Error): void {
+      vi.spyOn(proxy, 'forwardOpenAIStream').mockImplementationOnce(
+        async (_b, _o, _onChunk, reply, _onTok) => {
+          reply.raw.writeHead(200, { 'Content-Type': 'text/event-stream' });
+          reply.raw.write('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n');
+          // handleStreamError already wrote an SSE error event before rejecting.
+          reply.raw.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
+          reply.raw.end();
+          throw error;
+        }
+      );
+    }
+
+    function completionLogProvider(): {
+      statusCode?: number;
+      error?: string;
+    } | undefined {
+      const completed = infoSpy.mock.calls.find((call) => call[0] === 'Request completed');
+      const ctx = completed?.[1] as { provider?: { statusCode?: number; error?: string } };
+      return ctx?.provider;
+    }
+
+    it('logs a mid-stream warning and records the plan failure when the upstream dies mid-stream', async () => {
+      mockMidStreamFailure(new Error('Request failed: socket hang up'));
+
+      await app.inject({ method: 'POST', url: '/v1/chat/completions', payload: STREAM_BODY });
+
+      // Defect 1: the silent catch must now emit a warn with full context.
+      const midStreamWarn = warnSpy.mock.calls.find(
+        (call) => call[0] === 'Streaming request failed mid-stream'
+      );
+      expect(midStreamWarn).toBeDefined();
+      const warnCtx = midStreamWarn?.[1] as Record<string, unknown>;
+      expect(warnCtx.error).toBe('Request failed: socket hang up');
+      expect(warnCtx.headersSent).toBe(true);
+      expect(warnCtx.planId).toBe(1);
+
+      // An upstream death IS a plan failure — the circuit breaker must record it.
+      expect(recordFailureSpy).toHaveBeenCalledWith(1);
+
+      // Defect 3: the failure must not masquerade as 200 OK / 0 tokens.
+      const provider = completionLogProvider();
+      expect(provider?.statusCode).toBe(502);
+      expect(provider?.error).toContain('socket hang up');
+    });
+
+    it('does not record a plan failure when the client aborts mid-stream', async () => {
+      const clientAbort = Object.assign(new Error('Request failed: socket hang up'), {
+        cause: 'client-abort',
+      });
+      mockMidStreamFailure(clientAbort);
+
+      await app.inject({ method: 'POST', url: '/v1/chat/completions', payload: STREAM_BODY });
+
+      const midStreamWarn = warnSpy.mock.calls.find(
+        (call) => call[0] === 'Streaming request failed mid-stream'
+      );
+      expect(midStreamWarn).toBeDefined();
+
+      // Defect 2: the client's disconnect must not pollute the plan's circuit.
+      expect(recordFailureSpy).not.toHaveBeenCalled();
+
+      // Client aborts surface as 499 in provider metrics.
+      const provider = completionLogProvider();
+      expect(provider?.statusCode).toBe(499);
     });
   });
 });

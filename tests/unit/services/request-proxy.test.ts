@@ -3,7 +3,37 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createServer, get } from 'http';
+import type { AddressInfo } from 'net';
+import type { FastifyReply } from 'fastify';
 import { RequestProxy, extractStreamTokenUsage, mergeStreamTokenUsage } from '@/services/request-proxy';
+
+const ANTHROPIC_STREAM_BODY = {
+  model: 'test-model',
+  messages: [{ role: 'user' as const, content: 'Hello' }],
+  max_tokens: 100,
+  stream: true,
+};
+
+/**
+ * Start a bare HTTP server on an ephemeral port. Returns its URL so the proxy
+ * can point at it as a "real" upstream.
+ */
+async function startTestServer(): Promise<{ server: ReturnType<typeof createServer>; url: string }> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as AddressInfo).port;
+  return { server, url: `http://127.0.0.1:${port}` };
+}
+
+/**
+ * Minimal stand-in for FastifyReply — the proxy only touches these members.
+ * Backed by a REAL ServerResponse so socket lifecycle behavior (client
+ * disconnect, backpressure, headersSent) matches production.
+ */
+function fakeReplyFrom(res: import('http').ServerResponse): FastifyReply {
+  return { raw: res, hijack: () => undefined } as unknown as FastifyReply;
+}
 
 describe('RequestProxy', () => {
   let proxy: RequestProxy;
@@ -177,5 +207,171 @@ describe('stream token usage capture (H6)', () => {
 
   it('mergeStreamTokenUsage returns tail untouched when no captured values and no tail', () => {
     expect(mergeStreamTokenUsage(undefined, undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe('streaming failure reproduction (ZCode stuck-streams incident)', () => {
+  let proxy: RequestProxy;
+
+  beforeEach(() => {
+    proxy = new RequestProxy();
+  });
+
+  it('rejects and delivers an SSE error event when the upstream dies mid-stream', async () => {
+    // Upstream: sends SSE headers + one chunk, then dies abruptly (socket
+    // destroyed without terminating the SSE stream) — but only once the test
+    // has observed the chunk reaching the client, so this mirrors production
+    // where the upstream always streams at least one block before dying.
+    let destroyUpstream: (() => void) | undefined;
+    const upstream = await startTestServer();
+    upstream.server.on('request', (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write('event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"text":"hi"}}\n\n');
+      destroyUpstream = () => res.socket?.destroy();
+    });
+
+    // Client: a real HTTP connection whose response object the gateway
+    // hijacks, exactly like production.
+    const client = await startTestServer();
+    const proxyOutcomePromise = new Promise<{ error?: Error }>((resolve) => {
+      client.server.on('request', (_req, res) => {
+        proxy
+          .forwardAnthropicStream(
+            ANTHROPIC_STREAM_BODY,
+            { baseUrl: upstream.url, apiKey: 'test-key', timeout: 5, requestId: 'req-midstream' },
+            () => undefined,
+            fakeReplyFrom(res)
+          )
+          .then(
+            () => resolve({}),
+            (error: Error) => resolve({ error })
+          );
+      });
+    });
+
+    try {
+      const clientOutcome = await new Promise<{ error?: Error; statusCode?: number; body: string }>(
+        (resolve) => {
+          get(client.url, (res) => {
+            let body = '';
+            res.on('data', (chunk: Buffer) => {
+              body += chunk.toString();
+              // First chunk reached the client — now kill the upstream.
+              destroyUpstream?.();
+            });
+            res.on('end', () => resolve({ statusCode: res.statusCode, body }));
+            res.on('error', (error: Error) => resolve({ error, body }));
+          }).on('error', (error: Error) => resolve({ error }));
+        }
+      );
+      const proxyOutcome = await proxyOutcomePromise;
+
+      // The client connection stays up: the gateway must fail loudly via an
+      // SSE error event instead of hanging until the 300s idle timeout.
+      expect(clientOutcome.error).toBeUndefined();
+      expect(clientOutcome.statusCode).toBe(200);
+      expect(clientOutcome.body).toContain('event: error');
+      expect(proxyOutcome.error).toBeDefined();
+    } finally {
+      upstream.server.closeAllConnections?.();
+      client.server.closeAllConnections?.();
+      await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+      await new Promise<void>((resolve) => client.server.close(() => resolve()));
+    }
+  });
+
+  it('rejects with Request timeout after the upstream stalls (the +300s signature, scaled)', async () => {
+    // Upstream: streams one chunk then silently stalls — the failure shape
+    // behind the "+300s idle timeout" signature from the incident.
+    const upstream = await startTestServer();
+    upstream.server.on('request', (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write('event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"text":"hi"}}\n\n');
+      // no 'end' — just silence
+    });
+
+    const client = await startTestServer();
+    const proxyOutcomePromise = new Promise<{ error?: Error }>((resolve) => {
+      client.server.on('request', (_req, res) => {
+        proxy
+          .forwardAnthropicStream(
+            ANTHROPIC_STREAM_BODY,
+            // 1s idle timeout instead of the prod 300s so the test stays fast
+            { baseUrl: upstream.url, apiKey: 'test-key', timeout: 1, requestId: 'req-stall' },
+            () => undefined,
+            fakeReplyFrom(res)
+          )
+          .then(
+            () => resolve({}),
+            (error: Error) => resolve({ error })
+          );
+      });
+    });
+
+    try {
+      get(client.url, (res) => {
+        res.resume(); // keep reading so the socket stays open
+      }).on('error', () => undefined);
+
+      const outcome = await proxyOutcomePromise;
+      expect(outcome.error?.message).toContain('Request timeout');
+    } finally {
+      upstream.server.closeAllConnections?.();
+      client.server.closeAllConnections?.();
+      await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+      await new Promise<void>((resolve) => client.server.close(() => resolve()));
+    }
+  });
+
+  it('tags the rejection with cause=client-abort when the client disconnects mid-stream', async () => {
+    // Upstream: starts a healthy SSE stream and keeps it open.
+    const upstream = await startTestServer();
+    upstream.server.on('request', (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write('event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"text":"hi"}}\n\n');
+    });
+
+    const client = await startTestServer();
+    const proxyOutcomePromise = new Promise<{ error?: Error }>((resolve) => {
+      client.server.on('request', (_req, res) => {
+        proxy
+          .forwardAnthropicStream(
+            ANTHROPIC_STREAM_BODY,
+            { baseUrl: upstream.url, apiKey: 'test-key', timeout: 5, requestId: 'req-clientabort' },
+            () => undefined,
+            fakeReplyFrom(res)
+          )
+          .then(
+            () => resolve({}),
+            (error: Error) => resolve({ error })
+          );
+      });
+    });
+
+    try {
+      // The real client reads the first chunk, then disconnects — the exact
+      // "client stopped reading" shape from the incident.
+      await new Promise<void>((resolve, reject) => {
+        const conn = get(client.url, (res) => {
+          res.on('data', () => {
+            conn.destroy();
+            resolve();
+          });
+        });
+        conn.on('error', () => resolve());
+        setTimeout(() => reject(new Error('timed out waiting for first chunk')), 4000);
+      });
+
+      const outcome = await proxyOutcomePromise;
+      expect(outcome.error).toBeDefined();
+      // The proxy must tag this as a client abort so the handler does not
+      // record it as a plan failure (circuit-breaker pollution).
+      expect((outcome.error as Error & { cause?: string }).cause).toBe('client-abort');
+    } finally {
+      upstream.server.closeAllConnections?.();
+      client.server.closeAllConnections?.();
+      await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+      await new Promise<void>((resolve) => client.server.close(() => resolve()));
+    }
   });
 });

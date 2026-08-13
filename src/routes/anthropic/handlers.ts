@@ -511,7 +511,29 @@ export function createAnthropicHandlers(
               return; // primary plan succeeded
             } catch (primaryError) {
               endStage(request, 'upstreamRequest');
-              router.markPlanFailed(plan.id);
+              const errMessage =
+                primaryError instanceof Error ? primaryError.message : String(primaryError);
+              // A client abort (the client stopped reading/disconnected) is not
+              // the plan's fault — skipping markPlanFailed keeps the circuit
+              // breaker clean. Refund and metrics below still apply.
+              const isClientAbort =
+                (primaryError as { cause?: unknown }).cause === 'client-abort';
+              // The incident's smoking gun: this catch was silent when headers
+              // were already sent. Log the full failure shape so the next one
+              // tells us upstream-error vs client-abort vs timeout directly.
+              logger.warn('Streaming request failed mid-stream', {
+                requestId,
+                planId: plan.id,
+                planName: plan.name,
+                model,
+                error: errMessage,
+                headersSent: reply.raw.headersSent,
+                clientClosed: reply.raw.destroyed,
+                durationMs: request.startTime ? Date.now() - request.startTime : 0,
+              });
+              if (!isClientAbort) {
+                router.markPlanFailed(plan.id);
+              }
               // Refund quota on stream failure
               if (quotaManager) {
                 quotaManager.refundQuota(plan.id);
@@ -580,13 +602,41 @@ export function createAnthropicHandlers(
                     return; // failover succeeded
                   } catch (altError) {
                     endStage(request, 'upstreamRequest');
-                    router.markPlanFailed(altPlan.id);
+                    const altErrMessage =
+                      altError instanceof Error ? altError.message : String(altError);
+                    const altIsClientAbort =
+                      (altError as { cause?: unknown }).cause === 'client-abort';
+                    logger.warn('Streaming request failed mid-stream', {
+                      requestId,
+                      planId: altPlan.id,
+                      planName: altPlan.name,
+                      model,
+                      error: altErrMessage,
+                      headersSent: reply.raw.headersSent,
+                      clientClosed: reply.raw.destroyed,
+                      durationMs: request.startTime ? Date.now() - request.startTime : 0,
+                    });
+                    if (!altIsClientAbort) {
+                      router.markPlanFailed(altPlan.id);
+                    }
                     if (quotaManager) {
                       quotaManager.refundQuota(altPlan.id);
                     }
                     // If the alt plan started streaming then failed, the SSE error
                     // event was already delivered to the client — cannot try further.
                     if (reply.raw.headersSent) {
+                      const altFailureStatus = altIsClientAbort
+                        ? 499
+                        : (altError as { statusCode?: number }).statusCode ?? 502;
+                      attachProviderMetrics(request, {
+                        planId: altPlan.id,
+                        planName: altPlan.name,
+                        model,
+                        durationMs: request.startTime ? Date.now() - request.startTime : 0,
+                        statusCode: altFailureStatus,
+                        error: altErrMessage,
+                      });
+                      reply.raw.statusCode = altFailureStatus;
                       logCompletion();
                       return;
                     }
@@ -604,6 +654,20 @@ export function createAnthropicHandlers(
                 throw primaryError;
               }
               // headers already sent — handleStreamError already wrote an SSE error event.
+              // Surface the real failure instead of the early 200/0 placeholder:
+              // 499 = client disconnect, upstream statusCode when present, else 502.
+              const failureStatus = isClientAbort
+                ? 499
+                : (primaryError as { statusCode?: number }).statusCode ?? 502;
+              attachProviderMetrics(request, {
+                planId: plan.id,
+                planName: plan.name,
+                model,
+                durationMs: request.startTime ? Date.now() - request.startTime : 0,
+                statusCode: failureStatus,
+                error: errMessage,
+              });
+              reply.raw.statusCode = failureStatus;
               logCompletion();
             }
             return;
