@@ -549,21 +549,28 @@ export class RequestProxy {
       /**
        * Handle errors after SSE headers have been sent.
        * Sends an error event to the client and ends the response.
+       * `cause` classifies the failure for callers: 'client-abort' marks an
+       * error triggered by the client disconnecting (upstream request was
+       * destroyed by onClientClose), which must not count against the plan's
+       * circuit breaker.
        */
-      const handleStreamError = (errorMessage: string, statusCode?: number): void => {
+      const handleStreamError = (errorMessage: string, statusCode?: number, cause?: string): void => {
         if (options.reply.raw.headersSent) {
           try {
             options.reply.raw.write(`event: error\ndata: ${JSON.stringify({ error: errorMessage })}\n\n`);
+            options.reply.raw.end();
           } catch {
             // Ignore write errors on closed connections
           }
-          options.reply.raw.end();
         }
         // Attach upstream statusCode so callers can decide whether to failover
         // (e.g. 429 = rate/quota limit is retryable on another plan).
-        const err = new Error(errorMessage) as Error & { statusCode?: number };
+        const err = new Error(errorMessage) as Error & { statusCode?: number; cause?: string };
         if (statusCode !== undefined) {
           err.statusCode = statusCode;
+        }
+        if (cause !== undefined) {
+          err.cause = cause;
         }
         reject(err);
       };
@@ -760,7 +767,14 @@ export class RequestProxy {
           });
 
           res.on('error', (error) => {
-            handleStreamError(`Stream error: ${error.message}`);
+            // When the client disconnects, onClientClose destroys the upstream
+            // request, which surfaces here as an aborted response — tag it so
+            // the handler does not record it as a plan failure.
+            handleStreamError(
+              `Stream error: ${error.message}`,
+              undefined,
+              clientClosed ? 'client-abort' : undefined
+            );
             cleanupClientClose();
           });
         }
@@ -782,7 +796,11 @@ export class RequestProxy {
       options.reply.raw.on('close', onClientClose);
 
       req.on('error', (error) => {
-        handleStreamError(`Request failed: ${error.message}`);
+        handleStreamError(
+          `Request failed: ${error.message}`,
+          undefined,
+          clientClosed ? 'client-abort' : undefined
+        );
         cleanupClientClose();
       });
 

@@ -33,6 +33,8 @@ export interface ProviderMetrics {
   statusCode: number;
   tokenUsage?: TokenUsage;
   providerResponseTimeMs?: number;
+  /** Failure detail (set when a mid-stream failure was swallowed by the hijacked response) */
+  error?: string;
 }
 
 /**
@@ -121,6 +123,10 @@ function buildResponseLogData(
       durationMs: request.providerMetrics.durationMs,
       statusCode: request.providerMetrics.statusCode,
     };
+
+    if (request.providerMetrics.error) {
+      (logData.provider as Record<string, unknown>).error = request.providerMetrics.error;
+    }
 
     // Include token usage if available
     if (request.providerMetrics.tokenUsage) {
@@ -246,6 +252,10 @@ export function errorLoggerMiddleware(
       durationMs: request.providerMetrics.durationMs,
       statusCode: request.providerMetrics.statusCode,
     };
+
+    if (request.providerMetrics.error) {
+      (logData.provider as Record<string, unknown>).error = request.providerMetrics.error;
+    }
 
     // Include token usage if available
     if (request.providerMetrics.tokenUsage) {
