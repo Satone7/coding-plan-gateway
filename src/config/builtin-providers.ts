@@ -15,7 +15,10 @@ export const BUILTIN_PROVIDERS: readonly ProviderPreset[] = [
     name: 'Zhipu',
     baseUrl: 'https://open.bigmodel.cn/api/anthropic',
     openaiBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
-    models: ['glm-5.2', 'glm-5.1', 'glm-5-turbo', 'glm-4.7'],
+    // Static list on purpose: Zhipu's /v1/models lags availability — glm-5.3 was
+    // callable on the coding endpoint before appearing there (verified 2026-08-14),
+    // so dynamicModels would drop newest models until upstream catches up.
+    models: ['glm-5.3', 'glm-5.2', 'glm-5.1', 'glm-5-turbo', 'glm-4.7'],
     defaultModelAliases: { 'glm-5': 'glm-5-turbo' },
     hasUsageApi: true,
   },

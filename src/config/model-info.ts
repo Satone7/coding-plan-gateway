@@ -96,7 +96,13 @@ export const MODEL_INFO: Record<string, Record<string, ModelInfo>> = {
     },
     'glm-5.2': {
       contextWindow: 1000000,
-      notes: 'Latest flagship with 1M context window',
+      notes: 'Flagship with 1M context window',
+      supportsTools: true,
+      supportsStreaming: true,
+    },
+    'glm-5.3': {
+      contextWindow: 1000000,
+      notes: 'Released Aug 2026; specs mirror glm-5.2 pending official docs',
       supportsTools: true,
       supportsStreaming: true,
     },
