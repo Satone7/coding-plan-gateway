@@ -212,13 +212,17 @@ function handleResponse<T>(
   resolve: (value: UpstreamResponse<T>) => void,
   reject: (reason: Error) => void
 ): void {
-  let data = '';
+  // Aggregate raw bytes and decode UTF-8 exactly once on 'end'. Decoding per
+  // chunk (string +=) silently replaces multi-byte characters split across
+  // TCP chunk boundaries with U+FFFD, corrupting non-ASCII (CJK/emoji) bodies.
+  const chunks: Buffer[] = [];
 
-  res.on('data', (chunk) => {
-    data += chunk;
+  res.on('data', (chunk: Buffer) => {
+    chunks.push(chunk);
   });
 
   res.on('end', () => {
+    const data = Buffer.concat(chunks).toString('utf8');
     const responseHeaders: Record<string, string> = {};
     for (const [key, value] of Object.entries(res.headers)) {
       if (value !== undefined) {
@@ -580,11 +584,14 @@ export class RequestProxy {
         { method: options.method, headers, timeout: options.timeout * 1000 },
         (res) => {
           if (res.statusCode && res.statusCode >= 400) {
-            let data = '';
-            res.on('data', (chunk) => {
-              data += chunk;
+            // Byte-aggregate then decode once: error bodies may contain
+            // non-ASCII messages that would be corrupted by per-chunk decode.
+            const errChunks: Buffer[] = [];
+            res.on('data', (chunk: Buffer) => {
+              errChunks.push(chunk);
             });
             res.on('end', () => {
+              const data = Buffer.concat(errChunks).toString('utf8');
               handleStreamError(`Upstream error: ${res.statusCode} - ${data.slice(0, 500)}`, res.statusCode);
             });
             return;
@@ -592,7 +599,9 @@ export class RequestProxy {
 
           // Forward chunks manually instead of piping, to extract token usage from tail
           let tailData = '';
-          let sseBuffer = '';
+          // Byte-level SSE buffer: decode complete lines only, so UTF-8
+          // sequences split across network chunks are never corrupted.
+          let sseBuffer: Buffer = Buffer.alloc(0);
           let accumulatedText = '';
           // Capture token usage as it streams by. The tail-based extraction
           // below only sees the last 4KB, which evicts Anthropic's message_start
@@ -634,10 +643,16 @@ export class RequestProxy {
               res.pause();
             }
 
-            // Consolidate buffering: extract lines from chunk
-            sseBuffer += chunk.toString();
-            const lines = sseBuffer.split('\n');
-            sseBuffer = lines.pop() || '';
+            // Consolidate buffering: extract complete lines at the BYTE level
+            // and decode each one exactly once. (String += chunk decodes per
+            // network chunk and turns split multi-byte chars into U+FFFD.)
+            sseBuffer = sseBuffer.length > 0 ? Buffer.concat([sseBuffer, chunk]) : chunk;
+            const lines: string[] = [];
+            let nl: number;
+            while ((nl = sseBuffer.indexOf(0x0a)) !== -1) {
+              lines.push(sseBuffer.subarray(0, nl).toString('utf8'));
+              sseBuffer = sseBuffer.subarray(nl + 1);
+            }
 
             for (const line of lines) {
               const lineWithNewline = line + '\n';
@@ -753,8 +768,8 @@ export class RequestProxy {
 
           res.on('end', () => {
             // Append any remaining buffer data to tailData
-            if (sseBuffer) {
-              tailData += sseBuffer;
+            if (sseBuffer.length > 0) {
+              tailData += sseBuffer.toString('utf8');
               if (tailData.length > 4096) {
                 tailData = tailData.slice(-4096);
               }
