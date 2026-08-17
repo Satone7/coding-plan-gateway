@@ -375,3 +375,208 @@ describe('streaming failure reproduction (ZCode stuck-streams incident)', () => 
     }
   });
 });
+
+/**
+ * Regression tests: UTF-8 multi-byte characters split across network chunks
+ * must never decode to U+FFFD replacement characters.
+ *
+ * Background: the non-streaming aggregation path and the streaming SSE bypass
+ * parser used per-chunk string decoding (`data += chunk`, `sseBuffer +=
+ * chunk.toString()`), which replaces a CJK/emoji byte sequence split across
+ * TCP chunks with U+FFFD before JSON.parse — corrupting LLM output for
+ * non-ASCII languages. (Incident report: 2026-08-17, req-vi6.)
+ */
+describe('UTF-8 boundary handling (no U+FFFD on split chunks)', () => {
+  const countFFFD = (s: string): number => (s.match(/\uFFFD/g) || []).length;
+
+  /** Write `body` in multiple TCP writes, cutting inside the char at `charOffsetInBody + k` for each k in cuts. */
+  const writeSplitAt = (res: import('http').ServerResponse, body: Buffer, cutOffsets: number[]): void => {
+    res.socket?.setNoDelay(true);
+    const parts: Buffer[] = [];
+    let prev = 0;
+    for (const off of cutOffsets.sort((a, b) => a - b)) {
+      parts.push(body.subarray(prev, off));
+      prev = off;
+    }
+    parts.push(body.subarray(prev));
+    let i = 0;
+    const next = (): void => {
+      if (i < parts.length) {
+        res.write(parts[i++]);
+        setTimeout(next, 20);
+      } else {
+        res.end();
+      }
+    };
+    next();
+  };
+
+  /** Absolute byte offsets of `cuts`-relative positions inside `target`'s first occurrence in `body`. */
+  const cutInside = (body: Buffer, target: string, cuts: number[]): number[] => {
+    const rel = body.indexOf(Buffer.from(target, 'utf8'));
+    expect(rel).toBeGreaterThanOrEqual(0);
+    return cuts.map((k) => rel + k);
+  };
+
+  const SPLITS: Array<[string, string, number[]]> = [
+    ['CJK 3-byte split 1+2', '套', [1]],
+    ['CJK 3-byte split 2+1', '套', [2]],
+    ['CJK 3-byte split 1+1+1', '套', [1, 2]],
+    ['emoji 4-byte split at every byte', '😀', [1, 2, 3]],
+  ];
+
+  describe.each(SPLITS)('non-streaming aggregation (%s)', (_label, target, cuts) => {
+    it('anthropic /v1/messages returns the original text with zero U+FFFD', async () => {
+      const proxy = new RequestProxy();
+      const body = Buffer.from(
+        JSON.stringify({
+          id: 'msg_t',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: `坚持使用同一${target}指标` }],
+        }),
+        'utf8'
+      );
+      const upstream = await startTestServer();
+      upstream.server.on('request', (_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        writeSplitAt(res, body, cutInside(body, target, cuts));
+      });
+      try {
+        const resp = await proxy.forwardAnthropicRequest(
+          { model: 'test-model', max_tokens: 10, messages: [{ role: 'user' as const, content: 'hi' }] },
+          { baseUrl: upstream.url, apiKey: 'test-key', timeout: 10 }
+        );
+        const text = resp.data.content?.[0]?.text ?? '';
+        expect(countFFFD(text)).toBe(0);
+        expect(text).toContain(`同一${target}指标`);
+      } finally {
+        upstream.server.closeAllConnections?.();
+        await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+      }
+    });
+
+    it('openai /chat/completions returns the original text with zero U+FFFD', async () => {
+      const proxy = new RequestProxy();
+      const body = Buffer.from(
+        JSON.stringify({ choices: [{ message: { content: `同一${target}指标` } }] }),
+        'utf8'
+      );
+      const upstream = await startTestServer();
+      upstream.server.on('request', (_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        writeSplitAt(res, body, cutInside(body, target, cuts));
+      });
+      try {
+        const resp = await proxy.forwardOpenAIRequest(
+          { model: 'test-model', messages: [{ role: 'user' as const, content: 'hi' }] },
+          { baseUrl: upstream.url, apiKey: 'test-key', timeout: 10 }
+        );
+        const text = resp.data.choices?.[0]?.message?.content ?? '';
+        expect(countFFFD(text)).toBe(0);
+        expect(text).toContain(`同一${target}指标`);
+      } finally {
+        upstream.server.closeAllConnections?.();
+        await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+      }
+    });
+  });
+
+  it('streaming SSE: client body and bypass accumulatedText survive a mid-character chunk split', async () => {
+    const proxy = new RequestProxy();
+    const target = '套';
+    const ev = (obj: unknown): Buffer => Buffer.from(`event: x\ndata: ${JSON.stringify(obj)}\n\n`, 'utf8');
+    const deltaEv = ev({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: `同一${target}指标` } });
+    const head = ev({ type: 'message_start', message: { usage: { input_tokens: 3 } } });
+    const tail = ev({ type: 'message_delta', delta: {}, usage: { output_tokens: 5 } });
+
+    const upstream = await startTestServer();
+    upstream.server.on('request', (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      writeSplitAt(res, Buffer.concat([head, deltaEv, tail]), cutInside(deltaEv, target, [1]).map((k) => head.length + k));
+    });
+
+    const client = await startTestServer();
+    const accumulatedPromise = new Promise<string | undefined>((resolveAcc) => {
+      client.server.on('request', (_req, res) => {
+        proxy
+          .forwardAnthropicStream(
+            ANTHROPIC_STREAM_BODY,
+            { baseUrl: upstream.url, apiKey: 'test-key', timeout: 10 },
+            () => undefined,
+            fakeReplyFrom(res),
+            (_usage, acc) => resolveAcc(acc)
+          )
+          .catch(() => resolveAcc(undefined));
+      });
+    });
+
+    try {
+      const clientBody = await new Promise<Buffer>((resolveBody) => {
+        get(client.url, (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => resolveBody(Buffer.concat(chunks)));
+        });
+      });
+      const accumulated = await accumulatedPromise;
+      const bodyText = clientBody.toString('utf8');
+      // User-visible raw passthrough stays byte-identical (no replacement chars).
+      expect(countFFFD(bodyText)).toBe(0);
+      expect(bodyText).toContain(`同一${target}指标`);
+      // Bypass parser must agree — it feeds the token-usage fallback estimator.
+      expect(accumulated).toBeDefined();
+      expect(countFFFD(accumulated!)).toBe(0);
+      expect(accumulated).toContain(`同一${target}指标`);
+    } finally {
+      upstream.server.closeAllConnections?.();
+      client.server.closeAllConnections?.();
+      await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+      await new Promise<void>((resolve) => client.server.close(() => resolve()));
+    }
+  });
+
+  it('streaming upstream 4xx error body split mid-character carries no U+FFFD in the rejection message', async () => {
+    const proxy = new RequestProxy();
+    const target = '套';
+    const body = Buffer.from(JSON.stringify({ error: { message: `同一${target}指标无效` } }), 'utf8');
+    const upstream = await startTestServer();
+    upstream.server.on('request', (_req, res) => {
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      writeSplitAt(res, body, cutInside(body, target, [1, 2]));
+    });
+
+    // Errors that surface before the first SSE chunk are delivered by the
+    // route layer (the reply is never hijacked), so a bare stub reply is the
+    // right stand-in here — the assertion target is the rejection message.
+    const stubReply = {
+      raw: {
+        headersSent: false,
+        setHeader: () => undefined,
+        write: () => true,
+        end: () => undefined,
+        on: () => undefined,
+        removeListener: () => undefined,
+      },
+      hijack: () => undefined,
+    } as unknown as FastifyReply;
+
+    try {
+      const err = await proxy
+        .forwardAnthropicStream(
+          ANTHROPIC_STREAM_BODY,
+          { baseUrl: upstream.url, apiKey: 'test-key', timeout: 10 },
+          () => undefined,
+          stubReply
+        )
+        .then(() => { throw new Error('expected rejection'); }, (e: Error) => e);
+      expect(err).toBeDefined();
+      expect(err.message).toContain('429');
+      expect(countFFFD(err.message)).toBe(0);
+      expect(err.message).toContain(`同一${target}指标无效`);
+    } finally {
+      upstream.server.closeAllConnections?.();
+      await new Promise<void>((resolve) => upstream.server.close(() => resolve()));
+    }
+  });
+});
