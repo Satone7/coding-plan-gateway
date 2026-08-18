@@ -98,6 +98,22 @@ export interface DashboardState {
 
 const SOCKET_PATH = process.env.IPC_SOCKET_PATH || '/tmp/coding-plan-gateway.sock';
 
+/**
+ * Split a byte buffer into complete newline-terminated UTF-8 lines.
+ * Decoding happens per COMPLETE line only, so a multi-byte character split
+ * across socket chunks never turns into U+FFFD.
+ */
+function takeCompleteLines(buffer: Buffer): { lines: string[]; rest: Buffer } {
+  const lines: string[] = [];
+  let rest = buffer;
+  let nl: number;
+  while ((nl = rest.indexOf(0x0a)) !== -1) {
+    lines.push(rest.subarray(0, nl).toString('utf8'));
+    rest = rest.subarray(nl + 1);
+  }
+  return { lines, rest };
+}
+
 // eslint-disable-next-line max-lines-per-function
 function processLogEntry(log: LogEntry, setState: React.Dispatch<React.SetStateAction<DashboardState>>): void {
   // eslint-disable-next-line max-lines-per-function
@@ -292,7 +308,10 @@ export function useDashboardState(): DashboardState {
 
   useEffect(() => {
     let socket: net.Socket;
-    let buffer = '';
+    // Byte-level buffer: decode only complete newline-terminated lines, so a
+    // multi-byte UTF-8 sequence split across socket chunks never decodes to
+    // U+FFFD (same bug class as the request-proxy chunk-boundary fix).
+    let buffer: Buffer = Buffer.alloc(0);
     let isComponentMounted = true;
     let reconnectTimer: NodeJS.Timeout;
 
@@ -304,9 +323,8 @@ export function useDashboardState(): DashboardState {
       socket = net.createConnection(SOCKET_PATH);
 
       socket.on('data', (data) => {
-        buffer += data.toString('utf8');
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+        const { lines, rest } = takeCompleteLines(Buffer.concat([buffer, data]));
+        buffer = rest;
 
         lines.forEach((line) => {
           if (!line.trim()) {

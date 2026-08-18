@@ -75,6 +75,8 @@ interface InternalRequestOptions {
   apiKey: string;
   body: unknown;
   timeout: number;
+  /** Request ID for tracing (surfaced in U+FFFD warnings). */
+  requestId?: string;
   extraHeaders?: Record<string, string>;
   authType?: 'bearer' | 'x-api-key' | 'both';
 }
@@ -210,7 +212,8 @@ function buildHeaders(
 function handleResponse<T>(
   res: import('http').IncomingMessage,
   resolve: (value: UpstreamResponse<T>) => void,
-  reject: (reason: Error) => void
+  reject: (reason: Error) => void,
+  context: { requestId?: string; model?: string } = {}
 ): void {
   // Aggregate raw bytes and decode UTF-8 exactly once on 'end'. Decoding per
   // chunk (string +=) silently replaces multi-byte characters split across
@@ -222,7 +225,21 @@ function handleResponse<T>(
   });
 
   res.on('end', () => {
-    const data = Buffer.concat(chunks).toString('utf8');
+    const raw = Buffer.concat(chunks);
+    const data = raw.toString('utf8');
+    // Detection-only signal (2026-08-17 incident): aggregation now decodes
+    // byte-safely, so any U+FFFD here means the upstream genuinely sent
+    // mojibake. Log counts + ids only — never response content.
+    const fffdCount = (data.match(/\uFFFD/g) || []).length;
+    if (fffdCount > 0) {
+      logger.warn('Upstream response body contains U+FFFD replacement characters', {
+        requestId: context.requestId,
+        model: context.model,
+        stream: false,
+        count: fffdCount,
+        bytes: raw.length,
+      });
+    }
     const responseHeaders: Record<string, string> = {};
     for (const [key, value] of Object.entries(res.headers)) {
       if (value !== undefined) {
@@ -305,6 +322,7 @@ export class RequestProxy {
       apiKey: options.apiKey,
       body: request,
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
+      requestId: options.requestId,
       authType: 'bearer',
     });
 
@@ -344,6 +362,7 @@ export class RequestProxy {
       apiKey: options.apiKey,
       body: request,
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
+      requestId: options.requestId,
       authType: 'bearer',
       provider: 'openai',
       reply,
@@ -392,6 +411,7 @@ export class RequestProxy {
       apiKey: options.apiKey,
       body: request,
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
+      requestId: options.requestId,
       authType: 'x-api-key',
       extraHeaders: {
         'anthropic-version': '2023-06-01',
@@ -440,6 +460,7 @@ export class RequestProxy {
       apiKey: options.apiKey,
       body: request,
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
+      requestId: options.requestId,
       authType: 'x-api-key',
       extraHeaders: {
         'anthropic-version': '2023-06-01',
@@ -491,6 +512,7 @@ export class RequestProxy {
       apiKey: options.apiKey,
       body: request,
       timeout: options.timeout ?? DEFAULT_REQUEST_TIMEOUT_SEC,
+      requestId: options.requestId,
       authType: 'x-api-key',
       provider: 'anthropic',
       extraHeaders: {
@@ -528,7 +550,11 @@ export class RequestProxy {
       const req = requestFn(
         options.url,
         { method: options.method, headers, timeout: options.timeout * 1000 },
-        (res) => handleResponse<T>(res, resolve, reject)
+        (res) =>
+        handleResponse<T>(res, resolve, reject, {
+          requestId: options.requestId,
+          model: (options.body as { model?: string } | undefined)?.model,
+        })
       );
 
       setupErrorHandlers(req, reject);
@@ -618,7 +644,7 @@ export class RequestProxy {
               // sending a successful stream.  If the upstream returned an
               // error before the first data chunk the handler will throw
               // and Fastify's normal error pipeline sends the response.
-              options.reply.hijack();
+              void options.reply.hijack();
               options.reply.raw.setHeader('Content-Type', 'text/event-stream');
               options.reply.raw.setHeader('Cache-Control', 'no-cache');
               options.reply.raw.setHeader('Connection', 'keep-alive');
@@ -775,6 +801,18 @@ export class RequestProxy {
               }
             }
             const tokenUsage = mergeStreamTokenUsage(extractStreamTokenUsage(tailData), capturedInputTokens, capturedOutputTokens);
+            // Detection-only signal (2026-08-17 incident): the bypass parser
+            // decodes complete SSE lines only, so any U+FFFD here means the
+            // upstream genuinely sent mojibake.
+            const fffdCount = (accumulatedText.match(/\uFFFD/g) || []).length;
+            if (fffdCount > 0) {
+              logger.warn('Streamed text contains U+FFFD replacement characters', {
+                requestId: options.requestId,
+                model: (options.body as { model?: string } | undefined)?.model,
+                stream: true,
+                count: fffdCount,
+              });
+            }
             options.onComplete(tokenUsage, accumulatedText);
             options.reply.raw.end();
             cleanupClientClose();
