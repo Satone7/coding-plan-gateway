@@ -42,9 +42,24 @@ describe('DeepseekUsageAdapter', () => {
     expect(result.summary).toEqual({
       mode: 'balance',
       value: '¥12.34',
+      numericValue: 12.34,
+      currency: 'CNY',
     });
     expect(result.windows).toEqual([]);
     expect(result.percentage).toBe(0);
+  });
+
+  it('should omit numericValue when the balance string is unparsable', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        balance_infos: [{ currency: 'CNY', total_balance: 'n/a' }],
+      }),
+    });
+
+    const result = await adapter.queryUsage('test-api-key');
+    expect(result.summary?.numericValue).toBeUndefined();
+    expect(result.summary?.value).toBe('¥n/a');
   });
 
   it('should target the official balance endpoint with bearer auth', async () => {

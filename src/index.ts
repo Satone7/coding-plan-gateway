@@ -15,6 +15,10 @@ import { createQuotaManager } from './services/quota-manager';
 import { createApiKeyManager } from './services/api-key-manager';
 import { createUsageTracker } from './services/usage-tracker';
 import { createUsageStatsStore, registerActiveUsageStatsStore } from './services/usage-stats-store';
+import {
+  createBalanceHistoryStore,
+  registerActiveBalanceHistoryStore,
+} from './services/balance-history-store';
 import { createPlanUsageTracker } from './services/plan-usage-tracker';
 import { createExpirationScheduler } from './services/expiration-scheduler';
 import { createPlanRepository } from './services/plan-repository';
@@ -129,6 +133,22 @@ async function main(): Promise<void> {
       });
     }, 60_000);
 
+    // Create and initialize the persisted balance-history store (hourly OHLC
+    // candles of account balances for balance-type plans) so the dashboard
+    // can chart balance over time across restarts.
+    const balanceHistoryStore = createBalanceHistoryStore({
+      historyPath: process.env.BALANCE_HISTORY_PATH,
+    });
+    await balanceHistoryStore.initialize();
+    registerActiveBalanceHistoryStore(balanceHistoryStore);
+    const balanceHistoryTimer = setInterval(() => {
+      balanceHistoryStore.persist().catch((err) => {
+        logger.warn('Failed to persist balance history', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }, 60_000);
+
     // Start IPC server
     try {
       await ipcServer.start();
@@ -176,6 +196,20 @@ async function main(): Promise<void> {
               summary: result.summary,
               lastUpdated: new Date().toISOString(),
             }, plan.provider);
+            // Balance-type plans: fold the numeric balance into the hourly
+            // candle history so the dashboard can chart it over time.
+            if (
+              result.summary?.mode === 'balance' &&
+              typeof result.summary.numericValue === 'number'
+            ) {
+              balanceHistoryStore.record({
+                planKey: typeof plan.id === 'number' ? String(plan.id) : `n:${plan.name}`,
+                planName: plan.name,
+                providerId: plan.provider,
+                currency: result.summary.currency,
+                balance: result.summary.numericValue,
+              });
+            }
           } catch (err) {
             logger.debug('Failed to fetch usage-API data for dashboard', {
               planName: plan.name,
@@ -258,6 +292,12 @@ async function main(): Promise<void> {
     // Add shutdown hook for the usage-stats persistence timer
     app.addHook('onClose', () => {
       clearInterval(usageStatsTimer);
+    });
+
+    // Add shutdown hook for the balance-history persistence timer + store
+    app.addHook('onClose', async () => {
+      clearInterval(balanceHistoryTimer);
+      await balanceHistoryStore.persist();
     });
 
     // Start server

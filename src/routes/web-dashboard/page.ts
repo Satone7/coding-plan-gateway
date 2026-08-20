@@ -15,12 +15,16 @@
  *   Row 2 — 进行中请求 (compact; long-running stragglers auto-fold into a
  *           collapsed "异常长请求" row so they can't hog the screen) beside
  *           Plan 余量 / 余额
- *   Row 3 — 历史 Token 日历热力图 (full width, GitHub-contributions style:
+ *   Row 3 — 余额历史 · 1h K线 (balance-type plans only; hand-rolled SVG
+ *           candlesticks — green up / red down — with a close-price line
+ *           overlay, hover inspector and a 24h/3天/7天/30天 range switch;
+ *           hidden entirely when no balance plan has history yet)
+ *   Row 4 — 历史 Token 日历热力图 (full width, GitHub-contributions style:
  *           weeks as columns, weekday rows, 5-level green scale, hover
  *           inspector bar showing the exact day numbers)
- *   Row 4 — Token 消耗 leaderboards (per API Key / per Plan) beside 近期错误
- *   Row 5 — 按模型 Token 用量 (full width, collapsed when empty)
- *   Row 6 — 近期完成的请求 (full width, paginated + filterable)
+ *   Row 5 — Token 消耗 leaderboards (per API Key / per Plan) beside 近期错误
+ *   Row 6 — 按模型 Token 用量 (full width, collapsed when empty)
+ *   Row 7 — 近期完成的请求 (full width, paginated + filterable)
  */
 
 /**
@@ -88,6 +92,24 @@ const CLIENT_SCRIPT = String.raw`
     return d.getFullYear() + '-' + (m.length < 2 ? '0' + m : m) + '-' +
       (day.length < 2 ? '0' + day : day);
   }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  var CUR_SYMBOLS = { CNY: '¥', USD: '$' };
+  // "¥123.45" — currency-aware balance formatting
+  function fmtBal(v, cur) {
+    if (v == null || isNaN(v)) return '—';
+    var sym = CUR_SYMBOLS[cur] || (cur ? cur + ' ' : '');
+    return sym + Number(v).toFixed(2);
+  }
+  // axis label variant: drop decimals once values get wide
+  function fmtBalAxis(v) {
+    if (v == null || isNaN(v)) return '—';
+    return Math.abs(v) >= 1000 ? String(Math.round(v)) : Number(v).toFixed(2);
+  }
+  // signed delta "+¥1.20" / "-¥0.80"
+  function fmtBalDelta(d, cur) {
+    if (d == null || isNaN(d)) return '—';
+    return (d >= 0 ? '+' : '-') + fmtBal(Math.abs(d), cur);
+  }
 
   // ---------- state ----------
   var state = {
@@ -97,6 +119,9 @@ const CLIENT_SCRIPT = String.raw`
     summary: null,
     errors: [],
     stats: null,
+    // balance-history panel: range + last payload; renderedKey suppresses
+    // identical SVG rebuilds on the 5s poll (data changes at most hourly)
+    balance: { hours: 168, data: null, renderedKey: '' },
     // recent-requests panel: filters + pagination
     recentFilter: { status: 'all', key: 'all', plan: 'all', model: '' },
     recentPage: 0,
@@ -136,10 +161,15 @@ const CLIENT_SCRIPT = String.raw`
       fetchJson('/api/dashboard/summary'),
       fetchJson('/api/dashboard/errors'),
       fetchJson('/api/dashboard/stats'),
+      // Balance history is optional (503 when the store is not wired, e.g.
+      // in stripped-down test setups) — a failure must not sink the poll.
+      fetchJson('/api/dashboard/balance-history?hours=' + state.balance.hours)
+        .catch(function () { return null; }),
     ]).then(function (results) {
       state.summary = results[0];
       state.errors = (results[1] && results[1].errors) || [];
       state.stats = results[2] && results[2].days ? results[2] : null;
+      state.balance.data = results[3] || null;
       setStatus('更新于 ' + new Date().toLocaleTimeString());
       render();
       // First paint (and recoveries after errors) need the interactive panels
@@ -544,6 +574,188 @@ const CLIENT_SCRIPT = String.raw`
     }).join('');
   }
 
+  // ---------- balance history (1h candlestick per balance plan) ----------
+  // Hand-rolled SVG: green candles when the balance rose within the hour
+  // (top-up), red when it dropped (spending); a faint close-price polyline
+  // emphasizes the overall trend. Hover targets fold the exact OHLC of one
+  // hour into the panel-level inspector bar, mirroring the heatmap UX.
+  var BAL_RANGES = [[24, '24h'], [72, '3天'], [168, '7天'], [720, '30天']];
+
+  function renderBalance() {
+    var panel = $('#balancePanel');
+    var wrap = $('#balanceWrap');
+    var data = state.balance.data;
+    var plans = (data && data.plans) || [];
+    panel.style.display = plans.length ? '' : 'none';
+    if (!plans.length) {
+      wrap.innerHTML = '';
+      state.balance.renderedKey = '';
+      return;
+    }
+    var key = state.balance.hours + '|' + JSON.stringify(data);
+    if (key === state.balance.renderedKey) return;
+    state.balance.renderedKey = key;
+
+    var innerW = Math.max(320, (wrap.clientWidth || 968) - 36);
+    var charts = []; // hover registry: plan display data by sub-chart index
+    var html = '<div class="bal-range">' + BAL_RANGES.map(function (r) {
+      return '<button class="bal-btn" data-hours="' + r[0] + '"' +
+        (r[0] === state.balance.hours ? ' disabled class="bal-btn active"' : '') +
+        '>' + r[1] + '</button>';
+    }).join('') + '<span class="bal-range-note">1h K线 · 涨 <i class="bal-swatch up"></i> 跌 <i class="bal-swatch down"></i> · 折线为收盘余额</span></div>';
+
+    plans.forEach(function (p, pi) {
+      var last = p.candles[p.candles.length - 1];
+      var first = p.candles[0];
+      var delta = last.c - first.o;
+      charts.push({ plan: p, delta: delta });
+      html += '<div class="bal-plan">' +
+        '<div class="bal-head">' +
+          '<span class="bal-name">' + escHtml(p.planName) + '</span>' +
+          (p.providerId ? '<span class="chip">' + escHtml(p.providerId) + '</span>' : '') +
+          '<span class="bal-cur' + (delta < 0 ? ' down' : delta > 0 ? ' up' : '') + '">' +
+            fmtBal(last.c, p.currency) + '</span>' +
+          '<span class="bal-delta ' + (delta < 0 ? 'down' : 'up') + '">' +
+            fmtBalDelta(delta, p.currency) + '（' + BAL_RANGES.filter(function (r) {
+              return r[0] === state.balance.hours;
+            })[0][1] + '）</span>' +
+          '<span class="bal-sub">采样 ' + p.candles.reduce(function (a, c) {
+            return a + c.n;
+          }, 0) + ' 次 · ' + p.candles.length + ' 根K线</span>' +
+        '</div>' +
+        '<div class="bal-scroll">' + balChart(p, data, innerW, pi) + '</div>' +
+      '</div>';
+    });
+    html += '<div class="bal-tip" id="balTip">悬停 K线查看该小时的开高低收与变动</div>';
+    state.balance.charts = charts;
+    wrap.innerHTML = html;
+  }
+
+  // Build one plan's SVG chart string. Slots are absolute hour positions so
+  // gateway downtime renders as an honest gap, not a squeezed axis.
+  function balChart(p, data, innerW, planIndex) {
+    var H = 150, PAD_T = 8, PAD_B = 18, PAD_L = 56, PAD_R = 12;
+    var slots = data.hours;
+    var plotW = Math.max(innerW - PAD_L - PAD_R, slots * 3);
+    var slot = plotW / slots;
+    var svgW = PAD_L + plotW + PAD_R, svgH = PAD_T + H + PAD_B;
+
+    var vmin = Infinity, vmax = -Infinity;
+    p.candles.forEach(function (c) {
+      if (c.l < vmin) vmin = c.l;
+      if (c.h > vmax) vmax = c.h;
+    });
+    if (vmin === vmax) {
+      var pad = Math.max(1, Math.abs(vmin) * 0.02);
+      vmin -= pad; vmax += pad;
+    } else {
+      var range = vmax - vmin;
+      vmin -= range * 0.05; vmax += range * 0.05;
+    }
+    function y(v) { return PAD_T + H - ((v - vmin) / (vmax - vmin)) * H; }
+    function x(t) { return PAD_L + ((t - data.from) / 3600000 + 0.5) * slot; }
+
+    var s = [];
+    // horizontal grid + y labels
+    for (var i = 0; i <= 3; i++) {
+      var v = vmin + ((vmax - vmin) * i) / 3;
+      var gy = y(v).toFixed(1);
+      s.push('<line x1="' + PAD_L + '" x2="' + (PAD_L + plotW) + '" y1="' + gy +
+        '" y2="' + gy + '" style="stroke: var(--border-soft)"/>');
+      s.push('<text x="' + (PAD_L - 6) + '" y="' + (+gy + 3).toFixed(1) +
+        '" text-anchor="end">' + escHtml(fmtBalAxis(v)) + '</text>');
+    }
+    // x labels: day boundaries (or every 6h within a 24h window), thinned so
+    // neighbours never sit closer than ~44px
+    var lastX = -1e9;
+    p.candles.forEach(function (c) {
+      var d = new Date(c.t);
+      var label = null;
+      if (state.balance.hours <= 24) {
+        if (d.getHours() % 6 === 0) label = pad2(d.getHours()) + ':00';
+      } else if (d.getHours() === 0) {
+        label = (d.getMonth() + 1) + '-' + pad2(d.getDate());
+      }
+      if (!label) return;
+      var xx = x(c.t);
+      if (lastX > -1e8 && xx - lastX < 44) return;
+      lastX = xx;
+      s.push('<text x="' + xx.toFixed(1) + '" y="' + (PAD_T + H + 14) +
+        '" text-anchor="middle">' + escHtml(label) + '</text>');
+    });
+    // close-price polyline (the 折线 in 折线图)
+    s.push('<polyline points="' + p.candles.map(function (c) {
+      return x(c.t).toFixed(1) + ',' + y(c.c).toFixed(1);
+    }).join(' ') + '" fill="none" style="stroke: var(--accent); opacity: .4; stroke-width: 1"/>');
+    // candles
+    var bw = Math.max(1.5, slot * 0.6);
+    p.candles.forEach(function (c, ci) {
+      var up = c.c >= c.o;
+      var col = up ? 'var(--ok)' : 'var(--err)';
+      var cx = x(c.t).toFixed(1);
+      var yTop = y(Math.max(c.o, c.c));
+      var yBot = y(Math.min(c.o, c.c));
+      s.push('<line x1="' + cx + '" x2="' + cx + '" y1="' + y(c.h).toFixed(1) +
+        '" y2="' + y(c.l).toFixed(1) + '" style="stroke: ' + col + '; opacity: .6"/>');
+      s.push('<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + yTop.toFixed(1) +
+        '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, yBot - yTop).toFixed(1) +
+        '" style="fill: ' + col + '"/>');
+      s.push('<rect class="bal-hover" data-p="' + planIndex + '" data-i="' + ci +
+        '" x="' + (cx - slot / 2).toFixed(1) + '" y="' + PAD_T +
+        '" width="' + Math.max(slot, 5).toFixed(1) + '" height="' + H + '" fill="transparent"/>');
+    });
+    return '<svg class="bal-svg" width="' + svgW.toFixed(0) + '" height="' + svgH +
+      '" viewBox="0 0 ' + svgW.toFixed(0) + ' ' + svgH + '">' + s.join('') + '</svg>';
+  }
+
+  // Re-fetch just the balance panel (range switch); full refresh keeps its
+  // own cadence.
+  function reloadBalance() {
+    setStatus('刷新中…');
+    fetchJson('/api/dashboard/balance-history?hours=' + state.balance.hours)
+      .catch(function () { return null; })
+      .then(function (data) {
+        state.balance.data = data;
+        state.balance.renderedKey = ''; // force rebuild, range buttons changed
+        renderBalance();
+        setStatus('更新于 ' + new Date().toLocaleTimeString());
+      });
+  }
+
+  function bindBalanceEvents() {
+    var wrap = $('#balanceWrap');
+    wrap.addEventListener('click', function (ev) {
+      var btn = ev.target.closest ? ev.target.closest('.bal-btn') : null;
+      if (!btn || btn.disabled) return;
+      state.balance.hours = parseInt(btn.getAttribute('data-hours'), 10);
+      reloadBalance();
+    });
+    wrap.addEventListener('mouseover', function (ev) {
+      var t = ev.target;
+      if (!t || !t.getAttribute || !t.getAttribute('data-p')) return;
+      var chart = state.balance.charts[+t.getAttribute('data-p')];
+      if (!chart) return;
+      var c = chart.plan.candles[+t.getAttribute('data-i')];
+      if (!c) return;
+      var d = new Date(c.t);
+      var end = new Date(c.t + 3600000);
+      var delta = c.c - c.o;
+      var tip = $('#balTip');
+      tip.innerHTML = '<b>' + escHtml(chart.plan.planName) + '</b> · ' +
+        (d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':00 ~ ' +
+        pad2(end.getHours()) + ':00 · 开 <b>' + fmtBal(c.o, chart.plan.currency) + '</b>' +
+        ' 高 <b>' + fmtBal(c.h, chart.plan.currency) + '</b>' +
+        ' 低 <b>' + fmtBal(c.l, chart.plan.currency) + '</b>' +
+        ' 收 <b>' + fmtBal(c.c, chart.plan.currency) + '</b>' +
+        ' 变动 <b style="color: ' + (delta < 0 ? 'var(--err)' : 'var(--ok)') + '">' +
+        fmtBalDelta(delta, chart.plan.currency) + '</b> · ' + c.n + ' 次采样';
+    });
+    wrap.addEventListener('mouseleave', function () {
+      var tip = $('#balTip');
+      if (tip) tip.textContent = '悬停 K线查看该小时的开高低收与变动';
+    });
+  }
+
   // ---------- recent requests (paginated + filterable) ----------
   function renderRecent() {
     var s = state.summary || {};
@@ -746,6 +958,7 @@ const CLIENT_SCRIPT = String.raw`
     // dropdown or a search box mid-typing, so they render only on their own
     // events. Data freshness there is bounded by the next user interaction.
     renderHistory();
+    renderBalance();
   }
 
   // ---------- auth prompt ----------
@@ -774,6 +987,7 @@ const CLIENT_SCRIPT = String.raw`
     $('#keyBtn').addEventListener('click', function () { showKeyPrompt(true); });
     state.tickTimer = setInterval(tickElapsed, 1000);
     bindPanelEvents();
+    bindBalanceEvents();
 
     refreshAll();
   }
@@ -944,6 +1158,42 @@ th.num { text-align: right; }
 .q-bar.q-time { height: 4px; margin: 4px 0 2px; }
 .q-fill.time { background: var(--accent); opacity: .8; }
 
+/* ---------- balance candlestick chart ---------- */
+#balanceWrap { padding: 12px 16px 14px; }
+.bal-range { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.bal-btn { background: transparent; border: 1px solid var(--border); color: var(--muted);
+  border-radius: 6px; font-size: 11px; padding: 3px 10px; cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease; }
+.bal-btn:hover:not(.active) { color: var(--text-hi); border-color: var(--accent);
+  background: var(--accent-dim); }
+.bal-btn.active { color: var(--text-hi); border-color: var(--accent);
+  background: var(--accent-dim); cursor: default; }
+.bal-range-note { color: var(--faint); font-size: 11px; margin-left: auto;
+  display: flex; align-items: center; gap: 4px; }
+.bal-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+.bal-swatch.up { background: var(--ok); }
+.bal-swatch.down { background: var(--err); }
+.bal-plan { margin-bottom: 14px; }
+.bal-plan:last-of-type { margin-bottom: 0; }
+.bal-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px;
+  flex-wrap: wrap; }
+.bal-name { font-size: 13px; font-weight: 600; color: var(--text-hi); }
+.bal-cur { font-size: 16px; font-weight: 650; color: var(--text-hi);
+  font-variant-numeric: tabular-nums; }
+.bal-cur.up { color: var(--ok); } .bal-cur.down { color: var(--err); }
+.bal-delta { font-size: 11px; font-variant-numeric: tabular-nums; }
+.bal-delta.up { color: var(--ok); } .bal-delta.down { color: var(--err); }
+.bal-sub { color: var(--faint); font-size: 11px; margin-left: auto;
+  font-variant-numeric: tabular-nums; }
+.bal-scroll { overflow-x: auto; }
+svg.bal-svg { display: block; }
+svg.bal-svg text { fill: var(--faint); font-size: 10px;
+  font-variant-numeric: tabular-nums; }
+svg.bal-svg .bal-hover:hover { fill: rgba(110, 168, 254, .07); }
+.bal-tip { color: var(--muted); font-size: 11px; min-height: 16px; margin-top: 8px;
+  font-variant-numeric: tabular-nums; }
+.bal-tip b { color: var(--text-hi); font-weight: 600; }
+
 /* ---------- errors ---------- */
 .err-row { display: flex; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--border-soft);
   font-size: 12px; align-items: baseline; }
@@ -1051,6 +1301,10 @@ function renderBody(): string {
       <h2>Plan 余量 / 余额</h2>
       <div id="quotaWrap"><div class="empty">加载中…</div></div>
     </div>
+  </div>
+  <div class="panel" id="balancePanel">
+    <h2>余额历史 · 1h K线</h2>
+    <div id="balanceWrap"><div class="empty">加载中…</div></div>
   </div>
   <div class="panel">
     <h2>历史 Token 日历</h2>

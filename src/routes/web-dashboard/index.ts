@@ -9,17 +9,19 @@
 import type { FastifyInstance } from 'fastify';
 import { dashboardMetrics } from '@/utils/dashboard-metrics';
 import { getActiveUsageStatsStore } from '@/services/usage-stats-store';
+import { getActiveBalanceHistoryStore } from '@/services/balance-history-store';
 import { renderDashboardPage } from './page';
 
 /**
  * Register the read-only web dashboard.
  *
- * GET /dashboard              → self-contained HTML page (no build step)
- * GET /api/dashboard/summary  → headline counters + in-flight requests +
- *                               recent requests + per-key/model/plan usage +
- *                               per-plan remaining quota rows
- * GET /api/dashboard/errors   → recent upstream/gateway errors
- * GET /api/dashboard/stats    → persisted historical token stats
+ * GET /dashboard                      → self-contained HTML page (no build step)
+ * GET /api/dashboard/summary          → headline counters + in-flight requests +
+ *                                       recent requests + per-key/model/plan usage +
+ *                                       per-plan remaining quota rows
+ * GET /api/dashboard/errors           → recent upstream/gateway errors
+ * GET /api/dashboard/stats            → persisted historical token stats
+ * GET /api/dashboard/balance-history  → persisted hourly OHLC balance candles
  *
  * Note: `/dashboard` and `/api/dashboard/*` are in the default auth-exempt
  * list (read-only aggregated metrics only), so no key is required. Operators
@@ -33,6 +35,7 @@ export function registerWebDashboardRoutes(app: FastifyInstance): void {
 
   registerSummaryAndErrors(app);
   registerStats(app);
+  registerBalanceHistory(app);
 }
 
 /** Live counters + in-flight/recent requests + quota rows + recent errors */
@@ -83,6 +86,30 @@ function registerStats(app: FastifyInstance): void {
         request.query.from && dateRe.test(request.query.from) ? request.query.from : undefined;
       const to = request.query.to && dateRe.test(request.query.to) ? request.query.to : undefined;
       return store.query(from, to);
+    }
+  );
+}
+
+/**
+ * Persisted hourly OHLC balance candles for balance-type plans (e.g.
+ * DeepSeek), from the on-disk BalanceHistoryStore. `hours` selects the
+ * trailing window (default 168 = 7 days, clamped to the retention window).
+ */
+function registerBalanceHistory(app: FastifyInstance): void {
+  app.get<{ Querystring: { hours?: string; planKey?: string } }>(
+    '/api/dashboard/balance-history',
+    (request, reply) => {
+      const store = getActiveBalanceHistoryStore();
+      if (!store) {
+        return reply.status(503).send({
+          error: { message: 'Balance history store not initialized', type: 'service_unavailable' },
+        });
+      }
+      const hours = Number.parseInt(request.query.hours ?? '', 10);
+      return store.query({
+        hours: Number.isFinite(hours) ? hours : undefined,
+        planKey: request.query.planKey || undefined,
+      });
     }
   );
 }

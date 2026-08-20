@@ -4,9 +4,16 @@
  * fed by the shared DashboardMetrics singleton.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Fastify from 'fastify';
+import { join } from 'path';
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
 import { registerWebDashboardRoutes } from '@/routes/web-dashboard';
+import {
+  BalanceHistoryStore,
+  registerActiveBalanceHistoryStore,
+} from '@/services/balance-history-store';
 import { dashboardMetrics } from '@/utils/dashboard-metrics';
 
 let seedCounter = 0;
@@ -61,9 +68,20 @@ function seedActive(requestId: string, keyName = 'live-tester'): void {
 }
 
 describe('Web Dashboard Routes', () => {
+  let balanceTempDir: string | null = null;
+
   beforeEach(() => {
     // The metrics singleton is module-scoped and shared across tests;
     // assertions use unique plan/model names or tolerant matchers.
+  });
+
+  afterEach(async () => {
+    // Drop the balance-history singleton so the 503 test stays isolated
+    registerActiveBalanceHistoryStore(null);
+    if (balanceTempDir) {
+      await rm(balanceTempDir, { recursive: true, force: true });
+      balanceTempDir = null;
+    }
   });
 
   describe('GET /dashboard', () => {
@@ -85,6 +103,10 @@ describe('Web Dashboard Routes', () => {
       expect(body).toContain('历史 Token 日历');
       expect(body).toContain('hm-grid');
       expect(body).toContain('hmTip');
+      // balance history renders as a 1h candlestick panel
+      expect(body).toContain('余额历史 · 1h K线');
+      expect(body).toContain('balancePanel');
+      expect(body).toContain('balChart');
       // long-running in-flight requests fold behind a toggle
       expect(body).toContain('longToggle');
       // no flow diagram leftovers
@@ -217,6 +239,77 @@ describe('Web Dashboard Routes', () => {
       const err = body.errors.find((e: { message: string }) => e.message === 'Request failed');
       expect(err).toBeDefined();
       expect(err.error.message).toBe('upstream 401');
+    });
+  });
+
+  describe('GET /api/dashboard/balance-history', () => {
+    it('should return 503 when the store is not initialized', async () => {
+      registerActiveBalanceHistoryStore(null);
+      const app = Fastify();
+      await registerWebDashboardRoutes(app);
+
+      const response = await app.inject({ method: 'GET', url: '/api/dashboard/balance-history' });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.type).toBe('service_unavailable');
+      await app.close();
+    });
+
+    it('should return per-plan hourly OHLC candles', async () => {
+      balanceTempDir = await mkdtemp(join(tmpdir(), 'balance-route-test-'));
+      const store = new BalanceHistoryStore({
+        historyPath: join(balanceTempDir, 'balance-history.json'),
+      });
+      await store.initialize();
+      // anchor to a wall-clock hour so bucket math can't straddle a boundary;
+      // samples land 55min and 56min into the previous hour, then the next hour
+      const hourStart = Math.floor(Date.now() / 3_600_000) * 3_600_000;
+      const t0 = hourStart - 5 * 60_000;
+      store.record({ planKey: '7', planName: 'DeepSeek-A', providerId: 'deepseek', currency: 'CNY', balance: 100, at: t0 });
+      store.record({ planKey: '7', planName: 'DeepSeek-A', providerId: 'deepseek', currency: 'CNY', balance: 90, at: t0 + 60_000 });
+      store.record({ planKey: '7', planName: 'DeepSeek-A', providerId: 'deepseek', currency: 'CNY', balance: 95, at: t0 + 3_600_000 });
+      registerActiveBalanceHistoryStore(store);
+
+      const app = Fastify();
+      await registerWebDashboardRoutes(app);
+
+      const response = await app.inject({ method: 'GET', url: '/api/dashboard/balance-history' });
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body.hours).toBe(168);
+      expect(body.plans).toHaveLength(1);
+      const plan = body.plans[0];
+      expect(plan).toMatchObject({ planKey: '7', planName: 'DeepSeek-A', currency: 'CNY' });
+      expect(plan.candles).toHaveLength(2);
+      expect(plan.candles[0]).toMatchObject({ o: 100, h: 100, l: 90, c: 90, n: 2 });
+      expect(plan.candles[1]).toMatchObject({ o: 95, h: 95, l: 95, c: 95, n: 1 });
+      await app.close();
+    });
+
+    it('should honor the hours window parameter', async () => {
+      balanceTempDir = await mkdtemp(join(tmpdir(), 'balance-route-test-'));
+      const store = new BalanceHistoryStore({
+        historyPath: join(balanceTempDir, 'balance-history.json'),
+      });
+      await store.initialize();
+      // two samples 3 hours apart; a 2h window only covers the later one
+      const now = Date.now();
+      store.record({ planKey: '9', planName: 'DeepSeek-B', balance: 10, at: now - 3 * 3_600_000 });
+      store.record({ planKey: '9', planName: 'DeepSeek-B', balance: 12, at: now });
+      registerActiveBalanceHistoryStore(store);
+
+      const app = Fastify();
+      await registerWebDashboardRoutes(app);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/dashboard/balance-history?hours=2',
+      });
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body.hours).toBe(2);
+      expect(body.plans[0].candles).toHaveLength(1);
+      expect(body.plans[0].candles[0].o).toBe(12);
+      await app.close();
     });
   });
 });
