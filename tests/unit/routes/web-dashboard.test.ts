@@ -103,10 +103,14 @@ describe('Web Dashboard Routes', () => {
       expect(body).toContain('历史 Token 日历');
       expect(body).toContain('hm-grid');
       expect(body).toContain('hmTip');
-      // balance history renders as a 1h candlestick panel
+      // balance history: mini sparkline in quota cards + detail modal
       expect(body).toContain('余额历史 · 1h K线');
-      expect(body).toContain('balancePanel');
-      expect(body).toContain('balChart');
+      expect(body).toContain('balanceModal');
+      expect(body).toContain('bmBody');
+      expect(body).toContain('balMiniHtml');
+      expect(body).toContain('filterActiveCandles');
+      // the always-on panel is gone — replaced by the modal
+      expect(body).not.toContain('balancePanel');
       // long-running in-flight requests fold behind a toggle
       expect(body).toContain('longToggle');
       // no flow diagram leftovers
