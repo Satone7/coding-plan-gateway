@@ -27,6 +27,12 @@ function formatBalance(info?: DeepseekBalanceInfo): string {
   return `${symbol}${totalBalance}`;
 }
 
+/** Numeric total_balance for history recording; undefined when unparsable */
+function parseBalance(info?: DeepseekBalanceInfo): number | undefined {
+  const n = parseFloat(info?.total_balance ?? '');
+  return Number.isFinite(n) ? n : undefined;
+}
+
 export class DeepseekUsageAdapter implements UsageAdapter {
   readonly providerId = 'deepseek';
   readonly cacheTTL = 300;
@@ -48,6 +54,7 @@ export class DeepseekUsageAdapter implements UsageAdapter {
       }
 
       const body = (await response.json()) as DeepseekBalanceResponse;
+      const info = body.balance_infos?.[0];
 
       return {
         used: 0,
@@ -56,7 +63,9 @@ export class DeepseekUsageAdapter implements UsageAdapter {
         windows: [],
         summary: {
           mode: 'balance',
-          value: formatBalance(body.balance_infos?.[0]),
+          value: formatBalance(info),
+          numericValue: parseBalance(info),
+          currency: info?.currency,
         },
         raw: body,
       };

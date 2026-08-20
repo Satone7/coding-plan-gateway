@@ -26,6 +26,10 @@ export interface UsageSummary {
   mode: 'balance';
   /** Human-readable value to show in the dashboard */
   value: string;
+  /** Machine-readable numeric value (e.g. account balance amount) */
+  numericValue?: number;
+  /** Currency code of the numeric value, when applicable (e.g. 'CNY') */
+  currency?: string;
 }
 
 /**

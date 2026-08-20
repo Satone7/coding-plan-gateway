@@ -48,6 +48,8 @@ api-keys.json
 usage-data.json
 plan-usage-data.json
 usage-adjustment-history.json
+usage-stats.json
+balance-history.json
 
 # Logs
 logs/
