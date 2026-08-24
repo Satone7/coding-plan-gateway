@@ -23,8 +23,10 @@
  *   Row 6 — 近期完成的请求 (full width, paginated + filterable)
  *
  * Balance history lives as a mini candlestick sparkline inside each balance
- * card of「Plan 余量 / 余额」; clicking it opens the full「余额历史 · 1h K线」
- * modal (range switch + hover inspector, same renderer as before).
+ * card of「Plan 余量 / 余额」(area fill + latest-close guide + granularity
+ * caption); clicking it opens the full「余额历史 · K线」modal with a
+ * granularity switch (1h / 12h / 1d, aggregated client-side from the hourly
+ * candles and persisted via localStorage), range switch and hover inspector.
  */
 
 /**
@@ -110,6 +112,12 @@ const CLIENT_SCRIPT = String.raw`
     if (d == null || isNaN(d)) return '—';
     return (d >= 0 ? '+' : '-') + fmtBal(Math.abs(d), cur);
   }
+  // K-line granularity (hours per candle) persists across browser sessions
+  function balGranInit() {
+    var g = 1;
+    try { g = parseInt(localStorage.getItem('cpg_dash_bal_gran') || '1', 10); } catch (e) { /* noop */ }
+    return g === 12 || g === 24 ? g : 1;
+  }
 
   // ---------- state ----------
   var state = {
@@ -119,9 +127,9 @@ const CLIENT_SCRIPT = String.raw`
     summary: null,
     errors: [],
     stats: null,
-    // balance-history panel: range + last payload; renderedKey suppresses
-    // identical SVG rebuilds on the 5s poll (data changes at most hourly)
-    balance: { hours: 168, data: null, renderedKey: '' },
+    // balance-history panel: range + granularity + last payload; renderedKey
+    // suppresses identical SVG rebuilds on the 5s poll (data changes slowly)
+    balance: { hours: 168, gran: balGranInit(), data: null, renderedKey: '' },
     // recent-requests panel: filters + pagination
     recentFilter: { status: 'all', key: 'all', plan: 'all', model: '' },
     recentPage: 0,
@@ -578,11 +586,54 @@ const CLIENT_SCRIPT = String.raw`
 
   // ---------- balance history (mini sparkline + full modal) ----------
   // Each balance-type quota card carries a mini candlestick sparkline (last
-  // 48h, index-packed); clicking it opens the full「余额历史 · 1h K线」modal:
-  // green candles when the balance rose within the hour (top-up), red when
-  // it dropped (spending); a faint close-price polyline emphasizes the trend.
-  // Hover targets fold the exact OHLC of one hour into the inspector bar.
-  var BAL_RANGES = [[24, '24h'], [72, '3天'], [168, '7天'], [720, '30天']];
+  // 48 active candles, index-packed); clicking it opens the full K线 modal:
+  // red candles when the balance rose within the period (top-up), green when
+  // it dropped (spending); a faint close-price polyline + area emphasizes
+  // the trend. The raw store granularity is 1h; 12h / 1d K线 are aggregated
+  // client-side into local-time buckets, so no re-fetch is needed to switch.
+  // Hover targets fold the exact OHLC of one period into the inspector bar.
+  var BAL_RANGES = [[24, '24h'], [72, '3天'], [168, '7天'], [720, '30天'], [2160, '90天']];
+  var BAL_GRANS = [[1, '1h'], [12, '12h'], [24, '1d']];
+
+  function granLabel(g) {
+    for (var i = 0; i < BAL_GRANS.length; i++) {
+      if (BAL_GRANS[i][0] === g) return BAL_GRANS[i][1];
+    }
+    return '1h';
+  }
+
+  function rangeLabel(hours) {
+    for (var i = 0; i < BAL_RANGES.length; i++) {
+      if (BAL_RANGES[i][0] === hours) return BAL_RANGES[i][1];
+    }
+    return hours + 'h';
+  }
+
+  // Fold 1h candles into coarser local-time buckets (12h half-days aligned
+  // to 00:00/12:00, or calendar days): open = first candle's open, close =
+  // last candle's close, high/low = extremes, n = total samples. Input must
+  // be time-ascending, so buckets merge consecutively in one pass.
+  function aggregateCandles(candles, gran) {
+    if (gran <= 1) return candles;
+    var out = [];
+    for (var i = 0; i < candles.length; i++) {
+      var c = candles[i];
+      var d = new Date(c.t);
+      if (gran >= 24) d.setHours(0, 0, 0, 0);
+      else d.setHours(d.getHours() < 12 ? 0 : 12, 0, 0, 0);
+      var bt = d.getTime();
+      var last = out[out.length - 1];
+      if (last && last.t === bt) {
+        if (c.h > last.h) last.h = c.h;
+        if (c.l < last.l) last.l = c.l;
+        last.c = c.c;
+        last.n += c.n;
+      } else {
+        out.push({ t: bt, o: c.o, h: c.h, l: c.l, c: c.c, n: c.n });
+      }
+    }
+    return out;
+  }
 
   function balanceModalOpen() {
     return $('#balanceModal').style.display === 'flex';
@@ -602,6 +653,8 @@ const CLIENT_SCRIPT = String.raw`
     var body = $('#bmBody');
     var data = state.balance.data;
     var plans = (data && data.plans) || [];
+    var gran = state.balance.gran;
+    $('#bmTitle').textContent = '余额历史 · ' + granLabel(gran) + ' K线';
     if (!plans.length) {
       body.innerHTML = '<div class="empty">暂无余额历史记录<br>' +
         '<span class="empty-sub">余额型 Plan 的采样每小时累积一根 K线</span></div>';
@@ -610,49 +663,58 @@ const CLIENT_SCRIPT = String.raw`
     // hidden containers report clientWidth 0 — only build SVG while visible
     if (!balanceModalOpen()) return;
     var innerW = Math.max(320, (body.clientWidth || 1044) - 36);
-    var key = state.balance.hours + '|' + innerW + '|' + JSON.stringify(data);
+    var key = gran + '|' + state.balance.hours + '|' + innerW + '|' + JSON.stringify(data);
     if (key === state.balance.renderedKey) return;
     state.balance.renderedKey = key;
 
     var charts = []; // hover registry: plan display data by sub-chart index
-    var html = '<div class="bal-range">' + BAL_RANGES.map(function (r) {
-      return '<button class="bal-btn" data-hours="' + r[0] + '"' +
-        (r[0] === state.balance.hours ? ' disabled class="bal-btn active"' : '') +
+    var html = '<div class="bal-range">' + BAL_GRANS.map(function (g) {
+      return '<button class="bal-btn bal-gbtn' + (g[0] === gran ? ' active' : '') +
+        '" data-gran="' + g[0] + '"' + (g[0] === gran ? ' disabled' : '') +
+        ' title="K线颗粒度：每根 ' + g[1] + '">' + g[1] + '</button>';
+    }).join('') + '<span class="bal-sep"></span>' + BAL_RANGES.map(function (r) {
+      return '<button class="bal-btn' + (r[0] === state.balance.hours ? ' active' : '') +
+        '" data-hours="' + r[0] + '"' + (r[0] === state.balance.hours ? ' disabled' : '') +
         '>' + r[1] + '</button>';
-    }).join('') + '<span class="bal-range-note">1h K线 · 涨 <i class="bal-swatch up"></i> 跌 <i class="bal-swatch down"></i> · 折线为收盘余额</span></div>';
+    }).join('') + '<span class="bal-range-note">' + granLabel(gran) +
+      ' K线 · 涨 <i class="bal-swatch up"></i> 跌 <i class="bal-swatch down"></i>' +
+      ' · 折线为收盘余额</span></div>';
 
     plans.forEach(function (p, pi) {
-      var last = p.candles[p.candles.length - 1];
-      var first = p.candles[0];
-      var delta = last.c - first.o;
-      var kept = filterActiveCandles(p.candles);
+      if (!p.candles.length) return;
+      var agg = aggregateCandles(p.candles, gran);
+      var kept = filterActiveCandles(agg);
+      // kept[0]/kept[last] are the window anchors: kept[0].o is the first
+      // raw candle's open, kept[last].c the last raw candle's close.
+      var delta = kept[kept.length - 1].c - kept[0].o;
       charts.push({ plan: p, candles: kept, delta: delta });
       html += '<div class="bal-plan">' +
         '<div class="bal-head">' +
           '<span class="bal-name">' + escHtml(p.planName) + '</span>' +
           (p.providerId ? '<span class="chip">' + escHtml(p.providerId) + '</span>' : '') +
           '<span class="bal-cur' + (delta < 0 ? ' down' : delta > 0 ? ' up' : '') + '">' +
-            fmtBal(last.c, p.currency) + '</span>' +
+            fmtBal(kept[kept.length - 1].c, p.currency) + '</span>' +
           '<span class="bal-delta ' + (delta < 0 ? 'down' : 'up') + '">' +
-            fmtBalDelta(delta, p.currency) + '（' + BAL_RANGES.filter(function (r) {
-              return r[0] === state.balance.hours;
-            })[0][1] + '）</span>' +
+            fmtBalDelta(delta, p.currency) + '（' + rangeLabel(state.balance.hours) + '）</span>' +
           '<span class="bal-sub">采样 ' + p.candles.reduce(function (a, c) {
             return a + c.n;
-          }, 0) + ' 次 · ' + p.candles.length + ' 根K线（已折叠 ' +
-            (p.candles.length - kept.length) + ' 根无变化）</span>' +
+          }, 0) + ' 次 · ' + kept.length + ' 根K线（已折叠 ' +
+            (agg.length - kept.length) + ' 根无变化）</span>' +
         '</div>' +
-        '<div class="bal-scroll">' + balChart(kept, innerW, pi) + '</div>' +
+        '<div class="bal-scroll">' + balChart(kept, innerW, pi, gran) + '</div>' +
       '</div>';
     });
-    html += '<div class="bal-tip" id="balTip">悬停 K线查看该小时的开高低收与变动</div>';
+    html += '<div class="bal-tip" id="balTip">悬停 K线查看该时段的开高低收与变动</div>';
     state.balance.charts = charts;
     body.innerHTML = html;
   }
 
-  // Mini sparkline for one balance quota card: last 48 candles packed by
-  // index (gaps collapse — the modal keeps absolute hourly slots). Returns
-  // '' when the plan has no history yet, leaving the card unchanged.
+  // Mini sparkline for one balance quota card: last 48 active candles at
+  // the currently selected granularity, packed by index (gaps collapse).
+  // On top of the candles: a soft area fill under the close-price line, a
+  // dashed guide at the latest close with a direction-colored marker dot,
+  // and a tiny granularity caption. Returns '' when the plan has no
+  // history yet, leaving the card unchanged.
   function balMiniHtml(planName) {
     var data = state.balance.data;
     var plans = (data && data.plans) || [];
@@ -661,8 +723,9 @@ const CLIENT_SCRIPT = String.raw`
       if (plans[i].planName === planName) { p = plans[i]; break; }
     }
     if (!p || !p.candles.length) return '';
-    var W = 132, H = 32, PAD = 2;
-    var cds = filterActiveCandles(p.candles).slice(-48);
+    var gran = state.balance.gran;
+    var W = 140, H = 36, PAD = 3;
+    var cds = filterActiveCandles(aggregateCandles(p.candles, gran)).slice(-48);
     var slot = W / Math.max(cds.length, 24);
     var vmin = Infinity, vmax = -Infinity;
     cds.forEach(function (c) {
@@ -677,11 +740,22 @@ const CLIENT_SCRIPT = String.raw`
       vmin -= rg * 0.08; vmax += rg * 0.08;
     }
     function y(v) { return PAD + (H - 2 * PAD) * (1 - (v - vmin) / (vmax - vmin)); }
+    function xc(i) { return PAD + (i + 0.5) * slot; }
+    var pts = cds.map(function (c, i) { return xc(i).toFixed(1) + ',' + y(c.c).toFixed(1); });
+    var lastC = cds[cds.length - 1];
+    var ly = y(lastC.c).toFixed(1);
     var s = [];
+    // soft area fill under the close-price line — the trend reads at a glance
+    s.push('<polygon points="' + PAD + ',' + (H - PAD) + ' ' + pts.join(' ') + ' ' +
+      xc(cds.length - 1).toFixed(1) + ',' + (H - PAD) +
+      '" style="fill: var(--accent); opacity: .08"/>');
+    // dashed guide at the latest close level
+    s.push('<line x1="' + PAD + '" x2="' + (W - PAD) + '" y1="' + ly + '" y2="' + ly +
+      '" style="stroke: var(--faint); opacity: .35; stroke-width: .5; stroke-dasharray: 2 2"/>');
     cds.forEach(function (c, i) {
       var up = c.c >= c.o;
       var col = up ? 'var(--err)' : 'var(--ok)';
-      var cx = (PAD + (i + 0.5) * slot).toFixed(1);
+      var cx = xc(i).toFixed(1);
       var bw = Math.max(1, slot * 0.7);
       var yTop = y(Math.max(c.o, c.c));
       var yBot = y(Math.min(c.o, c.c));
@@ -691,11 +765,17 @@ const CLIENT_SCRIPT = String.raw`
         '" width="' + bw.toFixed(1) + '" height="' + Math.max(1, yBot - yTop).toFixed(1) +
         '" style="fill: ' + col + '"/>');
     });
-    s.push('<polyline points="' + cds.map(function (c, i) {
-      return (PAD + (i + 0.5) * slot).toFixed(1) + ',' + y(c.c).toFixed(1);
-    }).join(' ') + '" fill="none" style="stroke: var(--accent); opacity: .45; stroke-width: 1"/>');
+    s.push('<polyline points="' + pts.join(' ') +
+      '" fill="none" style="stroke: var(--accent); opacity: .5; stroke-width: 1"/>');
+    // latest-close marker dot, colored by the last candle's direction
+    s.push('<circle cx="' + xc(cds.length - 1).toFixed(1) + '" cy="' + ly + '" r="1.8"' +
+      ' style="fill: ' + (lastC.c >= lastC.o ? 'var(--err)' : 'var(--ok)') + '"/>');
+    // granularity caption (top-left corner)
+    s.push('<text x="' + PAD + '" y="' + (PAD + 6) + '" class="q-mini-label">' +
+      granLabel(gran) + '</text>');
     return '<button class="q-bal-mini" data-plan="' + escHtml(planName) +
-      '" title="查看余额历史 K线">' +
+      '" title="余额历史 ' + granLabel(gran) + ' K线（近 ' + cds.length +
+      ' 根有效K线）· 点击查看大图，弹层内可切换 1h/12h/1d">' +
       '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' +
       s.join('') + '</svg></button>';
   }
@@ -718,8 +798,10 @@ const CLIENT_SCRIPT = String.raw`
 
   // Build one plan's SVG chart string from the kept (activity) candles,
   // packed by index — flat periods are compressed away instead of occupying
-  // dead space, so every x position carries an explicit time label.
-  function balChart(kept, innerW, planIndex) {
+  // dead space, so every x position carries an explicit time label. gran
+  // (hours per candle) only affects label formatting: 1d candles get bare
+  // dates, finer granularities get date + hour.
+  function balChart(kept, innerW, planIndex, gran) {
     var H = 150, PAD_T = 8, PAD_B = 20, PAD_L = 56, PAD_R = 12;
     var plotW = Math.max(innerW - PAD_L - PAD_R, kept.length * 3);
     var slot = plotW / kept.length;
@@ -766,7 +848,7 @@ const CLIENT_SCRIPT = String.raw`
     var labels = [];
     if (slot >= 44) {
       kept.forEach(function (c, i) {
-        labels.push([x(i), txt(new Date(c.t), true)]);
+        labels.push([x(i), txt(new Date(c.t), gran < 24)]);
       });
     } else {
       var lastX = -1e9;
@@ -786,12 +868,12 @@ const CLIENT_SCRIPT = String.raw`
           var xx = x(i);
           if (lastX2 > -1e8 && xx - lastX2 < 44) return;
           lastX2 = xx;
-          labels.push([xx, txt(d, true)]);
+          labels.push([xx, txt(d, gran < 24)]);
         });
         if (!labels.length) {
-          labels.push([x(0), txt(new Date(kept[0].t), true)]);
+          labels.push([x(0), txt(new Date(kept[0].t), gran < 24)]);
           if (kept.length > 1) {
-            labels.push([x(kept.length - 1), txt(new Date(kept[kept.length - 1].t), true)]);
+            labels.push([x(kept.length - 1), txt(new Date(kept[kept.length - 1].t), gran < 24)]);
           }
         }
       }
@@ -843,6 +925,19 @@ const CLIENT_SCRIPT = String.raw`
   function bindBalanceEvents() {
     var wrap = $('#bmBody');
     wrap.addEventListener('click', function (ev) {
+      // granularity switch: pure client-side re-aggregation, no re-fetch;
+      // the card minis follow the same granularity
+      var gbtn = ev.target.closest ? ev.target.closest('.bal-gbtn') : null;
+      if (gbtn && !gbtn.disabled) {
+        state.balance.gran = parseInt(gbtn.getAttribute('data-gran'), 10);
+        try {
+          localStorage.setItem('cpg_dash_bal_gran', String(state.balance.gran));
+        } catch (e) { /* noop */ }
+        state.balance.renderedKey = '';
+        renderBalance();
+        renderQuotas();
+        return;
+      }
       var btn = ev.target.closest ? ev.target.closest('.bal-btn') : null;
       if (!btn || btn.disabled) return;
       state.balance.hours = parseInt(btn.getAttribute('data-hours'), 10);
@@ -855,13 +950,20 @@ const CLIENT_SCRIPT = String.raw`
       if (!chart) return;
       var c = chart.candles[+t.getAttribute('data-i')];
       if (!c) return;
+      var gran = state.balance.gran;
       var d = new Date(c.t);
-      var end = new Date(c.t + 3600000);
+      var span;
+      if (gran >= 24) {
+        span = (d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' 全天';
+      } else {
+        var end = new Date(c.t + gran * 3600000);
+        span = (d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) +
+          ':00 ~ ' + pad2(end.getHours()) + ':00';
+      }
       var delta = c.c - c.o;
       var tip = $('#balTip');
-      tip.innerHTML = '<b>' + escHtml(chart.plan.planName) + '</b> · ' +
-        (d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':00 ~ ' +
-        pad2(end.getHours()) + ':00 · 开 <b>' + fmtBal(c.o, chart.plan.currency) + '</b>' +
+      tip.innerHTML = '<b>' + escHtml(chart.plan.planName) + '</b> · ' + span +
+        ' · 开 <b>' + fmtBal(c.o, chart.plan.currency) + '</b>' +
         ' 高 <b>' + fmtBal(c.h, chart.plan.currency) + '</b>' +
         ' 低 <b>' + fmtBal(c.l, chart.plan.currency) + '</b>' +
         ' 收 <b>' + fmtBal(c.c, chart.plan.currency) + '</b>' +
@@ -870,7 +972,7 @@ const CLIENT_SCRIPT = String.raw`
     });
     wrap.addEventListener('mouseleave', function () {
       var tip = $('#balTip');
-      if (tip) tip.textContent = '悬停 K线查看该小时的开高低收与变动';
+      if (tip) tip.textContent = '悬停 K线查看该时段的开高低收与变动';
     });
   }
 
@@ -1300,7 +1402,9 @@ th.num { text-align: right; }
   transition: border-color .15s ease, background .15s ease; }
 .q-bal-mini:hover { border-color: var(--accent); background: var(--accent-dim); }
 .q-bal-mini svg { display: block; }
-.q-bal-mini svg line, .q-bal-mini svg rect, .q-bal-mini svg polyline { pointer-events: none; }
+.q-bal-mini svg line, .q-bal-mini svg rect, .q-bal-mini svg polyline,
+.q-bal-mini svg polygon, .q-bal-mini svg circle, .q-bal-mini svg text { pointer-events: none; }
+.q-bal-mini svg .q-mini-label { fill: var(--faint); font-size: 7px; opacity: .85; }
 
 #balanceModal { position: fixed; inset: 0; background: rgba(7, 9, 16, .6);
   backdrop-filter: blur(2px); display: none; align-items: center;
@@ -1322,7 +1426,9 @@ th.num { text-align: right; }
   background: var(--accent-dim); }
 #bmBody { padding: 14px 18px 16px; overflow-y: auto; }
 
-.bal-range { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.bal-range { display: flex; align-items: center; gap: 6px; margin-bottom: 12px;
+  flex-wrap: wrap; }
+.bal-sep { width: 1px; align-self: stretch; background: var(--border); margin: 3px 4px; }
 .bal-btn { background: transparent; border: 1px solid var(--border); color: var(--muted);
   border-radius: 6px; font-size: 11px; padding: 3px 10px; cursor: pointer;
   transition: color .15s ease, border-color .15s ease, background .15s ease; }
@@ -1494,8 +1600,8 @@ function renderBody(): string {
 <div id="balanceModal">
   <div class="bm-dialog">
     <div class="bm-head">
-      <h3>余额历史 · 1h K线</h3>
-      <span class="bm-sub">红涨绿跌 · 余额无变化的小时已折叠 · 折线为收盘余额</span>
+      <h3 id="bmTitle">余额历史 · K线</h3>
+      <span class="bm-sub">红涨绿跌 · 1h/12h/1d 颗粒度可切换 · 余额无变化的时段已折叠 · 折线为收盘余额</span>
       <button class="bm-close" id="bmClose" title="关闭 (Esc)">✕</button>
     </div>
     <div id="bmBody"></div>
