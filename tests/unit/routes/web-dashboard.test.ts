@@ -104,11 +104,18 @@ describe('Web Dashboard Routes', () => {
       expect(body).toContain('hm-grid');
       expect(body).toContain('hmTip');
       // balance history: mini sparkline in quota cards + detail modal
-      expect(body).toContain('余额历史 · 1h K线');
+      expect(body).toContain('余额历史');
       expect(body).toContain('balanceModal');
+      expect(body).toContain('bmTitle');
       expect(body).toContain('bmBody');
       expect(body).toContain('balMiniHtml');
       expect(body).toContain('filterActiveCandles');
+      // switchable K-line granularity (1h / 12h / 1d, client-side aggregation)
+      expect(body).toContain('aggregateCandles');
+      expect(body).toContain('bal-gbtn');
+      expect(body).toContain('data-gran');
+      expect(body).toContain('cpg_dash_bal_gran');
+      expect(body).toContain('1h/12h/1d');
       // the always-on panel is gone — replaced by the modal
       expect(body).not.toContain('balancePanel');
       // long-running in-flight requests fold behind a toggle
