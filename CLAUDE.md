@@ -133,6 +133,7 @@ git merge <branch-name> --no-ff -m "merge: branch <branch-name> into master"
 - **Standards**: `docs/standards.md` - Complete coding standards
 - **Architecture**: `docs/architecture.md` - System design decisions
 - **Ground-rules**: `memory/ground-rules.md` - Project principles
+- **Production deployment**: `memory/production-deployment.md` - Prod host access, `./cpg update` flow, image cleanup, known pitfalls
 - **Specification**: `specs/001-coding-plan-gateway/spec.md` - Feature requirements
 
 ## Development Workflow
