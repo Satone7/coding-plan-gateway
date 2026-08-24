@@ -662,7 +662,9 @@ const CLIENT_SCRIPT = String.raw`
     }
     // hidden containers report clientWidth 0 — only build SVG while visible
     if (!balanceModalOpen()) return;
-    var innerW = Math.max(320, (body.clientWidth || 1044) - 36);
+    // 2px slack: float rounding + a late-appearing vertical scrollbar must
+    // never push the SVG past the content box and surface a scrollbar
+    var innerW = Math.max(320, (body.clientWidth || 1044) - 38);
     var key = gran + '|' + state.balance.hours + '|' + innerW + '|' + JSON.stringify(data);
     if (key === state.balance.renderedKey) return;
     state.balance.renderedKey = key;
@@ -803,7 +805,9 @@ const CLIENT_SCRIPT = String.raw`
   // dates, finer granularities get date + hour.
   function balChart(kept, innerW, planIndex, gran) {
     var H = 150, PAD_T = 8, PAD_B = 20, PAD_L = 56, PAD_R = 12;
-    var plotW = Math.max(innerW - PAD_L - PAD_R, kept.length * 3);
+    // floor so svgW = PAD_L + plotW + PAD_R never exceeds innerW by a
+    // fractional pixel (which would surface a horizontal scrollbar)
+    var plotW = Math.max(Math.floor(innerW - PAD_L - PAD_R), kept.length * 3);
     var slot = plotW / kept.length;
     var svgW = PAD_L + plotW + PAD_R, svgH = PAD_T + H + PAD_B;
 
@@ -1453,7 +1457,10 @@ th.num { text-align: right; }
 .bal-delta.up { color: var(--err); } .bal-delta.down { color: var(--ok); }
 .bal-sub { color: var(--faint); font-size: 11px; margin-left: auto;
   font-variant-numeric: tabular-nums; }
-.bal-scroll { overflow-x: auto; }
+/* Overflow stays scrollable for extreme candle density, but the scrollbar
+   itself is never shown — it read as chrome noise under the chart */
+.bal-scroll { overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.bal-scroll::-webkit-scrollbar { display: none; }
 svg.bal-svg { display: block; }
 svg.bal-svg text { fill: var(--faint); font-size: 10px;
   font-variant-numeric: tabular-nums; }
