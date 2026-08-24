@@ -373,6 +373,26 @@ const CLIENT_SCRIPT = String.raw`
       html += quotaCard(r);
     });
     wrap.innerHTML = html;
+    fillBalMinis();
+  }
+
+  // The mini sparkline shell is emitted with the card markup, but the SVG
+  // itself is drawn here at the button's real pixel width — full card
+  // width with zero distortion, re-measured on every render.
+  function fillBalMinis() {
+    var data = state.balance.data;
+    var plans = (data && data.plans) || [];
+    document.querySelectorAll('#quotaWrap .q-bal-mini').forEach(function (el) {
+      var name = el.getAttribute('data-plan');
+      var p = null;
+      for (var i = 0; i < plans.length; i++) {
+        if (plans[i].planName === name) { p = plans[i]; break; }
+      }
+      if (!p) return;
+      var w = el.clientWidth;
+      if (!w || w < 60) return; // hidden or collapsed — keep it empty
+      el.insertAdjacentHTML('beforeend', balMiniSvg(p, w, 44));
+    });
   }
 
   function quotaCard(r) {
@@ -380,8 +400,7 @@ const CLIENT_SCRIPT = String.raw`
     var body = '';
     if (r.kind === 'balance') {
       var mini = balMiniHtml(r.planName);
-      body = '<div class="q-bal-row"><div class="q-balance">' +
-        escHtml(r.balance || '—') + '</div>' + mini + '</div>' +
+      body = '<div class="q-balance">' + escHtml(r.balance || '—') + '</div>' + mini +
         '<div class="q-sub">账户余额 · 更新于 ' + fmtDateTime(r.lastUpdated) + '</div>';
     } else if (r.kind === 'usage-api') {
       var pct = Math.round(r.percentage || 0);
@@ -711,12 +730,11 @@ const CLIENT_SCRIPT = String.raw`
     body.innerHTML = html;
   }
 
-  // Mini sparkline for one balance quota card: last 48 active candles at
-  // the currently selected granularity, packed by index (gaps collapse).
-  // On top of the candles: a soft area fill under the close-price line, a
-  // dashed guide at the latest close with a direction-colored marker dot,
-  // and a tiny granularity caption. Returns '' when the plan has no
-  // history yet, leaving the card unchanged.
+  // Mini sparkline shell for one balance quota card: a borderless,
+  // full-card-width strip that blends into the card (no axes, no frame).
+  // The SVG itself is injected by fillBalMinis() once the button's real
+  // pixel width is known. Returns '' when the plan has no history yet,
+  // leaving the card unchanged.
   function balMiniHtml(planName) {
     var data = state.balance.data;
     var plans = (data && data.plans) || [];
@@ -726,7 +744,18 @@ const CLIENT_SCRIPT = String.raw`
     }
     if (!p || !p.candles.length) return '';
     var gran = state.balance.gran;
-    var W = 140, H = 36, PAD = 3;
+    return '<button class="q-bal-mini" data-plan="' + escHtml(planName) +
+      '" title="余额历史 ' + granLabel(gran) + ' K线 · 点击查看大图，弹层内可切换 1h/12h/1d">' +
+      '<span class="q-mini-gran">' + granLabel(gran) + '</span></button>';
+  }
+
+  // Draw the sparkline at exact pixel size: last 48 active candles at the
+  // current granularity, packed by index (gaps collapse), a soft area fill
+  // under the close-price line, a dashed guide at the latest close with a
+  // direction-colored marker dot. No axes, no border — just the trend.
+  function balMiniSvg(p, W, H) {
+    var gran = state.balance.gran;
+    var PAD = 2;
     var cds = filterActiveCandles(aggregateCandles(p.candles, gran)).slice(-48);
     var slot = W / Math.max(cds.length, 24);
     var vmin = Infinity, vmax = -Infinity;
@@ -770,16 +799,10 @@ const CLIENT_SCRIPT = String.raw`
     s.push('<polyline points="' + pts.join(' ') +
       '" fill="none" style="stroke: var(--accent); opacity: .5; stroke-width: 1"/>');
     // latest-close marker dot, colored by the last candle's direction
-    s.push('<circle cx="' + xc(cds.length - 1).toFixed(1) + '" cy="' + ly + '" r="1.8"' +
+    s.push('<circle cx="' + xc(cds.length - 1).toFixed(1) + '" cy="' + ly + '" r="2"' +
       ' style="fill: ' + (lastC.c >= lastC.o ? 'var(--err)' : 'var(--ok)') + '"/>');
-    // granularity caption (top-left corner)
-    s.push('<text x="' + PAD + '" y="' + (PAD + 6) + '" class="q-mini-label">' +
-      granLabel(gran) + '</text>');
-    return '<button class="q-bal-mini" data-plan="' + escHtml(planName) +
-      '" title="余额历史 ' + granLabel(gran) + ' K线（近 ' + cds.length +
-      ' 根有效K线）· 点击查看大图，弹层内可切换 1h/12h/1d">' +
-      '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' +
-      s.join('') + '</svg></button>';
+    return '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' +
+      s.join('') + '</svg>';
   }
 
   // Drop candles from periods where the balance sat unchanged: a candle is
@@ -1398,17 +1421,19 @@ th.num { text-align: right; }
 
 /* ---------- balance history: card mini sparkline + detail modal ---------- */
 /* 中国市场惯例：红涨绿跌 */
-.q-bal-row { display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; margin: 2px 0 6px; }
-.q-bal-row .q-balance { margin: 0; }
-.q-bal-mini { flex: none; background: var(--bg); border: 1px solid var(--border);
-  border-radius: 6px; padding: 4px 7px 2px; cursor: pointer;
-  transition: border-color .15s ease, background .15s ease; }
-.q-bal-mini:hover { border-color: var(--accent); background: var(--accent-dim); }
+/* Mini sparkline: a borderless full-card-width strip — no axes, no frame,
+   transparent background so it reads as part of the card itself */
+.q-bal-mini { position: relative; display: block; width: 100%; height: 44px;
+  margin: 2px 0 4px; padding: 0; background: transparent; border: none;
+  border-radius: 6px; cursor: pointer; overflow: hidden;
+  transition: background .15s ease; }
+.q-bal-mini:hover { background: var(--accent-dim); }
 .q-bal-mini svg { display: block; }
 .q-bal-mini svg line, .q-bal-mini svg rect, .q-bal-mini svg polyline,
-.q-bal-mini svg polygon, .q-bal-mini svg circle, .q-bal-mini svg text { pointer-events: none; }
-.q-bal-mini svg .q-mini-label { fill: var(--faint); font-size: 7px; opacity: .85; }
+.q-bal-mini svg polygon, .q-bal-mini svg circle { pointer-events: none; }
+.q-bal-mini .q-mini-gran { position: absolute; top: 2px; right: 4px;
+  font-size: 9px; color: var(--faint); opacity: .8; pointer-events: none;
+  font-variant-numeric: tabular-nums; }
 
 #balanceModal { position: fixed; inset: 0; background: rgba(7, 9, 16, .6);
   backdrop-filter: blur(2px); display: none; align-items: center;

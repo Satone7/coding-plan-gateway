@@ -109,6 +109,11 @@ describe('Web Dashboard Routes', () => {
       expect(body).toContain('bmTitle');
       expect(body).toContain('bmBody');
       expect(body).toContain('balMiniHtml');
+      // mini sparkline is a borderless full-card-width strip, drawn at the
+      // button's measured pixel width after the cards render
+      expect(body).toContain('balMiniSvg');
+      expect(body).toContain('fillBalMinis');
+      expect(body).toContain('q-mini-gran');
       expect(body).toContain('filterActiveCandles');
       // switchable K-line granularity (1h / 12h / 1d, client-side aggregation)
       expect(body).toContain('aggregateCandles');
