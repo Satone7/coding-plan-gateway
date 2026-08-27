@@ -48,6 +48,7 @@ describe('getBuiltinProvider', () => {
     expect(zhipu!.models).toContain('glm-5.1');
     expect(zhipu!.models).toContain('glm-5-turbo');
     expect(zhipu!.models).toContain('glm-5.3');
+    expect(zhipu!.models).toContain('glm-5.3-flash');
     expect(zhipu!.defaultModelAliases).toEqual({ 'glm-5': 'glm-5-turbo' });
     expect(zhipu!.hasUsageApi).toBe(true);
   });

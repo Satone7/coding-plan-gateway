@@ -106,6 +106,12 @@ export const MODEL_INFO: Record<string, Record<string, ModelInfo>> = {
       supportsTools: true,
       supportsStreaming: true,
     },
+    'glm-5.3-flash': {
+      contextWindow: 1000000,
+      notes: 'Flash tier of glm-5.3; specs provisional pending official docs',
+      supportsTools: true,
+      supportsStreaming: true,
+    },
   },
 
   volcengine: {
