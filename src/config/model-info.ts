@@ -108,9 +108,12 @@ export const MODEL_INFO: Record<string, Record<string, ModelInfo>> = {
     },
     'glm-5.3-flash': {
       contextWindow: 1000000,
-      notes: 'Flash tier of glm-5.3; specs provisional pending official docs',
+      maxOutputTokens: 128000,
+      notes:
+        'GLM-5 series first native multimodal (320B total/18B active); vision verified on the coding OpenAI surface via image_url.url 2026-08-27 (base64 data URLs rejected with 1214/500)',
       supportsTools: true,
       supportsStreaming: true,
+      supportsVision: true,
     },
   },
 
