@@ -7,6 +7,7 @@ import { createServer, get } from 'http';
 import type { AddressInfo } from 'net';
 import type { FastifyReply } from 'fastify';
 import { RequestProxy, extractStreamTokenUsage, mergeStreamTokenUsage } from '@/services/request-proxy';
+import { logger } from '@/utils/logger';
 
 const ANTHROPIC_STREAM_BODY = {
   model: 'test-model',
@@ -138,6 +139,97 @@ describe('RequestProxy', () => {
           timeout: 1,
         })
       ).rejects.toThrow();
+    });
+  });
+
+  describe('upstream error body dump (CPG_LOG_REQUEST_BODY_ON_ERROR)', () => {
+    /**
+     * Bodies can carry user content, so the dump is off by default and
+     * truncated — the gate exists so upstream rejections (e.g. the 2026-09-03
+     * LM Studio "System message must be at the beginning" incident, whose
+     * triggering payload was unrecoverable) can be diagnosed from prod logs.
+     */
+    function startErroringServer(status: number): Promise<{ server: ReturnType<typeof createServer>; url: string }> {
+      return (async () => {
+        const upstream = await startTestServer();
+        upstream.server.on('request', (_req, res) => {
+          res.writeHead(status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'boom' } }));
+        });
+        return upstream;
+      })();
+    }
+
+    it('logs the truncated request body on non-streaming 5xx when enabled', async () => {
+      const upstream = await startErroringServer(500);
+      vi.stubEnv('CPG_LOG_REQUEST_BODY_ON_ERROR', '1');
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+      try {
+        await expect(
+          proxy.forwardAnthropicRequest(ANTHROPIC_STREAM_BODY, { baseUrl: upstream.url, apiKey: 'k', requestId: 'req-dump' })
+        ).rejects.toThrow('Upstream error: 500');
+
+        const dump = warnSpy.mock.calls.find((c) => c[0] === 'Upstream rejected request — request body follows');
+        expect(dump).toBeTruthy();
+        const ctx = dump![1] as { requestId?: string; statusCode?: number; bodyPreview?: string };
+        expect(ctx.requestId).toBe('req-dump');
+        expect(ctx.statusCode).toBe(500);
+        expect(ctx.bodyPreview).toContain('"model":"test-model"');
+      } finally {
+        warnSpy.mockRestore();
+        vi.unstubAllEnvs();
+        upstream.server.close();
+      }
+    });
+
+    it('does not log request bodies when the gate is unset', async () => {
+      const upstream = await startErroringServer(500);
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+      try {
+        await expect(
+          proxy.forwardAnthropicRequest(ANTHROPIC_STREAM_BODY, { baseUrl: upstream.url, apiKey: 'k' })
+        ).rejects.toThrow('Upstream error: 500');
+
+        expect(warnSpy.mock.calls.some((c) => c[0] === 'Upstream rejected request — request body follows')).toBe(false);
+      } finally {
+        warnSpy.mockRestore();
+        upstream.server.close();
+      }
+    });
+
+    it('logs the truncated request body on streaming 5xx when enabled', async () => {
+      const upstream = await startErroringServer(502);
+      vi.stubEnv('CPG_LOG_REQUEST_BODY_ON_ERROR', '1');
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      const replyHolder: { reply?: ReturnType<typeof fakeReplyFrom> } = {};
+      const client = await startTestServer();
+      client.server.on('request', (_req, res) => {
+        replyHolder.reply = fakeReplyFrom(res);
+      });
+      void get(client.url).end();
+
+      try {
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+        await expect(
+          proxy.forwardAnthropicStream(
+            ANTHROPIC_STREAM_BODY,
+            { baseUrl: upstream.url, apiKey: 'k', timeout: 5, requestId: 'req-stream-dump' },
+            () => undefined,
+            replyHolder.reply!
+          )
+        ).rejects.toThrow('Upstream error: 502');
+
+        const dump = warnSpy.mock.calls.find((c) => c[0] === 'Upstream rejected request — request body follows');
+        expect(dump).toBeTruthy();
+        expect((dump![1] as { bodyPreview?: string }).bodyPreview).toContain('"model":"test-model"');
+      } finally {
+        warnSpy.mockRestore();
+        vi.unstubAllEnvs();
+        upstream.server.close();
+        client.server.close();
+      }
     });
   });
 });

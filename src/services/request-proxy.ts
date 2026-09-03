@@ -207,13 +207,34 @@ function buildHeaders(
 }
 
 /**
+ * Optional request-body dump for upstream 4xx/5xx responses. Off by default —
+ * bodies can carry user content; enable via CPG_LOG_REQUEST_BODY_ON_ERROR=1
+ * when diagnosing upstream rejections. Preview is truncated to 2000 chars.
+ */
+function logRequestBodyOnError(
+  context: { requestId?: string; model?: string },
+  statusCode: number | undefined,
+  bodyPreview: string | undefined
+): void {
+  if (process.env.CPG_LOG_REQUEST_BODY_ON_ERROR !== '1' || !bodyPreview) {
+    return;
+  }
+  logger.warn('Upstream rejected request — request body follows', {
+    requestId: context.requestId,
+    model: context.model,
+    statusCode,
+    bodyPreview,
+  });
+}
+
+/**
  * Handle HTTP response and collect data.
  */
 function handleResponse<T>(
   res: import('http').IncomingMessage,
   resolve: (value: UpstreamResponse<T>) => void,
   reject: (reason: Error) => void,
-  context: { requestId?: string; model?: string } = {}
+  context: { requestId?: string; model?: string; bodyPreview?: string } = {}
 ): void {
   // Aggregate raw bytes and decode UTF-8 exactly once on 'end'. Decoding per
   // chunk (string +=) silently replaces multi-byte characters split across
@@ -248,6 +269,7 @@ function handleResponse<T>(
     }
 
     if (res.statusCode && res.statusCode >= 400) {
+      logRequestBodyOnError(context, res.statusCode, context.bodyPreview);
       const error = new Error(
         `Upstream error: ${res.statusCode} - ${data.slice(0, 500)}`
       );
@@ -554,6 +576,7 @@ export class RequestProxy {
         handleResponse<T>(res, resolve, reject, {
           requestId: options.requestId,
           model: (options.body as { model?: string } | undefined)?.model,
+          bodyPreview: bodyStr.slice(0, 2000),
         })
       );
 
@@ -618,6 +641,11 @@ export class RequestProxy {
             });
             res.on('end', () => {
               const data = Buffer.concat(errChunks).toString('utf8');
+              logRequestBodyOnError(
+                { requestId: options.requestId, model: (options.body as { model?: string } | undefined)?.model },
+                res.statusCode,
+                bodyStr.slice(0, 2000)
+              );
               handleStreamError(`Upstream error: ${res.statusCode} - ${data.slice(0, 500)}`, res.statusCode);
             });
             return;
