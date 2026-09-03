@@ -474,4 +474,127 @@ describe('Anthropic Handlers - System Field Validation', () => {
       expect(response.json().model).toBe('glm-5');
     });
   });
+
+  describe('Embedded system message normalization', () => {
+    /**
+     * The Anthropic spec reserves user/assistant roles for `messages` —
+     * system prompts belong in the top-level `system` field. Loose clients
+     * embed them anyway; strict upstreams reject the request, and LM Studio
+     * accepts it then 500s at chat-template render ("System message must be
+     * at the beginning"). The gateway hoists them before forwarding.
+     */
+    function mockUpstream(): ReturnType<typeof vi.spyOn> {
+      return vi.spyOn(proxy, 'forwardAnthropicRequest').mockResolvedValue({
+        data: { model: 'new-model-1', content: [] } as never,
+        statusCode: 200,
+        headers: {},
+        durationMs: 5,
+      });
+    }
+
+    it('hoists a mid-conversation system message into the top-level system field', async () => {
+      await repository.save(createMockPlanInput({ models: ['new-model-1'] }));
+      const spy = mockUpstream();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'new-model-1',
+          max_tokens: 64,
+          system: 'You are helpful.',
+          messages: [
+            { role: 'user', content: 'hi' },
+            { role: 'system', content: 'be brief' },
+          ],
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const upstreamBody = spy.mock.calls[0]![0] as { messages: Array<{ role: string }>; system: unknown };
+      // No system role may remain in messages…
+      expect(upstreamBody.messages.map((m) => m.role)).toEqual(['user']);
+      // …and the hoisted content merged into the top-level system blocks,
+      // existing top-level content first.
+      expect(upstreamBody.system).toEqual([
+        { type: 'text', text: 'You are helpful.' },
+        { type: 'text', text: 'be brief' },
+      ]);
+    });
+
+    it('hoists into a blocks array when no top-level system exists', async () => {
+      await repository.save(createMockPlanInput({ models: ['new-model-1'] }));
+      const spy = mockUpstream();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'new-model-1',
+          max_tokens: 64,
+          messages: [
+            { role: 'system', content: 'You are helpful.' },
+            { role: 'user', content: 'hi' },
+          ],
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const upstreamBody = spy.mock.calls[0]![0] as { messages: Array<{ role: string }>; system: unknown };
+      expect(upstreamBody.messages.map((m) => m.role)).toEqual(['user']);
+      expect(upstreamBody.system).toEqual([{ type: 'text', text: 'You are helpful.' }]);
+    });
+
+    it('leaves spec-shaped requests untouched', async () => {
+      await repository.save(createMockPlanInput({ models: ['new-model-1'] }));
+      const spy = mockUpstream();
+
+      await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'new-model-1',
+          max_tokens: 64,
+          system: 'You are helpful.',
+          messages: [
+            { role: 'user', content: 'hi' },
+            { role: 'assistant', content: 'hello' },
+          ],
+        },
+      });
+
+      const upstreamBody = spy.mock.calls[0]![0] as { messages: unknown[]; system: unknown };
+      // A plain string system prompt must survive as a string, not be
+      // rewritten to blocks.
+      expect(upstreamBody.system).toBe('You are helpful.');
+      expect(upstreamBody.messages).toHaveLength(2);
+    });
+
+    it('hoists multiple system messages preserving their order', async () => {
+      await repository.save(createMockPlanInput({ models: ['new-model-1'] }));
+      const spy = mockUpstream();
+
+      await app.inject({
+        method: 'POST',
+        url: '/v1/messages',
+        payload: {
+          model: 'new-model-1',
+          max_tokens: 64,
+          messages: [
+            { role: 'user', content: 'hi' },
+            { role: 'system', content: 'first rule' },
+            { role: 'user', content: 'again' },
+            { role: 'system', content: 'second rule' },
+          ],
+        },
+      });
+
+      const upstreamBody = spy.mock.calls[0]![0] as {
+        messages: Array<{ role: string; content: string }>;
+        system: Array<{ text: string }>;
+      };
+      expect(upstreamBody.messages.map((m) => m.content)).toEqual(['hi', 'again']);
+      expect(upstreamBody.system.map((b) => b.text)).toEqual(['first rule', 'second rule']);
+    });
+  });
 });

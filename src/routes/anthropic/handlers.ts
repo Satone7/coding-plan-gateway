@@ -63,12 +63,34 @@ const messageRequestSchema = z
   })
   .passthrough();
 
+/** Coerce a system-prompt-ish value (string | block array | other) into block form. */
+function toSystemBlocks(value: unknown): Record<string, unknown>[] {
+  if (typeof value === 'string') {
+    return [{ type: 'text', text: value }];
+  }
+  if (Array.isArray(value)) {
+    return value.filter((b): b is Record<string, unknown> => typeof b === 'object' && b !== null);
+  }
+  return [];
+}
+
 /**
  * Normalize an Anthropic request body before forwarding to upstream providers.
  *
  * Handles non-standard field values that some providers reject:
  * - `output_config.effort`: maps "xhigh" → "max" (claude-cli sends "xhigh" but
  *   many providers only accept "low", "medium", "high", "max").
+ * - `role: "system"` messages inside `messages`: the Anthropic spec reserves
+ *   `user`/`assistant` roles for `messages` — system prompts belong in the
+ *   top-level `system` field. Loose clients still embed them, and upstreams
+ *   split in two unhelpful ways: strict APIs reject the whole request, while
+ *   LM Studio accepts it and then 500s at chat-template render time
+ *   ("System message must be at the beginning") when the system message does
+ *   not sit at index 0. Hoist them into the top-level `system` field
+ *   (existing top-level content first, hoisted content in encounter order)
+ *   so every upstream sees a spec-shaped request. No-op when `messages` is
+ *   all-system (leaving the original body untouched is safer than inventing
+ *   a user turn).
  */
 function normalizeRequest(body: AnthropicMessageRequest): void {
   const outputConfig = (body as Record<string, unknown>).output_config;
@@ -78,6 +100,19 @@ function normalizeRequest(body: AnthropicMessageRequest): void {
       oc.effort = 'max';
     }
   }
+
+  const messages = body.messages as unknown as Array<Record<string, unknown>>;
+  const hoisted = messages.filter((m) => m.role === 'system');
+  if (hoisted.length === 0 || hoisted.length === messages.length) {
+    return;
+  }
+
+  const mergedBlocks = [
+    ...toSystemBlocks(body.system),
+    ...hoisted.flatMap((m) => toSystemBlocks(m.content)),
+  ];
+  body.system = mergedBlocks as AnthropicMessageRequest['system'];
+  body.messages = messages.filter((m) => m.role !== 'system') as unknown as AnthropicMessageRequest['messages'];
 }
 
 /**
