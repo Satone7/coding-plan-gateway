@@ -218,6 +218,14 @@ export const MODEL_INFO: Record<string, Record<string, ModelInfo>> = {
       supportsTools: true,
       supportsStreaming: true,
     },
+    'deepseek-v4-flash-Vision-Exp': {
+      contextWindow: 1000000,
+      maxOutputTokens: 384000,
+      notes: 'Experimental vision-capable variant of deepseek-v4-flash; specs provisional pending official docs',
+      supportsVision: true,
+      supportsTools: true,
+      supportsStreaming: true,
+    },
     'deepseek-v4-pro': {
       contextWindow: 1000000,
       maxOutputTokens: 384000,

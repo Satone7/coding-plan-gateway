@@ -77,6 +77,7 @@ describe('getBuiltinProvider', () => {
     expect(deepseek!.id).toBe('deepseek');
     expect(deepseek!.baseUrl).toBe('https://api.deepseek.com/anthropic');
     expect(deepseek!.models).toContain('deepseek-v4-flash');
+    expect(deepseek!.models).toContain('deepseek-v4-flash-Vision-Exp');
     expect(deepseek!.hasUsageApi).toBe(true);
   });
 
