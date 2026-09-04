@@ -44,7 +44,7 @@ export const BUILTIN_PROVIDERS: readonly ProviderPreset[] = [
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com/anthropic',
     openaiBaseUrl: 'https://api.deepseek.com',
-    models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+    models: ['deepseek-v4-flash', 'deepseek-v4-flash-Vision-Exp', 'deepseek-v4-pro'],
     hasUsageApi: true,
   },
   {
